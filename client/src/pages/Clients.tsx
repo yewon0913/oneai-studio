@@ -35,7 +35,6 @@ export default function ClientsPage() {
   const [formData, setFormData] = useState({
     name: "",
     gender: "female" as "female" | "male",
-    age: undefined as number | undefined,
     phone: "",
     email: "",
     consultationNotes: "",
@@ -50,7 +49,7 @@ export default function ClientsPage() {
       utils.clients.list.invalidate();
       utils.dashboard.stats.invalidate();
       setIsDialogOpen(false);
-      setFormData({ name: "", gender: "female", age: undefined, phone: "", email: "", consultationNotes: "", preferredConcept: "", status: "consulting" });
+      setFormData({ name: "", gender: "female", phone: "", email: "", consultationNotes: "", preferredConcept: "", status: "consulting" });
       toast.success("고객이 등록되었습니다.");
     },
     onError: (err) => toast.error(err.message),
@@ -90,10 +89,6 @@ export default function ClientsPage() {
                         <SelectItem value="male">남성 (신랑)</SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-foreground">나이</Label>
-                    <Input type="number" placeholder="예: 30" min={1} max={120} value={formData.age ?? ""} onChange={(e) => setFormData({ ...formData, age: e.target.value ? parseInt(e.target.value) : undefined })} />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
