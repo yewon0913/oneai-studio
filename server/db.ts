@@ -221,6 +221,12 @@ export async function updateGeneration(id: number, data: Partial<InsertGeneratio
   await db.update(generations).set(data).where(eq(generations.id, id));
 }
 
+export async function deleteGeneration(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(generations).where(eq(generations.id, id));
+}
+
 // ─── Batch Jobs ───
 export async function createBatchJob(data: InsertBatchJob) {
   const db = await getDb();

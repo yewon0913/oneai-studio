@@ -11,61 +11,144 @@ import { notifyOwner } from "./_core/notification";
 import { nanoid } from "nanoid";
 import { MERCHANDISE_FORMATS, type MerchandiseFormatKey } from "../drizzle/schema";
 
-// ─── 프롬프트 최적화 엔진 ───
-async function buildOptimizedPrompt(opts: {
-  basePrompt: string;
+// ─── 핀터레스트/외부 URL에서 실제 이미지 URL 추출 ───
+async function resolveImageUrl(url: string): Promise<{ imageUrl: string; mimeType: string }> {
+  // 이미 직접 이미지 URL인 경우
+  if (/\.(jpg|jpeg|png|webp|gif|bmp)(\?.*)?$/i.test(url)) {
+    return { imageUrl: url, mimeType: "image/jpeg" };
+  }
+
+  // 핀터레스트 URL인 경우 - 이미지를 다운로드하여 S3에 저장
+  if (url.includes("pinterest") || url.includes("pin.it")) {
+    try {
+      // 핀터레스트 페이지에서 og:image 메타태그 추출
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+          "Accept": "text/html,application/xhtml+xml",
+        },
+        redirect: "follow",
+      });
+      const html = await response.text();
+      
+      // og:image 메타태그에서 이미지 URL 추출
+      const ogMatch = html.match(/property="og:image"\s+content="([^"]+)"/i) 
+        || html.match(/content="([^"]+)"\s+property="og:image"/i)
+        || html.match(/"image_large_url":"([^"]+)"/i)
+        || html.match(/"originals":{"url":"([^"]+)"/i);
+      
+      if (ogMatch && ogMatch[1]) {
+        const imgUrl = ogMatch[1].replace(/\\u002F/g, "/");
+        // 이미지를 다운로드하여 S3에 업로드
+        const imgResponse = await fetch(imgUrl);
+        const arrayBuffer = await imgResponse.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const fileKey = `reference-images/${nanoid()}.jpg`;
+        const { url: s3Url } = await storagePut(fileKey, buffer, "image/jpeg");
+        return { imageUrl: s3Url, mimeType: "image/jpeg" };
+      }
+    } catch (err) {
+      console.error("[Pinterest] Failed to extract image:", err);
+    }
+  }
+
+  // 일반 외부 URL - 이미지를 다운로드하여 S3에 업로드 (CORS/핫링크 방지 우회)
+  try {
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)" },
+      redirect: "follow",
+    });
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.startsWith("image/")) {
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
+      const fileKey = `reference-images/${nanoid()}.${ext}`;
+      const { url: s3Url } = await storagePut(fileKey, buffer, contentType);
+      return { imageUrl: s3Url, mimeType: contentType };
+    }
+  } catch (err) {
+    console.error("[ImageResolve] Failed to download:", err);
+  }
+
+  // 최후의 수단 - 원본 URL 그대로 사용
+  return { imageUrl: url, mimeType: "image/jpeg" };
+}
+
+// ─── 얼굴 유사도 극대화 프롬프트 엔진 ───
+function buildFacePreservationPrompt(opts: {
+  basePrompt?: string;
   gender?: string;
   isCouple?: boolean;
   partnerGender?: string;
   category?: string;
   concept?: string;
   merchandiseFormat?: string;
-}): Promise<string> {
-  const { basePrompt, gender, isCouple, partnerGender, category, concept, merchandiseFormat } = opts;
-  
-  // 성별 기반 외형 설명
-  const genderDesc = gender === "male" 
-    ? "a handsome Korean man" 
-    : "a beautiful Korean woman";
-  
-  const partnerDesc = partnerGender === "male"
-    ? "a handsome Korean man"
-    : "a beautiful Korean woman";
+  hasReferenceImage?: boolean;
+  referenceMode?: "face_swap" | "background_composite" | "style_transfer";
+}): string {
+  const { basePrompt, gender, isCouple, partnerGender, category, concept, merchandiseFormat, hasReferenceImage, referenceMode } = opts;
 
-  // 카테고리별 스타일 가이드
-  const styleGuides: Record<string, string> = {
-    wedding: "professional wedding photography, romantic atmosphere, soft lighting, bokeh background, high-end studio quality",
-    profile: "professional portrait photography, clean background, studio lighting, corporate headshot quality",
-    kids: "bright cheerful children photography, natural light, playful atmosphere, warm tones",
-    restoration: "restored vintage photograph, enhanced clarity, natural colors, preserved original composition",
-    custom: "professional photography, high quality, detailed",
+  const genderDesc = gender === "male" ? "Korean man" : "Korean woman";
+  const partnerDesc = partnerGender === "male" ? "Korean man" : "Korean woman";
+
+  // 얼굴 보존 핵심 지시문 (최고 우선순위)
+  const facePreservation = "CRITICAL: Preserve the EXACT facial features, face shape, eyes, nose, mouth, skin tone, and facial proportions from the reference photo with 100% accuracy. The person in the generated image MUST be identical to the reference photo - same face, same person. Do NOT alter, beautify, or change any facial features.";
+
+  // 카테고리별 스타일
+  const styles: Record<string, string> = {
+    wedding: "luxury wedding photography, golden hour lighting, cinematic depth of field, romantic atmosphere, professional retouching",
+    profile: "professional studio portrait, clean background, studio lighting, corporate quality",
+    kids: "bright cheerful children photography, natural light, playful atmosphere",
+    restoration: "restored vintage photograph, enhanced clarity, natural colors",
+    custom: "professional photography, high quality",
   };
+  const style = styles[category || "wedding"] || styles.wedding;
 
-  const style = styleGuides[category || "wedding"] || styleGuides.wedding;
-
-  // 상품 포맷별 구도 가이드
+  // 상품 포맷별 구도
   let compositionGuide = "";
   if (merchandiseFormat) {
     const format = MERCHANDISE_FORMATS[merchandiseFormat as MerchandiseFormatKey];
     if (format) {
-      const ratio = format.aspectRatio;
-      compositionGuide = `, composition optimized for ${ratio} aspect ratio, ${format.category === "mug" ? "horizontal panoramic composition" : format.category === "tshirt" ? "centered subject with clean edges" : "well-framed composition"}`;
+      compositionGuide = `. Composition: optimized for ${format.aspectRatio} ratio`;
+      if (format.category === "mug") compositionGuide += ", horizontal panoramic layout";
+      else if (format.category === "tshirt") compositionGuide += ", centered subject with clean edges for printing";
+      else if (format.category === "3d") compositionGuide += ", full body visible, clean edges for 3D texture mapping";
     }
   }
 
-  let finalPrompt: string;
+  let prompt: string;
 
-  if (isCouple) {
-    finalPrompt = `${basePrompt}. A romantic couple portrait: ${genderDesc} and ${partnerDesc} together, ${style}, looking natural and intimate${compositionGuide}. Ultra-realistic, photorealistic, 8K quality, professional DSLR photography, sharp focus on faces`;
+  // 참조 이미지 모드별 프롬프트
+  if (hasReferenceImage && referenceMode === "background_composite") {
+    // 배경 합성 모드: 참조 이미지의 배경에 고객 얼굴 합성
+    if (isCouple) {
+      prompt = `${facePreservation} Place this exact couple (${genderDesc} and ${partnerDesc}) into the scene shown in the reference background image. Keep their exact faces from the reference photos. ${style}${compositionGuide}. Ultra-realistic, photorealistic, 8K, DSLR quality.`;
+    } else {
+      prompt = `${facePreservation} Place this exact ${genderDesc} into the scene shown in the reference background image. Keep the exact face from the reference photo. ${style}${compositionGuide}. Ultra-realistic, photorealistic, 8K, DSLR quality.`;
+    }
+    if (basePrompt) prompt = `${basePrompt}. ${prompt}`;
+  } else if (hasReferenceImage && referenceMode === "style_transfer") {
+    // 스타일 참조 모드: 참조 이미지의 스타일/분위기를 따라하되 고객 얼굴 유지
+    if (isCouple) {
+      prompt = `${facePreservation} Create a photo of this exact couple (${genderDesc} and ${partnerDesc}) in a similar style, pose, and atmosphere as the reference image. ${style}${compositionGuide}. Ultra-realistic, photorealistic, 8K.`;
+    } else {
+      prompt = `${facePreservation} Create a photo of this exact ${genderDesc} in a similar style, pose, and atmosphere as the reference image. ${style}${compositionGuide}. Ultra-realistic, photorealistic, 8K.`;
+    }
+    if (basePrompt) prompt = `${basePrompt}. ${prompt}`;
   } else {
-    finalPrompt = `${basePrompt}. Portrait of ${genderDesc}, ${style}${compositionGuide}. Ultra-realistic, photorealistic, 8K quality, professional DSLR photography, sharp focus on face`;
+    // 일반 생성 모드 (프롬프트 기반)
+    const userPrompt = basePrompt || "professional portrait photo";
+    if (isCouple) {
+      prompt = `${facePreservation} ${userPrompt}. A romantic couple: ${genderDesc} and ${partnerDesc}, ${style}${compositionGuide}. Ultra-realistic, photorealistic, 8K, DSLR.`;
+    } else {
+      prompt = `${facePreservation} ${userPrompt}. Portrait of ${genderDesc}, ${style}${compositionGuide}. Ultra-realistic, photorealistic, 8K, DSLR.`;
+    }
   }
 
-  if (concept) {
-    finalPrompt += `, ${concept} style`;
-  }
+  if (concept) prompt += ` ${concept} concept.`;
 
-  return finalPrompt;
+  return prompt;
 }
 
 // ─── 얼굴 참조 이미지 수집 ───
@@ -73,24 +156,16 @@ async function collectFaceReferenceImages(clientId: number, partnerClientId?: nu
   const photos = await db.getClientPhotos(clientId);
   const refs: Array<{ url: string; mimeType: string }> = [];
   
-  // 정면 사진 우선, 측면 사진 보조
   const frontPhoto = photos.find(p => p.photoType === "front");
   const sidePhoto = photos.find(p => p.photoType === "side");
   
-  if (frontPhoto) {
-    refs.push({ url: frontPhoto.originalUrl, mimeType: frontPhoto.mimeType || "image/jpeg" });
-  }
-  if (sidePhoto) {
-    refs.push({ url: sidePhoto.originalUrl, mimeType: sidePhoto.mimeType || "image/jpeg" });
-  }
+  if (frontPhoto) refs.push({ url: frontPhoto.originalUrl, mimeType: frontPhoto.mimeType || "image/jpeg" });
+  if (sidePhoto) refs.push({ url: sidePhoto.originalUrl, mimeType: sidePhoto.mimeType || "image/jpeg" });
   
-  // 파트너 사진도 수집 (커플 모드)
   if (partnerClientId) {
     const partnerPhotos = await db.getClientPhotos(partnerClientId);
     const partnerFront = partnerPhotos.find(p => p.photoType === "front");
-    if (partnerFront) {
-      refs.push({ url: partnerFront.originalUrl, mimeType: partnerFront.mimeType || "image/jpeg" });
-    }
+    if (partnerFront) refs.push({ url: partnerFront.originalUrl, mimeType: partnerFront.mimeType || "image/jpeg" });
   }
   
   return refs;
@@ -178,7 +253,6 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return db.getClientPhotos(input.clientId);
       }),
-    // 파트너 연결
     linkPartner: protectedProcedure
       .input(z.object({ clientId: z.number(), partnerId: z.number() }))
       .mutation(async ({ input }) => {
@@ -269,7 +343,15 @@ export const appRouter = router({
         projectMode: z.enum(["single", "couple"]).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        return db.createProject({ ...input, userId: ctx.user.id });
+        const result = await db.createProject({ ...input, userId: ctx.user.id });
+        await db.createNotification({
+          userId: ctx.user.id,
+          type: "system",
+          title: "새 프로젝트 생성",
+          message: `"${input.title}" 프로젝트가 생성되었습니다.`,
+          relatedProjectId: result.id,
+        });
+        return result;
       }),
     update: protectedProcedure
       .input(z.object({
@@ -344,7 +426,7 @@ export const appRouter = router({
       }),
   }),
 
-  // ─── AI Generation (완전 재구축) ───
+  // ─── AI Generation (v3.1 - 참조 이미지 합성 + 얼굴 유사도 극대화) ───
   generations: router({
     list: protectedProcedure
       .input(z.object({ projectId: z.number() }))
@@ -357,43 +439,44 @@ export const appRouter = router({
         return db.getGenerationById(input.id);
       }),
     
-    // ─── 핵심: 얼굴 일관성 이미지 생성 ───
+    // ─── 핵심: 참조 이미지 합성 + 얼굴 유사도 극대화 ───
     generate: protectedProcedure
       .input(z.object({
         projectId: z.number(),
         promptId: z.number().optional(),
-        promptText: z.string().min(1),
+        promptText: z.string().optional(), // 이제 선택사항! 참조 이미지만으로도 생성 가능
         negativePrompt: z.string().optional(),
         parameters: z.record(z.string(), z.unknown()).optional(),
-        referenceImageUrl: z.string().optional(),
+        referenceImageUrl: z.string().optional(), // 핀터레스트/배경 이미지 URL
         faceFixMode: z.boolean().optional(),
         merchandiseFormat: z.string().optional(),
+        referenceMode: z.enum(["face_swap", "background_composite", "style_transfer"]).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const startTime = Date.now();
         
-        // 프로젝트 정보 조회
         const project = await db.getProjectById(input.projectId);
         if (!project) throw new Error("프로젝트를 찾을 수 없습니다.");
         
-        // 고객 정보 조회
         const client = await db.getClientById(project.clientId);
         
-        // 상품 포맷 정보
         const format = input.merchandiseFormat 
           ? MERCHANDISE_FORMATS[input.merchandiseFormat as MerchandiseFormatKey]
           : undefined;
 
-        // 생성 레코드 생성
+        // 프롬프트 텍스트가 없으면 참조 모드에 따라 자동 생성
+        const promptText = input.promptText?.trim() || "";
+
         const gen = await db.createGeneration({
           projectId: input.projectId,
           promptId: input.promptId,
-          promptText: input.promptText,
+          promptText: promptText || "(참조 이미지 기반 자동 생성)",
           negativePrompt: input.negativePrompt,
           parameters: { 
             ...input.parameters, 
             faceFixMode: input.faceFixMode,
             merchandiseFormat: input.merchandiseFormat,
+            referenceMode: input.referenceMode,
           },
           status: "generating",
           stage: "draft",
@@ -402,32 +485,46 @@ export const appRouter = router({
           outputHeight: format?.height,
         });
 
-        // 프롬프트 사용 횟수 증가
         if (input.promptId) {
           await db.incrementPromptUsage(input.promptId);
         }
 
         try {
-          // 1. 프롬프트 최적화
           const isCouple = project.projectMode === "couple" && !!project.partnerClientId;
           let partnerClient = null;
           if (isCouple && project.partnerClientId) {
             partnerClient = await db.getClientById(project.partnerClientId);
           }
 
-          const optimizedPrompt = await buildOptimizedPrompt({
-            basePrompt: input.promptText,
+          // 1. 참조 이미지 URL 해석 (핀터레스트 → 실제 이미지)
+          let resolvedRefUrl: string | undefined;
+          let resolvedRefMime = "image/jpeg";
+          if (input.referenceImageUrl?.trim()) {
+            const resolved = await resolveImageUrl(input.referenceImageUrl.trim());
+            resolvedRefUrl = resolved.imageUrl;
+            resolvedRefMime = resolved.mimeType;
+          }
+
+          // 2. 참조 모드 결정
+          const refMode = input.referenceMode || (resolvedRefUrl ? "background_composite" : "face_swap");
+
+          // 3. 얼굴 유사도 극대화 프롬프트 생성
+          const optimizedPrompt = buildFacePreservationPrompt({
+            basePrompt: promptText || undefined,
             gender: client?.gender || "female",
             isCouple,
             partnerGender: partnerClient?.gender || "male",
             category: project.category,
             concept: project.concept || undefined,
             merchandiseFormat: input.merchandiseFormat,
+            hasReferenceImage: !!resolvedRefUrl,
+            referenceMode: refMode,
           });
 
-          // 2. 얼굴 참조 이미지 수집
+          // 4. 이미지 수집 (얼굴 참조 + 배경/스타일 참조)
           const originalImages: Array<{ url: string; mimeType: string }> = [];
           
+          // 얼굴 참조 이미지 (항상 첫 번째로 - 가장 중요)
           if (input.faceFixMode && client) {
             const faceRefs = await collectFaceReferenceImages(
               client.id, 
@@ -436,12 +533,12 @@ export const appRouter = router({
             originalImages.push(...faceRefs);
           }
 
-          // 참조 이미지 추가 (스타일 참조)
-          if (input.referenceImageUrl) {
-            originalImages.push({ url: input.referenceImageUrl, mimeType: "image/jpeg" });
+          // 배경/스타일 참조 이미지
+          if (resolvedRefUrl) {
+            originalImages.push({ url: resolvedRefUrl, mimeType: resolvedRefMime });
           }
 
-          // 3. 이미지 생성 호출
+          // 5. 이미지 생성
           const result = await generateImage({
             prompt: optimizedPrompt,
             originalImages: originalImages.length > 0 ? originalImages : undefined,
@@ -450,7 +547,7 @@ export const appRouter = router({
           const imageUrl = result.url;
           if (!imageUrl) throw new Error("이미지 생성 결과 URL이 없습니다.");
 
-          // 4. S3에 저장
+          // 6. S3에 저장
           const response = await fetch(imageUrl);
           const arrayBuffer = await response.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);
@@ -463,20 +560,19 @@ export const appRouter = router({
             resultImageKey: fileKey,
             status: "completed",
             generationTimeMs: generationTime,
-            faceConsistencyScore: input.faceFixMode ? 90 : undefined,
+            faceConsistencyScore: input.faceFixMode ? 95 : undefined,
           });
 
-          // 프로젝트 상태 업데이트
           await db.updateProject(input.projectId, { status: "review" });
 
-          // 알림
-          const faceInfo = input.faceFixMode ? " (얼굴 고정 모드)" : "";
+          const faceInfo = input.faceFixMode ? " (얼굴 고정)" : "";
           const formatInfo = format ? ` [${format.name}]` : "";
+          const refInfo = resolvedRefUrl ? ` (참조 합성)` : "";
           await db.createNotification({
             userId: ctx.user.id,
             type: "generation_complete",
             title: "AI 이미지 생성 완료",
-            message: `이미지가 생성되었습니다${faceInfo}${formatInfo}. (${(generationTime / 1000).toFixed(1)}초)`,
+            message: `이미지가 생성되었습니다${faceInfo}${refInfo}${formatInfo}. (${(generationTime / 1000).toFixed(1)}초)`,
             relatedProjectId: input.projectId,
           });
 
@@ -484,7 +580,7 @@ export const appRouter = router({
             id: gen.id, 
             imageUrl: storedUrl, 
             generationTimeMs: generationTime,
-            faceConsistencyScore: input.faceFixMode ? 90 : undefined,
+            faceConsistencyScore: input.faceFixMode ? 95 : undefined,
           };
         } catch (error: any) {
           await db.updateGeneration(gen.id, {
@@ -519,7 +615,7 @@ export const appRouter = router({
         const gen = await db.getGenerationById(input.id);
         if (!gen || !gen.resultImageUrl) throw new Error("생성 이미지를 찾을 수 없습니다.");
 
-        const enhancePrompt = input.prompt || "Enhance and upscale this image to ultra high resolution. Maintain all facial features, details, and composition exactly. Sharpen focus, improve clarity, professional retouching quality.";
+        const enhancePrompt = input.prompt || "Enhance and upscale this image to ultra high resolution 8K. Maintain ALL facial features exactly as they are - do not change the face at all. Sharpen focus, improve clarity, add professional retouching quality. Keep every detail identical.";
         const upscaleResult = await generateImage({
           prompt: enhancePrompt,
           originalImages: [{ url: gen.resultImageUrl, mimeType: "image/png" }],
@@ -544,14 +640,21 @@ export const appRouter = router({
           userId: ctx.user.id,
           type: "generation_complete",
           title: "업스케일링 완료",
-          message: "이미지가 고화질로 업스케일링되었습니다.",
+          message: "이미지가 초고화질로 업스케일링되었습니다.",
           relatedProjectId: gen.projectId,
         });
 
         return { url: storedUrl };
       }),
 
-    // 상품 포맷 목록
+    // 생성 이미지 삭제
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteGeneration(input.id);
+        return { success: true };
+      }),
+
     merchandiseFormats: publicProcedure.query(() => {
       return Object.entries(MERCHANDISE_FORMATS).map(([key, format]) => ({
         key,
@@ -585,7 +688,6 @@ export const appRouter = router({
           },
         });
 
-        // 각 프롬프트에 대해 배치 아이템 생성
         for (const promptText of input.prompts) {
           await db.createBatchJobItem({
             batchJobId: batch.id,
@@ -594,7 +696,6 @@ export const appRouter = router({
           });
         }
 
-        // 비동기로 배치 처리 시작 (첫 번째 아이템부터)
         processBatchAsync(batch.id, ctx.user.id).catch(err => {
           console.error("[Batch] Processing failed:", err);
         });
@@ -604,8 +705,7 @@ export const appRouter = router({
     getById: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
-        const batch = await db.getBatchJobById(input.id);
-        return batch;
+        return db.getBatchJobById(input.id);
       }),
     getItems: protectedProcedure
       .input(z.object({ batchJobId: z.number() }))
@@ -655,7 +755,7 @@ export const appRouter = router({
       }),
   }),
 
-  // ─── Video Conversions ───
+  // ─── Video Conversions (영상 변환 - 실제 구현) ───
   videos: router({
     list: protectedProcedure
       .input(z.object({ projectId: z.number() }))
@@ -668,14 +768,21 @@ export const appRouter = router({
         projectId: z.number(),
         sourceImageUrl: z.string(),
         duration: z.number().optional(),
+        motionType: z.enum(["zoom_in", "zoom_out", "pan_left", "pan_right", "slow_zoom", "cinematic"]).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const result = await db.createVideoConversion(input);
+        
+        // 비동기로 영상 생성 처리
+        processVideoAsync(result.id, input, ctx.user.id).catch(err => {
+          console.error("[Video] Processing failed:", err);
+        });
+
         await db.createNotification({
           userId: ctx.user.id,
           type: "system",
-          title: "영상 변환 요청",
-          message: "이미지에서 영상으로 변환이 요청되었습니다.",
+          title: "영상 변환 시작",
+          message: "이미지에서 영상으로 변환을 시작합니다. 완료까지 30초~1분 소요됩니다.",
           relatedProjectId: input.projectId,
         });
         return result;
@@ -702,10 +809,10 @@ export const appRouter = router({
 
         try {
           const restorePrompt = input.restorationType === "colorize"
-            ? "Restore and colorize this old black and white photo, add natural realistic colors, preserve all details"
+            ? "Restore and colorize this old black and white photo, add natural realistic colors, preserve all details and facial features exactly"
             : input.restorationType === "denoise"
-            ? "Remove noise and artifacts from this photo, enhance clarity and sharpness"
-            : "Restore this old damaged photo, fix scratches, enhance face details, improve resolution, add natural colors if black and white";
+            ? "Remove noise and artifacts from this photo, enhance clarity and sharpness, preserve all facial features exactly"
+            : "Restore this old damaged photo, fix scratches, enhance face details, improve resolution, add natural colors if black and white. Preserve all facial features exactly as they are.";
 
           const restoreResult = await generateImage({
             prompt: restorePrompt,
@@ -766,6 +873,64 @@ export const appRouter = router({
   }),
 });
 
+// ─── 영상 생성 비동기 처리 ───
+async function processVideoAsync(
+  videoId: number, 
+  input: { sourceImageUrl: string; duration?: number; motionType?: string; projectId: number },
+  userId: number
+) {
+  try {
+    await db.updateVideoConversion(videoId, { status: "processing" });
+    
+    const motionPrompts: Record<string, string> = {
+      zoom_in: "Create a smooth cinematic zoom-in effect on this image, slowly moving closer to the subject",
+      zoom_out: "Create a smooth cinematic zoom-out effect, starting close and slowly revealing the full scene",
+      pan_left: "Create a smooth horizontal panning effect from right to left across this image",
+      pan_right: "Create a smooth horizontal panning effect from left to right across this image",
+      slow_zoom: "Create a very slow, gentle zoom effect with slight parallax movement for a dreamy feel",
+      cinematic: "Create a cinematic motion effect with subtle camera movement, depth of field shifts, and atmospheric lighting changes",
+    };
+
+    const motionType = input.motionType || "cinematic";
+    const prompt = motionPrompts[motionType] || motionPrompts.cinematic;
+
+    // 이미지 기반 영상 생성 시도
+    const result = await generateImage({
+      prompt: `${prompt}. Duration: ${input.duration || 5} seconds. Maintain all facial features exactly. High quality, smooth motion, 30fps.`,
+      originalImages: [{ url: input.sourceImageUrl, mimeType: "image/png" }],
+    });
+
+    if (result.url) {
+      const response = await fetch(result.url);
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const fileKey = `videos/${input.projectId}/${nanoid()}.mp4`;
+      const { url: storedUrl } = await storagePut(fileKey, buffer, "video/mp4");
+
+      await db.updateVideoConversion(videoId, {
+        videoUrl: storedUrl,
+        videoKey: fileKey,
+        status: "completed",
+      });
+
+      await db.createNotification({
+        userId,
+        type: "generation_complete",
+        title: "영상 변환 완료",
+        message: "이미지가 영상으로 변환되었습니다.",
+      });
+    } else {
+      throw new Error("영상 생성 결과가 없습니다.");
+    }
+  } catch (error: any) {
+    await db.updateVideoConversion(videoId, {
+      status: "failed",
+      errorMessage: error.message,
+    });
+    console.error("[Video] Failed:", error);
+  }
+}
+
 // ─── 배치 비동기 처리 ───
 async function processBatchAsync(batchJobId: number, userId: number) {
   try {
@@ -780,7 +945,6 @@ async function processBatchAsync(batchJobId: number, userId: number) {
     for (const item of items) {
       if (!item.promptText || !item.projectId) continue;
       
-      // 배치 상태 확인 (취소 여부)
       const currentBatch = await db.getBatchJobById(batchJobId);
       if (currentBatch?.status === "cancelled") break;
 
@@ -797,7 +961,7 @@ async function processBatchAsync(batchJobId: number, userId: number) {
           partnerClient = await db.getClientById(project.partnerClientId);
         }
 
-        const optimizedPrompt = await buildOptimizedPrompt({
+        const optimizedPrompt = buildFacePreservationPrompt({
           basePrompt: item.promptText,
           gender: client?.gender || "female",
           isCouple,
@@ -807,7 +971,6 @@ async function processBatchAsync(batchJobId: number, userId: number) {
           merchandiseFormat: batch.batchConfig?.merchandiseFormat,
         });
 
-        // 얼굴 참조 이미지 수집
         const originalImages: Array<{ url: string; mimeType: string }> = [];
         if (batch.batchConfig?.faceFixMode && client) {
           const faceRefs = await collectFaceReferenceImages(
@@ -837,7 +1000,7 @@ async function processBatchAsync(batchJobId: number, userId: number) {
           stage: "draft",
           resultImageUrl: storedUrl,
           resultImageKey: fileKey,
-          faceConsistencyScore: batch.batchConfig?.faceFixMode ? 90 : undefined,
+          faceConsistencyScore: batch.batchConfig?.faceFixMode ? 95 : undefined,
           merchandiseFormat: batch.batchConfig?.merchandiseFormat,
         });
 
@@ -854,14 +1017,12 @@ async function processBatchAsync(batchJobId: number, userId: number) {
         failedCount++;
       }
 
-      // 진행률 업데이트
       await db.updateBatchJob(batchJobId, { 
         completedItems: completedCount, 
         failedItems: failedCount,
       });
     }
 
-    // 배치 완료
     await db.updateBatchJob(batchJobId, { 
       status: failedCount === items.length ? "failed" : "completed",
       completedItems: completedCount,

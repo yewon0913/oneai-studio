@@ -1,9 +1,13 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose, DialogTrigger } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
-import { FolderOpen, ChevronRight, Clock, Users } from "lucide-react";
+import { FolderOpen, ChevronRight, Clock, Users, Trash2, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
+import { useState } from "react";
 
 const statusLabels: Record<string, string> = {
   draft: "초안", generating: "생성중", review: "검수중", revision: "수정중",
@@ -29,6 +33,30 @@ const priorityColors: Record<string, string> = {
 export default function ProjectsPage() {
   const [, setLocation] = useLocation();
   const { data: projects, isLoading } = trpc.projects.list.useQuery();
+  const utils = trpc.useUtils();
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
+
+  const deleteMutation = trpc.projects.delete.useMutation({
+    onSuccess: () => {
+      utils.projects.list.invalidate();
+      setDeleteTargetId(null);
+      toast.success("프로젝트가 삭제되었습니다.");
+    },
+    onError: (err) => toast.error(`삭제 실패: ${err.message}`),
+  });
+
+  const handleDelete = (e: React.MouseEvent, projectId: number) => {
+    e.stopPropagation();
+    setDeleteTargetId(projectId);
+  };
+
+  const confirmDelete = () => {
+    if (deleteTargetId) {
+      deleteMutation.mutate({ id: deleteTargetId });
+    }
+  };
+
+  const deleteTarget = projects?.find(p => p.id === deleteTargetId);
 
   return (
     <DashboardLayout>
@@ -49,7 +77,7 @@ export default function ProjectsPage() {
             {projects.map(project => (
               <Card
                 key={project.id}
-                className="bg-card border-border hover:border-primary/30 cursor-pointer transition-all group"
+                className="bg-card border-border hover:border-primary/30 cursor-pointer transition-all group relative"
                 onClick={() => setLocation(`/projects/${project.id}`)}
               >
                 <CardContent className="p-5">
@@ -73,7 +101,17 @@ export default function ProjectsPage() {
                         </div>
                       </div>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                        onClick={(e) => handleDelete(e, project.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
                   </div>
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
@@ -98,6 +136,29 @@ export default function ProjectsPage() {
           </Card>
         )}
       </div>
+
+      {/* 삭제 확인 다이얼로그 */}
+      <Dialog open={!!deleteTargetId} onOpenChange={(open) => { if (!open) setDeleteTargetId(null); }}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="text-foreground flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              프로젝트 삭제
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              <strong className="text-foreground">"{deleteTarget?.title}"</strong> 프로젝트를 삭제하시겠습니까?
+              이 작업은 되돌릴 수 없으며, 프로젝트에 포함된 모든 생성 이미지도 함께 삭제됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setDeleteTargetId(null)}>취소</Button>
+            <Button variant="destructive" size="sm" className="gap-1.5" onClick={confirmDelete} disabled={deleteMutation.isPending}>
+              {deleteMutation.isPending ? <span className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              삭제
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

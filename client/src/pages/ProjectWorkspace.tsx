@@ -2,18 +2,18 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { useParams, useLocation } from "wouter";
 import { useState, useMemo } from "react";
 import {
   ArrowLeft, Sparkles, Wand2, Download, Check, X,
   RotateCcw, ArrowUpCircle, Loader2, ImageIcon, Lock, Unlock,
-  Package, Users, UserCircle
+  Package, Users, UserCircle, Video, Trash2, Link2, Image as ImageLucide
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,6 +22,21 @@ const statusLabels: Record<string, string> = {
   upscaling: "업스케일링", completed: "완료", delivered: "전달완료",
 };
 
+const referenceModeLabels: Record<string, { label: string; desc: string }> = {
+  background_composite: { label: "배경 합성", desc: "참조 이미지의 배경에 고객 얼굴을 합성합니다" },
+  style_transfer: { label: "스타일 참조", desc: "참조 이미지의 스타일/분위기를 따라합니다" },
+  face_swap: { label: "얼굴 교체", desc: "참조 이미지의 인물 얼굴을 고객 얼굴로 교체합니다" },
+};
+
+const motionTypes = [
+  { value: "cinematic", label: "시네마틱" },
+  { value: "zoom_in", label: "줌 인" },
+  { value: "zoom_out", label: "줌 아웃" },
+  { value: "pan_left", label: "좌측 패닝" },
+  { value: "pan_right", label: "우측 패닝" },
+  { value: "slow_zoom", label: "슬로우 줌" },
+];
+
 export default function ProjectWorkspace() {
   const params = useParams<{ id: string }>();
   const projectId = parseInt(params.id || "0");
@@ -29,9 +44,12 @@ export default function ProjectWorkspace() {
   const [promptText, setPromptText] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("(deformed, distorted, disfigured:1.3), poorly drawn, bad anatomy, wrong anatomy, extra limb, missing limb, floating limbs, (mutated hands and fingers:1.4), disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation, plastic skin, cartoon, anime");
   const [referenceUrl, setReferenceUrl] = useState("");
+  const [referenceMode, setReferenceMode] = useState<"background_composite" | "style_transfer" | "face_swap">("background_composite");
   const [selectedGenId, setSelectedGenId] = useState<number | null>(null);
   const [faceFixMode, setFaceFixMode] = useState(true);
   const [merchandiseFormat, setMerchandiseFormat] = useState<string>("");
+  const [videoMotion, setVideoMotion] = useState("cinematic");
+  const [videoDuration, setVideoDuration] = useState(5);
 
   const utils = trpc.useUtils();
   const { data: project, isLoading } = trpc.projects.getById.useQuery({ id: projectId });
@@ -46,6 +64,7 @@ export default function ProjectWorkspace() {
     { id: project?.clientId || 0 },
     { enabled: !!project?.clientId }
   );
+  const { data: videos } = trpc.videos.list.useQuery({ projectId });
 
   const generateMutation = trpc.generations.generate.useMutation({
     onSuccess: (data) => {
@@ -72,8 +91,24 @@ export default function ProjectWorkspace() {
     },
   });
 
+  const deleteGenMutation = trpc.generations.delete.useMutation({
+    onSuccess: () => {
+      utils.generations.list.invalidate();
+      setSelectedGenId(null);
+      toast.success("이미지가 삭제되었습니다.");
+    },
+    onError: (err) => toast.error(`삭제 실패: ${err.message}`),
+  });
+
+  const createVideoMutation = trpc.videos.create.useMutation({
+    onSuccess: () => {
+      utils.videos.list.invalidate();
+      toast.success("영상 변환이 시작되었습니다. 완료까지 30초~1분 소요됩니다.");
+    },
+    onError: (err) => toast.error(`영상 변환 실패: ${err.message}`),
+  });
+
   const selectedGen = useMemo(() => generations?.find(g => g.id === selectedGenId), [generations, selectedGenId]);
-  
   const frontPhoto = useMemo(() => clientPhotos?.find(p => p.photoType === "front"), [clientPhotos]);
   const hasFaceRef = !!frontPhoto;
 
@@ -93,18 +128,23 @@ export default function ProjectWorkspace() {
   };
 
   const handleGenerate = () => {
-    if (!promptText.trim()) { toast.error("프롬프트를 입력해주세요."); return; }
+    // 프롬프트 또는 참조 이미지 중 하나는 필수
+    if (!promptText.trim() && !referenceUrl.trim()) {
+      toast.error("프롬프트 또는 참조 이미지 URL 중 하나는 입력해주세요.");
+      return;
+    }
     if (faceFixMode && !hasFaceRef) {
       toast.error("얼굴 고정 모드를 사용하려면 고객 정면 사진이 필요합니다.");
       return;
     }
     generateMutation.mutate({
       projectId,
-      promptText: promptText.trim(),
+      promptText: promptText.trim() || undefined,
       negativePrompt: negativePrompt.trim() || undefined,
       referenceImageUrl: referenceUrl.trim() || undefined,
       faceFixMode,
       merchandiseFormat: merchandiseFormat && merchandiseFormat !== "none" ? merchandiseFormat : undefined,
+      referenceMode: referenceUrl.trim() ? referenceMode : undefined,
     });
   };
 
@@ -112,6 +152,20 @@ export default function ProjectWorkspace() {
     setPromptText(prompt);
     if (negative) setNegativePrompt(negative);
     toast.success("프롬프트가 적용되었습니다.");
+  };
+
+  const handleCreateVideo = () => {
+    if (!selectedGen?.resultImageUrl) {
+      toast.error("영상으로 변환할 이미지를 선택해주세요.");
+      return;
+    }
+    createVideoMutation.mutate({
+      generationId: selectedGen.id,
+      projectId,
+      sourceImageUrl: selectedGen.upscaledImageUrl || selectedGen.resultImageUrl,
+      duration: videoDuration,
+      motionType: videoMotion as any,
+    });
   };
 
   if (isLoading) {
@@ -156,7 +210,6 @@ export default function ProjectWorkspace() {
               {project.concept && <span className="text-sm text-muted-foreground">{project.concept}</span>}
             </div>
           </div>
-          {/* 고객 정보 */}
           {client && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${client.gender === "male" ? "bg-blue-500/20" : "bg-pink-500/20"}`}>
@@ -224,10 +277,12 @@ export default function ProjectWorkspace() {
                 )}
 
                 <div className="space-y-2">
-                  <Label className="text-foreground text-sm">메인 프롬프트 *</Label>
+                  <Label className="text-foreground text-sm">
+                    메인 프롬프트 <span className="text-muted-foreground text-xs">(참조 이미지 사용 시 선택사항)</span>
+                  </Label>
                   <Textarea
-                    placeholder="유럽 정원에서 웨딩 드레스를 입은 로맨틱한 웨딩 사진, 골든아워 조명, 시네마틱 보케..."
-                    rows={5}
+                    placeholder="유럽 정원에서 웨딩 드레스를 입은 로맨틱한 웨딩 사진, 골든아워 조명..."
+                    rows={4}
                     value={promptText}
                     onChange={(e) => setPromptText(e.target.value)}
                     className="text-sm"
@@ -244,15 +299,49 @@ export default function ProjectWorkspace() {
                   />
                 </div>
 
+                {/* 참조 이미지 URL (핀터레스트 지원) */}
                 <div className="space-y-2">
-                  <Label className="text-foreground text-sm">스타일 참조 이미지 URL</Label>
+                  <Label className="text-foreground text-sm flex items-center gap-2">
+                    <Link2 className="h-3.5 w-3.5" />
+                    참조 이미지 URL
+                    <span className="text-xs text-muted-foreground">(핀터레스트 지원)</span>
+                  </Label>
                   <Input
-                    placeholder="핀터레스트 URL 또는 이미지 URL..."
+                    placeholder="핀터레스트 URL, 이미지 URL, 또는 배경 이미지 URL..."
                     value={referenceUrl}
                     onChange={(e) => setReferenceUrl(e.target.value)}
                     className="text-sm"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    핀터레스트 링크를 넣으면 자동으로 이미지를 추출하여 합성합니다
+                  </p>
                 </div>
+
+                {/* 참조 모드 선택 (참조 URL이 있을 때만) */}
+                {referenceUrl.trim() && (
+                  <div className="space-y-2">
+                    <Label className="text-foreground text-sm flex items-center gap-2">
+                      <ImageLucide className="h-3.5 w-3.5" />
+                      참조 모드
+                    </Label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {(Object.entries(referenceModeLabels) as [string, { label: string; desc: string }][]).map(([key, { label, desc }]) => (
+                        <button
+                          key={key}
+                          onClick={() => setReferenceMode(key as any)}
+                          className={`text-left p-3 rounded-lg border transition-all ${
+                            referenceMode === key 
+                              ? "border-primary bg-primary/10 ring-1 ring-primary/30" 
+                              : "border-border bg-secondary/30 hover:border-primary/30"
+                          }`}
+                        >
+                          <p className="text-sm font-medium text-foreground">{label}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* 얼굴 고정 모드 */}
                 <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-border">
@@ -261,7 +350,7 @@ export default function ProjectWorkspace() {
                     <div>
                       <p className="text-sm font-medium text-foreground">얼굴 고정 모드</p>
                       <p className="text-xs text-muted-foreground">
-                        {faceFixMode ? "고객 얼굴을 참조하여 생성" : "얼굴 참조 없이 생성"}
+                        {faceFixMode ? "고객 얼굴을 90%+ 유사도로 합성" : "얼굴 참조 없이 생성"}
                       </p>
                     </div>
                   </div>
@@ -330,13 +419,67 @@ export default function ProjectWorkspace() {
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-foreground text-base">결과물 미리보기</CardTitle>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Button variant="outline" size="sm" className="gap-1.5"
                         onClick={() => upscaleMutation.mutate({ id: selectedGen.id })}
                         disabled={upscaleMutation.isPending || !!selectedGen.upscaledImageUrl}>
                         {upscaleMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpCircle className="h-3.5 w-3.5" />}
                         {selectedGen.upscaledImageUrl ? "업스케일 완료" : "초고화질 업스케일"}
                       </Button>
+                      
+                      {/* 영상 변환 버튼 */}
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" size="sm" className="gap-1.5">
+                            <Video className="h-3.5 w-3.5" />영상 변환
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="bg-card border-border">
+                          <DialogHeader>
+                            <DialogTitle className="text-foreground">이미지 → 영상 변환</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4 py-2">
+                            <div className="space-y-2">
+                              <Label className="text-sm text-foreground">모션 효과</Label>
+                              <Select value={videoMotion} onValueChange={setVideoMotion}>
+                                <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {motionTypes.map(m => (
+                                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm text-foreground">영상 길이 (초)</Label>
+                              <Select value={videoDuration.toString()} onValueChange={(v) => setVideoDuration(parseInt(v))}>
+                                <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="3">3초</SelectItem>
+                                  <SelectItem value="5">5초</SelectItem>
+                                  <SelectItem value="10">10초</SelectItem>
+                                  <SelectItem value="15">15초</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="rounded-lg overflow-hidden border border-border bg-black/20 max-h-48">
+                              <img src={selectedGen.upscaledImageUrl || selectedGen.resultImageUrl} alt="" className="w-full h-auto object-contain max-h-48" />
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <DialogClose asChild>
+                              <Button variant="outline" size="sm">취소</Button>
+                            </DialogClose>
+                            <DialogClose asChild>
+                              <Button size="sm" className="gap-1.5" onClick={handleCreateVideo} disabled={createVideoMutation.isPending}>
+                                {createVideoMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Video className="h-3.5 w-3.5" />}
+                                영상 생성 시작
+                              </Button>
+                            </DialogClose>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+
                       <a href={selectedGen.upscaledImageUrl || selectedGen.resultImageUrl} target="_blank" rel="noopener noreferrer">
                         <Button variant="outline" size="sm" className="gap-1.5"><Download className="h-3.5 w-3.5" />다운로드</Button>
                       </a>
@@ -351,15 +494,13 @@ export default function ProjectWorkspace() {
                       className="w-full h-auto max-h-[600px] object-contain"
                     />
                   </div>
-                  {/* 메타 정보 */}
-                  <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground flex-wrap">
                     {selectedGen.generationTimeMs && <span>생성시간: {(selectedGen.generationTimeMs / 1000).toFixed(1)}초</span>}
                     {selectedGen.merchandiseFormat && <Badge variant="secondary" className="text-xs">{selectedGen.merchandiseFormat}</Badge>}
                     {selectedGen.faceConsistencyScore && <span>얼굴 일관성: {selectedGen.faceConsistencyScore}%</span>}
                     {selectedGen.upscaledImageUrl && <Badge variant="outline" className="text-xs text-green-400 border-green-500/30">4K 업스케일</Badge>}
                   </div>
-                  {/* Review Actions */}
-                  <div className="flex items-center gap-2 mt-4">
+                  <div className="flex items-center gap-2 mt-4 flex-wrap">
                     <Button size="sm" className="gap-1.5 bg-green-600 hover:bg-green-700"
                       onClick={() => updateStatus.mutate({ id: selectedGen.id, status: "approved", stage: "review" })}>
                       <Check className="h-3.5 w-3.5" />승인
@@ -372,6 +513,47 @@ export default function ProjectWorkspace() {
                       onClick={() => { setPromptText(selectedGen.promptText); toast.info("프롬프트를 재사용합니다."); }}>
                       <RotateCcw className="h-3.5 w-3.5" />프롬프트 재사용
                     </Button>
+                    <Button size="sm" variant="outline" className="gap-1.5 text-destructive hover:text-destructive"
+                      onClick={() => { if (confirm("이 이미지를 삭제하시겠습니까?")) deleteGenMutation.mutate({ id: selectedGen.id }); }}>
+                      <Trash2 className="h-3.5 w-3.5" />삭제
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Videos Section */}
+            {videos && videos.length > 0 && (
+              <Card className="bg-card border-border">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-foreground text-base flex items-center gap-2">
+                    <Video className="h-4 w-4 text-primary" />
+                    영상 ({videos.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {videos.map((video: any) => (
+                      <div key={video.id} className="rounded-lg border border-border p-3 bg-secondary/30">
+                        <div className="flex items-center justify-between mb-2">
+                          <Badge variant={video.status === "completed" ? "default" : video.status === "processing" ? "secondary" : "destructive"} className="text-xs">
+                            {video.status === "completed" ? "완료" : video.status === "processing" ? "변환중..." : "실패"}
+                          </Badge>
+                          {video.status === "processing" && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+                        </div>
+                        {video.videoUrl ? (
+                          <a href={video.videoUrl} target="_blank" rel="noopener noreferrer">
+                            <Button variant="outline" size="sm" className="w-full gap-1.5">
+                              <Download className="h-3.5 w-3.5" />영상 다운로드
+                            </Button>
+                          </a>
+                        ) : video.status === "failed" ? (
+                          <p className="text-xs text-destructive">변환에 실패했습니다.</p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">변환 중입니다...</p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
@@ -403,7 +585,10 @@ export default function ProjectWorkspace() {
                             {gen.status === "generating" ? (
                               <Loader2 className="h-6 w-6 animate-spin text-primary" />
                             ) : gen.status === "failed" ? (
-                              <X className="h-6 w-6 text-destructive" />
+                              <div className="text-center p-2">
+                                <X className="h-6 w-6 text-destructive mx-auto" />
+                                <p className="text-[10px] text-destructive mt-1 line-clamp-2">{gen.reviewNotes || "실패"}</p>
+                              </div>
                             ) : (
                               <ImageIcon className="h-6 w-6 text-muted-foreground" />
                             )}
@@ -412,7 +597,7 @@ export default function ProjectWorkspace() {
                         <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-2 py-1">
                           <div className="flex items-center justify-between">
                             <Badge variant="outline" className="text-[10px] h-5">
-                              {gen.stage === "upscaled" ? "4K" : gen.status === "approved" ? "승인" : gen.status === "completed" ? "완료" : gen.status}
+                              {gen.stage === "upscaled" ? "4K" : gen.status === "approved" ? "승인" : gen.status === "completed" ? "완료" : gen.status === "failed" ? "실패" : gen.status}
                             </Badge>
                             {gen.upscaledImageUrl && <ArrowUpCircle className="h-3 w-3 text-green-400" />}
                           </div>
@@ -424,7 +609,7 @@ export default function ProjectWorkspace() {
                   <div className="flex flex-col items-center justify-center py-12">
                     <Wand2 className="h-10 w-10 text-muted-foreground/50 mb-3" />
                     <p className="text-muted-foreground text-sm">아직 생성된 이미지가 없습니다</p>
-                    <p className="text-muted-foreground/70 text-xs mt-1">프롬프트를 입력하고 이미지를 생성해보세요</p>
+                    <p className="text-muted-foreground/70 text-xs mt-1">프롬프트를 입력하거나 참조 이미지를 넣고 생성해보세요</p>
                   </div>
                 )}
               </CardContent>

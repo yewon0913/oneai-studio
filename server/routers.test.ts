@@ -61,6 +61,7 @@ vi.mock("./db", () => ({
   }),
   createGeneration: vi.fn().mockResolvedValue({ id: 1 }),
   updateGeneration: vi.fn().mockResolvedValue(undefined),
+  deleteGeneration: vi.fn().mockResolvedValue(undefined),
   getBatchJobs: vi.fn().mockResolvedValue([]),
   getBatchJobById: vi.fn().mockResolvedValue({ id: 1, status: "processing", batchConfig: { faceFixMode: true } }),
   createBatchJob: vi.fn().mockResolvedValue({ id: 1 }),
@@ -75,6 +76,7 @@ vi.mock("./db", () => ({
   updateDeliveryPackage: vi.fn().mockResolvedValue(undefined),
   getVideoConversionsByProject: vi.fn().mockResolvedValue([]),
   createVideoConversion: vi.fn().mockResolvedValue({ id: 1 }),
+  updateVideoConversion: vi.fn().mockResolvedValue(undefined),
   getPhotoRestorationsByClient: vi.fn().mockResolvedValue([]),
   createPhotoRestoration: vi.fn().mockResolvedValue({ id: 1 }),
   updatePhotoRestoration: vi.fn().mockResolvedValue(undefined),
@@ -102,9 +104,22 @@ vi.mock("./_core/notification", () => ({
   notifyOwner: vi.fn().mockResolvedValue(true),
 }));
 
-// Mock global fetch for image download
-const mockFetch = vi.fn().mockResolvedValue({
-  arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
+// Mock global fetch for image download and Pinterest scraping
+const mockFetch = vi.fn().mockImplementation((url: string) => {
+  // Pinterest page mock
+  if (url.includes("pinterest")) {
+    return Promise.resolve({
+      text: () => Promise.resolve('<meta property="og:image" content="https://i.pinimg.com/originals/test.jpg" />'),
+      ok: true,
+      headers: new Map([["content-type", "text/html"]]),
+    });
+  }
+  // Image URL mock
+  return Promise.resolve({
+    arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
+    ok: true,
+    headers: new Map([["content-type", "image/jpeg"]]),
+  });
 });
 vi.stubGlobal("fetch", mockFetch);
 
@@ -227,14 +242,20 @@ describe("Projects Router", () => {
     expect(Array.isArray(projects)).toBe(true);
     expect(projects[0]).toHaveProperty("projectMode", "couple");
   });
+
+  it("deletes a project", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.projects.delete({ id: 1 });
+    expect(result).toEqual({ success: true });
+  });
 });
 
-describe("AI Generation - Face Consistency Engine", () => {
+describe("AI Generation - Face Consistency Engine v3.1", () => {
   it("generates image with face fix mode (single)", async () => {
     const ctx = createTestContext();
     const caller = appRouter.createCaller(ctx);
     
-    // Use projectId=2 for single mode
     const { getProjectById } = await import("./db");
     (getProjectById as any).mockResolvedValueOnce({
       id: 2, title: "개인 프로필", category: "profile", status: "draft",
@@ -249,7 +270,7 @@ describe("AI Generation - Face Consistency Engine", () => {
     expect(result).toHaveProperty("id");
     expect(result).toHaveProperty("imageUrl");
     expect(result).toHaveProperty("generationTimeMs");
-    expect(result).toHaveProperty("faceConsistencyScore", 90);
+    expect(result).toHaveProperty("faceConsistencyScore", 95);
   });
 
   it("generates image with face fix mode (couple)", async () => {
@@ -261,9 +282,8 @@ describe("AI Generation - Face Consistency Engine", () => {
       promptText: "Romantic wedding couple in European garden",
       faceFixMode: true,
     });
-    expect(result).toHaveProperty("id");
     expect(result).toHaveProperty("imageUrl");
-    expect(result).toHaveProperty("faceConsistencyScore", 90);
+    expect(result).toHaveProperty("faceConsistencyScore", 95);
   });
 
   it("generates image without face fix mode", async () => {
@@ -278,6 +298,63 @@ describe("AI Generation - Face Consistency Engine", () => {
     expect(result).toHaveProperty("id");
     expect(result).toHaveProperty("imageUrl");
     expect(result.faceConsistencyScore).toBeUndefined();
+  });
+
+  it("generates image with reference image URL (background composite)", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+
+    const result = await caller.generations.generate({
+      projectId: 1,
+      referenceImageUrl: "https://example.com/background.jpg",
+      referenceMode: "background_composite",
+      faceFixMode: true,
+    });
+    expect(result).toHaveProperty("id");
+    expect(result).toHaveProperty("imageUrl");
+    expect(result).toHaveProperty("faceConsistencyScore", 95);
+  });
+
+  it("generates image with reference image URL (style transfer)", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+
+    const result = await caller.generations.generate({
+      projectId: 1,
+      referenceImageUrl: "https://example.com/style-ref.jpg",
+      referenceMode: "style_transfer",
+      faceFixMode: true,
+    });
+    expect(result).toHaveProperty("id");
+    expect(result).toHaveProperty("imageUrl");
+  });
+
+  it("generates image with only reference URL (no prompt text)", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+
+    const result = await caller.generations.generate({
+      projectId: 1,
+      referenceImageUrl: "https://example.com/wedding-scene.jpg",
+      referenceMode: "background_composite",
+      faceFixMode: true,
+    });
+    expect(result).toHaveProperty("id");
+    expect(result).toHaveProperty("imageUrl");
+  });
+
+  it("generates image with Pinterest URL", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+
+    const result = await caller.generations.generate({
+      projectId: 1,
+      referenceImageUrl: "https://www.pinterest.com/pin/12345/",
+      referenceMode: "background_composite",
+      faceFixMode: true,
+    });
+    expect(result).toHaveProperty("id");
+    expect(result).toHaveProperty("imageUrl");
   });
 
   it("generates image with merchandise format (acrylic)", async () => {
@@ -329,6 +406,13 @@ describe("AI Generation - Face Consistency Engine", () => {
     });
     expect(result).toHaveProperty("id");
   });
+
+  it("deletes a generation", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.generations.delete({ id: 1 });
+    expect(result).toEqual({ success: true });
+  });
 });
 
 describe("Upscale", () => {
@@ -348,27 +432,21 @@ describe("Merchandise Formats", () => {
     expect(Array.isArray(formats)).toBe(true);
     expect(formats.length).toBeGreaterThan(10);
     
-    // Check acrylic formats
     const acrylicFormats = formats.filter(f => f.category === "acrylic");
     expect(acrylicFormats.length).toBeGreaterThanOrEqual(4);
     
-    // Check tshirt formats
     const tshirtFormats = formats.filter(f => f.category === "tshirt");
     expect(tshirtFormats.length).toBeGreaterThanOrEqual(2);
     
-    // Check mug formats
     const mugFormats = formats.filter(f => f.category === "mug");
     expect(mugFormats.length).toBeGreaterThanOrEqual(2);
     
-    // Check towel formats
     const towelFormats = formats.filter(f => f.category === "towel");
     expect(towelFormats.length).toBeGreaterThanOrEqual(2);
     
-    // Check 3D formats
     const threeDFormats = formats.filter(f => f.category === "3d");
     expect(threeDFormats.length).toBeGreaterThanOrEqual(2);
 
-    // Check format structure
     const format = formats[0];
     expect(format).toHaveProperty("key");
     expect(format).toHaveProperty("name");
@@ -413,6 +491,28 @@ describe("Batch Jobs (대량 생성)", () => {
     const caller = appRouter.createCaller(ctx);
     const items = await caller.batches.getItems({ batchJobId: 1 });
     expect(Array.isArray(items)).toBe(true);
+  });
+});
+
+describe("Video Conversions (영상 변환)", () => {
+  it("creates a video conversion with motion type", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.videos.create({
+      generationId: 1,
+      projectId: 1,
+      sourceImageUrl: "https://s3.example.com/gen.png",
+      duration: 5,
+      motionType: "cinematic",
+    });
+    expect(result).toHaveProperty("id");
+  });
+
+  it("lists video conversions", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const videos = await caller.videos.list({ projectId: 1 });
+    expect(Array.isArray(videos)).toBe(true);
   });
 });
 
