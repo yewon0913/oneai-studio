@@ -28,6 +28,8 @@ export const clients = mysqlTable("clients", {
   preferredConcept: varchar("preferredConcept", { length: 100 }),
   status: mysqlEnum("status", ["consulting", "in_progress", "completed", "delivered"]).default("consulting").notNull(),
   tags: json("tags").$type<string[]>(),
+  // 고객 나이
+  age: int("age"),
   // 커플 연결 - 파트너 고객 ID
   partnerId: int("partnerId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

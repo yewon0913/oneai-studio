@@ -227,6 +227,7 @@ export const appRouter = router({
       .input(z.object({
         name: z.string().min(1),
         gender: z.enum(["female", "male"]).optional(),
+        age: z.number().min(1).max(120).optional(),
         phone: z.string().optional(),
         email: z.string().optional(),
         consultationNotes: z.string().optional(),
@@ -251,6 +252,7 @@ export const appRouter = router({
         id: z.number(),
         name: z.string().optional(),
         gender: z.enum(["female", "male"]).optional(),
+        age: z.number().min(1).max(120).optional().nullable(),
         phone: z.string().optional(),
         email: z.string().optional(),
         consultationNotes: z.string().optional(),
@@ -784,6 +786,85 @@ IMPORTANT RULES:
           };
         } catch (error: any) {
           throw new Error(`이미지 분석 실패: ${error.message}`);
+        }
+      }),
+    generateCharacterSheet: protectedProcedure
+      .input(z.object({
+        clientId: z.number(),
+        age: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        // 1. 고객 사진 가져오기
+        const photos = await db.getClientPhotos(input.clientId);
+        const client = await db.getClientById(input.clientId);
+        if (!client) throw new Error("고객을 찾을 수 없습니다.");
+
+        const frontPhotos = photos.filter(p => p.photoType === "front");
+        const sidePhotos = photos.filter(p => p.photoType === "side");
+        if (frontPhotos.length === 0) throw new Error("정면 사진이 필요합니다.");
+
+        // 2. 나이 결정 (입력값 > 고객 DB > 기본값)
+        const age = input.age ?? client.age ?? 30;
+        const genderKo = client.gender === "male" ? "한국 남성" : "한국 여성";
+        const hairDesc = client.gender === "male" 
+          ? "깔끔하게 스타일링 된 어두운색 머리" 
+          : "깔끔하게 스타일링 된 머리";
+
+        // 3. 최적화된 캐릭터 시트 프롬프트 생성
+        const characterSheetPrompt = `(Reference photo of the uploaded person) (Unprocessed original photo, hyperrealism).
+A collection of upper body photos of a 'real' ${genderKo} in their [${age}s] (character sheet).
+[Three angles: front view, side view, rear view].
+Split screen, neatly styled ${hairDesc}, calm and confident expression, staring straight ahead at the camera lens.
+Wearing a simple dark charcoal round-neck t-shirt without any decorations.
+Soft diffused studio lighting from the front. White background.
+85mm portrait lens, f/2.8, razor-sharp focus on the eyes, extremely realistic skin pores and hair texture,
+Real skin texture not 3D render not illustration, DSLR photography.
+4K resolution. 16:9 aspect ratio.
+
+[FACE IDENTITY PRESERVATION - CRITICAL]:
+- Flux LoRA facial identity lock: maintain exact same face across all three angles
+- IP-Adapter face embedding: use uploaded reference photos as direct face source
+- Preserve exact facial bone structure, eye shape, nose bridge, jawline, lip shape
+- Maintain consistent skin tone, facial hair, moles, and unique features across all views
+- The person in all three views must be IDENTICAL - same person, different angles only`;
+
+        // 4. 참조 이미지 준비 (originalImages로 직접 전달)
+        const originalImages: Array<{ url: string; mimeType: string }> = [];
+        
+        for (const photo of [...frontPhotos, ...sidePhotos]) {
+          try {
+            const resolved = await imageUrlToBase64(photo.originalUrl);
+            if (resolved) {
+              originalImages.push({
+                url: `data:${resolved.mimeType};base64,${resolved.b64Json}`,
+                mimeType: resolved.mimeType,
+              });
+            } else {
+              originalImages.push({ url: photo.originalUrl, mimeType: photo.mimeType || "image/jpeg" });
+            }
+          } catch {
+            originalImages.push({ url: photo.originalUrl, mimeType: photo.mimeType || "image/jpeg" });
+          }
+        }
+
+        // 5. AI 이미지 생성 (originalImages로 얼굴 직접 전달)
+        try {
+          const result = await generateImage({
+            prompt: characterSheetPrompt.slice(0, 3500),
+            originalImages: originalImages.length > 0 ? originalImages : undefined,
+          });
+
+          if (!result?.url) throw new Error("이미지 생성 결과가 없습니다.");
+
+          return {
+            resultImageUrl: result.url,
+            prompt: characterSheetPrompt,
+            age,
+            gender: client.gender,
+          };
+        } catch (error: any) {
+          console.error("[CharacterSheet] Generation failed:", error);
+          throw new Error(`캐릭터 시트 생성 실패: ${error.message?.slice(0, 200)}`);
         }
       }),
   }),

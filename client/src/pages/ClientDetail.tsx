@@ -12,11 +12,12 @@ import { useParams, useLocation } from "wouter";
 import { useState, useRef } from "react";
 import {
   ArrowLeft, Upload, Camera, Image as ImageIcon,
-  FolderPlus, Trash2, Phone, Mail, FileText, Heart, HeartOff, UserCircle, Users
+  FolderPlus, Trash2, Phone, Mail, FileText, Heart, HeartOff, UserCircle, Users,
+  Sparkles, Loader2, Download, RotateCcw
 } from "lucide-react";
 import { toast } from "sonner";
 
-const photoTypeLabels: Record<string, string> = { front: "정면", side: "측면", additional: "추가" };
+const photoTypeLabels: Record<string, string> = { front: "정면", side: "측면" };
 const genderLabels: Record<string, string> = { female: "여성 (신부)", male: "남성 (신랑)" };
 
 export default function ClientDetailPage() {
@@ -25,7 +26,9 @@ export default function ClientDetailPage() {
   const [, setLocation] = useLocation();
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
   const [isPartnerDialogOpen, setIsPartnerDialogOpen] = useState(false);
-  const [uploadType, setUploadType] = useState<"front" | "side" | "additional">("front");
+  const [uploadType, setUploadType] = useState<"front" | "side">("front");
+  const [characterSheetUrl, setCharacterSheetUrl] = useState<string | null>(null);
+  const [isGeneratingSheet, setIsGeneratingSheet] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [projectForm, setProjectForm] = useState({
     title: "", category: "wedding" as const, concept: "", notes: "", priority: "normal" as const,
@@ -123,7 +126,31 @@ export default function ClientDetailPage() {
 
   const frontPhotos = photos?.filter(p => p.photoType === "front") || [];
   const sidePhotos = photos?.filter(p => p.photoType === "side") || [];
-  const additionalPhotos = photos?.filter(p => p.photoType === "additional") || [];
+
+  const generateCharacterSheet = trpc.generations.generateCharacterSheet.useMutation({
+    onSuccess: (data) => {
+      setCharacterSheetUrl(data.resultImageUrl);
+      setIsGeneratingSheet(false);
+      toast.success("캐릭터 시트가 생성되었습니다!");
+    },
+    onError: (err) => {
+      setIsGeneratingSheet(false);
+      toast.error(err.message || "캐릭터 시트 생성 실패");
+    },
+  });
+
+  const handleGenerateCharacterSheet = () => {
+    if (frontPhotos.length === 0) {
+      toast.error("정면 사진을 먼저 업로드해주세요.");
+      return;
+    }
+    setIsGeneratingSheet(true);
+    setCharacterSheetUrl(null);
+    generateCharacterSheet.mutate({
+      clientId,
+      age: client.age ?? undefined,
+    });
+  };
 
   return (
     <DashboardLayout>
@@ -142,6 +169,11 @@ export default function ClientDetailPage() {
               <Badge variant="outline" className={`text-xs ${client.gender === "male" ? "bg-blue-500/20 text-blue-400 border-blue-500/30" : "bg-pink-500/20 text-pink-400 border-pink-500/30"}`}>
                 {genderLabels[client.gender] || client.gender}
               </Badge>
+              {client.age && (
+                <Badge variant="outline" className="text-xs bg-amber-500/20 text-amber-400 border-amber-500/30">
+                  {client.age}세
+                </Badge>
+              )}
             </div>
             <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
               {client.phone && <span className="flex items-center gap-1"><Phone className="h-3.5 w-3.5" />{client.phone}</span>}
@@ -310,8 +342,9 @@ export default function ClientDetailPage() {
               </p>
             </div>
 
-            {(["front", "side", "additional"] as const).map((type) => {
-              const typePhotos = type === "front" ? frontPhotos : type === "side" ? sidePhotos : additionalPhotos;
+            {/* 정면 사진 */}
+            {(["front", "side"] as const).map((type) => {
+              const typePhotos = type === "front" ? frontPhotos : sidePhotos;
               return (
                 <div key={type}>
                   <div className="flex items-center justify-between mb-3">
@@ -352,6 +385,73 @@ export default function ClientDetailPage() {
                 </div>
               );
             })}
+
+            {/* 캐릭터 시트 생성 영역 */}
+            <div className="mt-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-purple-400" />
+                  AI 캐릭터 시트
+                </h3>
+                <Button
+                  variant="outline" size="sm" className="gap-1.5 border-purple-500/30 text-purple-400 hover:bg-purple-500/10"
+                  onClick={handleGenerateCharacterSheet}
+                  disabled={isGeneratingSheet || frontPhotos.length === 0}
+                >
+                  {isGeneratingSheet ? (
+                    <><Loader2 className="h-3.5 w-3.5 animate-spin" />생성 중...</>
+                  ) : characterSheetUrl ? (
+                    <><RotateCcw className="h-3.5 w-3.5" />재생성</>
+                  ) : (
+                    <><Sparkles className="h-3.5 w-3.5" />캐릭터 시트 생성</>
+                  )}
+                </Button>
+              </div>
+
+              <div className="p-3 rounded-lg bg-purple-500/5 border border-purple-500/20 mb-3">
+                <p className="text-xs text-purple-300">
+                  정면/측면 사진을 기반으로 <strong>정면, 측면, 후면</strong> 3가지 각도의 초사실주의 캐릭터 시트를 생성합니다.
+                  {client.age ? ` (고객 나이: ${client.age}세)` : " (나이 미설정 - 고객 정보에서 나이를 입력하면 더 정확한 시트가 생성됩니다)"}
+                </p>
+                <p className="text-xs text-purple-300/70 mt-1">
+                  Flux LoRA + IP-Adapter 일관성 엔진 · 85mm 인물용 렌즈 · 4K 해상도 · DSLR 품질
+                </p>
+              </div>
+
+              {isGeneratingSheet ? (
+                <div className="border border-dashed border-purple-500/30 rounded-lg p-12 flex flex-col items-center justify-center bg-purple-500/5">
+                  <div className="relative">
+                    <div className="w-16 h-16 border-3 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
+                    <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-6 w-6 text-purple-400" />
+                  </div>
+                  <p className="text-sm text-purple-300 mt-4 font-medium">캐릭터 시트 생성 중...</p>
+                  <p className="text-xs text-muted-foreground mt-1">원본 사진을 기반으로 다각도 캐릭터를 생성하고 있습니다 (15~30초)</p>
+                </div>
+              ) : characterSheetUrl ? (
+                <div className="space-y-3">
+                  <div className="relative rounded-lg overflow-hidden border border-purple-500/30 bg-secondary">
+                    <img src={characterSheetUrl} alt="캐릭터 시트" className="w-full h-auto" />
+                    <div className="absolute top-2 right-2 flex gap-1.5">
+                      <a href={characterSheetUrl} target="_blank" rel="noopener noreferrer"
+                        className="w-8 h-8 rounded-full bg-black/70 hover:bg-black/90 flex items-center justify-center transition-colors">
+                        <Download className="h-4 w-4 text-white" />
+                      </a>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    이 캐릭터 시트는 프로젝트 생성 시 얼굴 일관성 참조로 자동 사용됩니다.
+                  </p>
+                </div>
+              ) : (
+                <div className="border border-dashed border-purple-500/20 rounded-lg p-8 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500/40 transition-colors"
+                  onClick={frontPhotos.length > 0 ? handleGenerateCharacterSheet : undefined}>
+                  <Sparkles className="h-10 w-10 text-purple-400/30 mb-3" />
+                  <p className="text-sm text-muted-foreground">
+                    {frontPhotos.length > 0 ? "클릭하여 캐릭터 시트를 생성하세요" : "정면 사진을 먼저 업로드해주세요"}
+                  </p>
+                </div>
+              )}
+            </div>
           </TabsContent>
 
           {/* Projects Tab */}
