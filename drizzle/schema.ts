@@ -21,12 +21,15 @@ export const clients = mysqlTable("clients", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(), // owner (admin)
   name: varchar("name", { length: 100 }).notNull(),
+  gender: mysqlEnum("gender", ["female", "male"]).default("female").notNull(),
   phone: varchar("phone", { length: 30 }),
   email: varchar("email", { length: 320 }),
   consultationNotes: text("consultationNotes"),
   preferredConcept: varchar("preferredConcept", { length: 100 }),
   status: mysqlEnum("status", ["consulting", "in_progress", "completed", "delivered"]).default("consulting").notNull(),
   tags: json("tags").$type<string[]>(),
+  // 커플 연결 - 파트너 고객 ID
+  partnerId: int("partnerId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -64,6 +67,10 @@ export const projects = mysqlTable("projects", {
   pinterestUrl: text("pinterestUrl"),
   notes: text("notes"),
   priority: mysqlEnum("priority", ["low", "normal", "high", "urgent"]).default("normal").notNull(),
+  // 커플 프로젝트 - 파트너 고객 ID
+  partnerClientId: int("partnerClientId"),
+  // 프로젝트 모드
+  projectMode: mysqlEnum("projectMode", ["single", "couple"]).default("single").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -110,6 +117,10 @@ export const generations = mysqlTable("generations", {
   upscaledImageUrl: text("upscaledImageUrl"),
   upscaledImageKey: varchar("upscaledImageKey", { length: 512 }),
   generationTimeMs: int("generationTimeMs"),
+  // 상품 포맷 정보
+  merchandiseFormat: varchar("merchandiseFormat", { length: 100 }),
+  outputWidth: int("outputWidth"),
+  outputHeight: int("outputHeight"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -121,11 +132,18 @@ export type InsertGeneration = typeof generations.$inferInsert;
 export const batchJobs = mysqlTable("batch_jobs", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
+  projectId: int("projectId"),
   title: varchar("title", { length: 255 }).notNull(),
   status: mysqlEnum("status", ["queued", "processing", "completed", "failed", "cancelled"]).default("queued").notNull(),
   totalItems: int("totalItems").default(0).notNull(),
   completedItems: int("completedItems").default(0).notNull(),
   failedItems: int("failedItems").default(0).notNull(),
+  // 배치 설정
+  batchConfig: json("batchConfig").$type<{
+    faceFixMode?: boolean;
+    merchandiseFormat?: string;
+    concepts?: string[];
+  }>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -139,6 +157,7 @@ export const batchJobItems = mysqlTable("batch_job_items", {
   batchJobId: int("batchJobId").notNull(),
   projectId: int("projectId"),
   generationId: int("generationId"),
+  promptText: text("promptText"),
   status: mysqlEnum("status", ["queued", "processing", "completed", "failed"]).default("queued").notNull(),
   errorMessage: text("errorMessage"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -219,3 +238,36 @@ export const notifications = mysqlTable("notifications", {
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;
+
+// ─── 상품 포맷 프리셋 (상수) ───
+export const MERCHANDISE_FORMATS = {
+  // 아크릴 액자
+  acrylic_5x7: { name: "아크릴 액자 5x7", width: 1500, height: 2100, aspectRatio: "5:7", dpi: 300, category: "acrylic" },
+  acrylic_8x10: { name: "아크릴 액자 8x10", width: 2400, height: 3000, aspectRatio: "4:5", dpi: 300, category: "acrylic" },
+  acrylic_11x14: { name: "아크릴 액자 11x14", width: 3300, height: 4200, aspectRatio: "11:14", dpi: 300, category: "acrylic" },
+  acrylic_16x20: { name: "아크릴 액자 16x20", width: 4800, height: 6000, aspectRatio: "4:5", dpi: 300, category: "acrylic" },
+  // 티셔츠
+  tshirt_front: { name: "티셔츠 전면", width: 4500, height: 5400, aspectRatio: "5:6", dpi: 300, category: "tshirt" },
+  tshirt_back: { name: "티셔츠 후면", width: 4500, height: 5400, aspectRatio: "5:6", dpi: 300, category: "tshirt" },
+  // 머그컵
+  mug_standard: { name: "머그컵 표준", width: 4200, height: 1800, aspectRatio: "7:3", dpi: 300, category: "mug" },
+  mug_wrap: { name: "머그컵 풀랩", width: 5400, height: 2100, aspectRatio: "18:7", dpi: 300, category: "mug" },
+  // 수건
+  towel_face: { name: "페이스 타올", width: 3000, height: 4500, aspectRatio: "2:3", dpi: 200, category: "towel" },
+  towel_bath: { name: "배스 타올", width: 4200, height: 8400, aspectRatio: "1:2", dpi: 200, category: "towel" },
+  // 3D 프린팅
+  print_3d_figurine: { name: "3D 피규어 텍스처", width: 4096, height: 4096, aspectRatio: "1:1", dpi: 300, category: "3d" },
+  print_3d_lithophane: { name: "3D 리소페인", width: 3000, height: 4000, aspectRatio: "3:4", dpi: 300, category: "3d" },
+  // 캔버스
+  canvas_square: { name: "캔버스 정사각", width: 4000, height: 4000, aspectRatio: "1:1", dpi: 300, category: "canvas" },
+  canvas_landscape: { name: "캔버스 가로", width: 6000, height: 4000, aspectRatio: "3:2", dpi: 300, category: "canvas" },
+  canvas_portrait: { name: "캔버스 세로", width: 4000, height: 6000, aspectRatio: "2:3", dpi: 300, category: "canvas" },
+  // 모바일 청첩장
+  mobile_invitation: { name: "모바일 청첩장", width: 1080, height: 1920, aspectRatio: "9:16", dpi: 72, category: "digital" },
+  // SNS 공유용
+  sns_instagram: { name: "인스타그램", width: 1080, height: 1080, aspectRatio: "1:1", dpi: 72, category: "digital" },
+  sns_story: { name: "인스타 스토리", width: 1080, height: 1920, aspectRatio: "9:16", dpi: 72, category: "digital" },
+} as const;
+
+export type MerchandiseFormatKey = keyof typeof MERCHANDISE_FORMATS;
+export type MerchandiseFormat = typeof MERCHANDISE_FORMATS[MerchandiseFormatKey];

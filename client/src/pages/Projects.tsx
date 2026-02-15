@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
-import { FolderOpen, ChevronRight, Clock } from "lucide-react";
+import { FolderOpen, ChevronRight, Clock, Users } from "lucide-react";
 
 const statusLabels: Record<string, string> = {
   draft: "초안", generating: "생성중", review: "검수중", revision: "수정중",
@@ -65,6 +65,11 @@ export default function ProjectsPage() {
                           <Badge variant="outline" className={`text-xs ${statusColors[project.status] || ""}`}>
                             {statusLabels[project.status] || project.status}
                           </Badge>
+                          {project.projectMode === "couple" && (
+                            <Badge variant="outline" className="text-xs bg-pink-500/20 text-pink-400 border-pink-500/30 gap-0.5">
+                              <Users className="h-2.5 w-2.5" />커플
+                            </Badge>
+                          )}
                         </div>
                       </div>
                     </div>

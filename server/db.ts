@@ -1,4 +1,4 @@
-import { eq, desc, and, like, sql } from "drizzle-orm";
+import { eq, desc, and, like, sql, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -235,6 +235,13 @@ export async function getBatchJobs(userId: number) {
   return db.select().from(batchJobs).where(eq(batchJobs.userId, userId)).orderBy(desc(batchJobs.createdAt));
 }
 
+export async function getBatchJobById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(batchJobs).where(eq(batchJobs.id, id)).limit(1);
+  return result[0];
+}
+
 export async function updateBatchJob(id: number, data: Partial<InsertBatchJob>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -252,6 +259,12 @@ export async function getBatchJobItems(batchJobId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(batchJobItems).where(eq(batchJobItems.batchJobId, batchJobId));
+}
+
+export async function updateBatchJobItem(id: number, data: Partial<InsertBatchJobItem>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(batchJobItems).set(data).where(eq(batchJobItems.id, id));
 }
 
 // ─── Delivery Packages ───
@@ -350,12 +363,13 @@ export async function getDashboardStats(userId: number) {
   const [clientCount] = await db.select({ count: sql<number>`count(*)` }).from(clients).where(eq(clients.userId, userId));
   const [activeProjectCount] = await db.select({ count: sql<number>`count(*)` }).from(projects).where(and(eq(projects.userId, userId), sql`${projects.status} NOT IN ('completed', 'delivered')`));
   const [completedProjectCount] = await db.select({ count: sql<number>`count(*)` }).from(projects).where(and(eq(projects.userId, userId), sql`${projects.status} IN ('completed', 'delivered')`));
+  const [pendingBatchCount] = await db.select({ count: sql<number>`count(*)` }).from(batchJobs).where(and(eq(batchJobs.userId, userId), sql`${batchJobs.status} IN ('queued', 'processing')`));
 
   return {
     totalClients: clientCount?.count ?? 0,
     activeProjects: activeProjectCount?.count ?? 0,
     completedProjects: completedProjectCount?.count ?? 0,
     totalGenerations: 0,
-    pendingBatches: 0,
+    pendingBatches: pendingBatchCount?.count ?? 0,
   };
 }

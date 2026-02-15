@@ -32,7 +32,7 @@ const menuItems = [
   { icon: Users, label: "고객 관리", path: "/clients" },
   { icon: FolderOpen, label: "프로젝트", path: "/projects" },
   { icon: Sparkles, label: "프롬프트 라이브러리", path: "/prompts" },
-  { icon: Layers, label: "배치 처리", path: "/batches" },
+  { icon: Layers, label: "배치 생성", path: "/batches" },
   { icon: Bell, label: "알림", path: "/notifications" },
 ];
 

@@ -15,6 +15,13 @@
       "when": 1771146477660,
       "tag": "0001_serious_moon_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1771150058091,
+      "tag": "0002_magenta_slipstream",
+      "breakpoints": true
     }
   ]
 }

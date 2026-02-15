@@ -66,14 +66,14 @@ export default function Home() {
   const quickActions = [
     {
       title: "새 고객 등록",
-      description: "고객 정보와 사진을 등록합니다",
+      description: "고객 정보와 사진을 등록합니다 (성별 구분)",
       icon: Users,
       href: "/clients",
       color: "from-blue-600/20 to-blue-800/20",
     },
     {
       title: "새 프로젝트 생성",
-      description: "AI 이미지 생성 프로젝트를 시작합니다",
+      description: "개인/커플 AI 이미지 프로젝트를 시작합니다",
       icon: FolderOpen,
       href: "/projects",
       color: "from-purple-600/20 to-purple-800/20",
@@ -86,8 +86,8 @@ export default function Home() {
       color: "from-amber-600/20 to-amber-800/20",
     },
     {
-      title: "배치 처리",
-      description: "여러 작업을 한번에 처리합니다",
+      title: "배치 생성 (최대 100장)",
+      description: "대량 이미지를 한번에 생성합니다",
       icon: Image,
       href: "/batches",
       color: "from-green-600/20 to-green-800/20",
@@ -180,21 +180,21 @@ export default function Home() {
                 <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary font-bold text-sm shrink-0">1</div>
                 <div>
                   <h4 className="font-medium text-card-foreground">고객 등록 & 사진 업로드</h4>
-                  <p className="text-sm text-muted-foreground mt-0.5">고객의 정면/측면 사진을 업로드하고 선호 컨셉을 기록합니다.</p>
+                  <p className="text-sm text-muted-foreground mt-0.5">성별을 구분하여 고객을 등록하고, 정면/측면 사진을 업로드합니다. 커플은 파트너를 연결합니다.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary font-bold text-sm shrink-0">2</div>
                 <div>
                   <h4 className="font-medium text-card-foreground">AI 이미지 생성 & 튜닝</h4>
-                  <p className="text-sm text-muted-foreground mt-0.5">프롬프트를 선택하고 얼굴 일관성을 유지하며 이미지를 생성합니다.</p>
+                  <p className="text-sm text-muted-foreground mt-0.5">얼굴 고정 모드로 고객 얼굴을 유지하며, 상품 포맷(액자/티셔츠/컵/수건/3D)에 맞게 생성합니다.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary font-bold text-sm shrink-0">3</div>
                 <div>
                   <h4 className="font-medium text-card-foreground">검수 & 고객 전달</h4>
-                  <p className="text-sm text-muted-foreground mt-0.5">업스케일링 후 최종 검수를 거쳐 고객에게 전달합니다.</p>
+                  <p className="text-sm text-muted-foreground mt-0.5">초고화질 업스케일링 후 최종 검수를 거쳐 고객에게 전달합니다. 배치로 최대 100장 일괄 생성 가능.</p>
                 </div>
               </div>
             </div>
