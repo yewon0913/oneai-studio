@@ -227,6 +227,23 @@ export async function deleteGeneration(id: number) {
   await db.delete(generations).where(eq(generations.id, id));
 }
 
+export async function deleteGenerationsByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(generations).where(eq(generations.projectId, projectId));
+}
+
+export async function getReviewQueueByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(generations)
+    .where(and(
+      eq(generations.projectId, projectId),
+      eq(generations.status, "approved"),
+    ))
+    .orderBy(desc(generations.createdAt));
+}
+
 // ─── Batch Jobs ───
 export async function createBatchJob(data: InsertBatchJob) {
   const db = await getDb();

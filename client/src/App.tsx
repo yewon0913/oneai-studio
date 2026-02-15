@@ -14,6 +14,7 @@ const ProjectWorkspace = lazy(() => import("./pages/ProjectWorkspace"));
 const PromptsPage = lazy(() => import("./pages/Prompts"));
 const BatchesPage = lazy(() => import("./pages/Batches"));
 const NotificationsPage = lazy(() => import("./pages/Notifications"));
+const FinalReviewPage = lazy(() => import("./pages/FinalReview"));
 
 function PageLoader() {
   return (
@@ -38,6 +39,7 @@ function Router() {
         <Route path="/prompts" component={PromptsPage} />
         <Route path="/batches" component={BatchesPage} />
         <Route path="/notifications" component={NotificationsPage} />
+        <Route path="/review" component={FinalReviewPage} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

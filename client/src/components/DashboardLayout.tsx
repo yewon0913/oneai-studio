@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, Sparkles, Layers, Bell, ImageIcon } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, Sparkles, Layers, Bell, ImageIcon, ShieldCheck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -33,6 +33,7 @@ const menuItems = [
   { icon: FolderOpen, label: "프로젝트", path: "/projects" },
   { icon: Sparkles, label: "프롬프트 라이브러리", path: "/prompts" },
   { icon: Layers, label: "배치 생성", path: "/batches" },
+  { icon: ShieldCheck, label: "최종 검수", path: "/review" },
   { icon: Bell, label: "알림", path: "/notifications" },
 ];
 

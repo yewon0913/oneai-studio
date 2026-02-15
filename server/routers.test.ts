@@ -46,6 +46,7 @@ vi.mock("./db", () => ({
   createProject: vi.fn().mockResolvedValue({ id: 3 }),
   updateProject: vi.fn().mockResolvedValue(undefined),
   deleteProject: vi.fn().mockResolvedValue(undefined),
+  deleteGenerationsByProject: vi.fn().mockResolvedValue(undefined),
   getPrompts: vi.fn().mockResolvedValue([
     { id: 1, title: "웨딩 기본", prompt: "romantic wedding", negativePrompt: "ugly", category: "wedding" },
   ]),
@@ -62,6 +63,10 @@ vi.mock("./db", () => ({
   createGeneration: vi.fn().mockResolvedValue({ id: 1 }),
   updateGeneration: vi.fn().mockResolvedValue(undefined),
   deleteGeneration: vi.fn().mockResolvedValue(undefined),
+  getReviewQueueByProject: vi.fn().mockResolvedValue([
+    { id: 1, projectId: 1, resultImageUrl: "https://s3.example.com/gen.png", status: "approved", stage: "review" },
+    { id: 2, projectId: 1, resultImageUrl: "https://s3.example.com/gen2.png", status: "approved", stage: "upscaled" },
+  ]),
   getBatchJobs: vi.fn().mockResolvedValue([]),
   getBatchJobById: vi.fn().mockResolvedValue({ id: 1, status: "processing", batchConfig: { faceFixMode: true } }),
   createBatchJob: vi.fn().mockResolvedValue({ id: 1 }),
@@ -106,15 +111,13 @@ vi.mock("./_core/notification", () => ({
 
 // Mock global fetch for image download and Pinterest scraping
 const mockFetch = vi.fn().mockImplementation((url: string) => {
-  // Pinterest page mock
-  if (url.includes("pinterest")) {
+  if (url.includes("pinterest") || url.includes("pin.it")) {
     return Promise.resolve({
       text: () => Promise.resolve('<meta property="og:image" content="https://i.pinimg.com/originals/test.jpg" />'),
       ok: true,
       headers: new Map([["content-type", "text/html"]]),
     });
   }
-  // Image URL mock
   return Promise.resolve({
     arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
     ok: true,
@@ -209,7 +212,38 @@ describe("Clients Router", () => {
   });
 });
 
-describe("Projects Router", () => {
+describe("Client Photos - Upload & Delete", () => {
+  it("uploads a photo", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.clientPhotos.upload({
+      clientId: 1,
+      photoType: "front",
+      base64Data: "data:image/jpeg;base64,/9j/4AAQ",
+      fileName: "front.jpg",
+      mimeType: "image/jpeg",
+    });
+    expect(result).toHaveProperty("id");
+  });
+
+  it("deletes a photo", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.clientPhotos.delete({ id: 1 });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("lists photos for a client", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const photos = await caller.clientPhotos.list({ clientId: 1 });
+    expect(Array.isArray(photos)).toBe(true);
+    expect(photos.length).toBe(2);
+    expect(photos[0]).toHaveProperty("photoType", "front");
+  });
+});
+
+describe("Projects Router - CRUD with Delete", () => {
   it("creates a couple project", async () => {
     const ctx = createTestContext();
     const caller = appRouter.createCaller(ctx);
@@ -243,7 +277,7 @@ describe("Projects Router", () => {
     expect(projects[0]).toHaveProperty("projectMode", "couple");
   });
 
-  it("deletes a project", async () => {
+  it("deletes a project and its generations", async () => {
     const ctx = createTestContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.projects.delete({ id: 1 });
@@ -251,13 +285,13 @@ describe("Projects Router", () => {
   });
 });
 
-describe("AI Generation - Face Consistency Engine v3.1", () => {
+describe("AI Generation - Face Consistency Engine v3.2", () => {
   it("generates image with face fix mode (single)", async () => {
     const ctx = createTestContext();
     const caller = appRouter.createCaller(ctx);
     
     const { getProjectById } = await import("./db");
-    (getProjectById as any).mockResolvedValueOnce({
+    (getProjectById as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       id: 2, title: "개인 프로필", category: "profile", status: "draft",
       projectMode: "single", partnerClientId: null, clientId: 1, concept: null,
     });
@@ -343,7 +377,7 @@ describe("AI Generation - Face Consistency Engine v3.1", () => {
     expect(result).toHaveProperty("imageUrl");
   });
 
-  it("generates image with Pinterest URL", async () => {
+  it("generates image with Pinterest URL (핀터레스트 링크 지원)", async () => {
     const ctx = createTestContext();
     const caller = appRouter.createCaller(ctx);
 
@@ -351,6 +385,20 @@ describe("AI Generation - Face Consistency Engine v3.1", () => {
       projectId: 1,
       referenceImageUrl: "https://www.pinterest.com/pin/12345/",
       referenceMode: "background_composite",
+      faceFixMode: true,
+    });
+    expect(result).toHaveProperty("id");
+    expect(result).toHaveProperty("imageUrl");
+  });
+
+  it("generates image with pin.it short URL", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+
+    const result = await caller.generations.generate({
+      projectId: 1,
+      referenceImageUrl: "https://pin.it/6DxxHIrup",
+      referenceMode: "face_swap",
       faceFixMode: true,
     });
     expect(result).toHaveProperty("id");
@@ -411,6 +459,58 @@ describe("AI Generation - Face Consistency Engine v3.1", () => {
     const ctx = createTestContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.generations.delete({ id: 1 });
+    expect(result).toEqual({ success: true });
+  });
+});
+
+describe("Final Review System (최종 검수)", () => {
+  it("gets review queue for a project", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const queue = await caller.generations.reviewQueue({ projectId: 1 });
+    expect(Array.isArray(queue)).toBe(true);
+    expect(queue.length).toBe(2);
+    expect(queue[0]).toHaveProperty("status", "approved");
+  });
+
+  it("approves an image for final delivery (최종 검수 승인)", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.generations.finalApprove({
+      id: 1,
+      reviewNotes: "완벽한 품질, 출고 승인",
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("rejects an image in final review (최종 검수 반려)", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.generations.finalReject({
+      id: 1,
+      reviewNotes: "얼굴 유사도 부족, 재생성 필요",
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("requires review notes for rejection", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.generations.finalReject({ id: 1, reviewNotes: "" })
+    ).rejects.toThrow();
+  });
+
+  it("updates generation status and stage", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.generations.updateStatus({
+      id: 1,
+      status: "approved",
+      stage: "review",
+      qualityScore: 95,
+      reviewNotes: "Good quality",
+    });
     expect(result).toEqual({ success: true });
   });
 });

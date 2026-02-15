@@ -331,13 +331,14 @@ export default function ClientDetailPage() {
                   {typePhotos.length > 0 ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                       {typePhotos.map((photo) => (
-                        <div key={photo.id} className="relative group rounded-lg overflow-hidden border border-border bg-secondary aspect-square">
+                        <div key={photo.id} className="relative rounded-lg overflow-hidden border border-border bg-secondary aspect-square">
                           <img src={photo.originalUrl} alt={photo.fileName || ""} className="w-full h-full object-cover" />
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <Button variant="destructive" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); deletePhoto.mutate({ id: photo.id }); }}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+                          <button
+                            className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-red-600/90 hover:bg-red-600 flex items-center justify-center shadow-lg transition-colors z-10"
+                            onClick={(e) => { e.stopPropagation(); if (confirm('이 사진을 삭제하시겠습니까?')) deletePhoto.mutate({ id: photo.id }); }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-white" />
+                          </button>
                         </div>
                       ))}
                     </div>

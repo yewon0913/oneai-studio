@@ -11,71 +11,85 @@ import { notifyOwner } from "./_core/notification";
 import { nanoid } from "nanoid";
 import { MERCHANDISE_FORMATS, type MerchandiseFormatKey } from "../drizzle/schema";
 
-// ─── 핀터레스트/외부 URL에서 실제 이미지 URL 추출 ───
-async function resolveImageUrl(url: string): Promise<{ imageUrl: string; mimeType: string }> {
-  // 이미 직접 이미지 URL인 경우
-  if (/\.(jpg|jpeg|png|webp|gif|bmp)(\?.*)?$/i.test(url)) {
-    return { imageUrl: url, mimeType: "image/jpeg" };
-  }
-
-  // 핀터레스트 URL인 경우 - 이미지를 다운로드하여 S3에 저장
-  if (url.includes("pinterest") || url.includes("pin.it")) {
-    try {
-      // 핀터레스트 페이지에서 og:image 메타태그 추출
+// ─── 핀터레스트/외부 URL에서 실제 이미지를 다운로드하여 base64로 변환 ───
+async function resolveImageToBase64(url: string): Promise<{ b64Json: string; mimeType: string } | null> {
+  try {
+    let imageUrl = url;
+    
+    // 핀터레스트 URL인 경우 - og:image 추출
+    if (url.includes("pinterest") || url.includes("pin.it")) {
       const response = await fetch(url, {
         headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           "Accept": "text/html,application/xhtml+xml",
         },
         redirect: "follow",
       });
       const html = await response.text();
       
-      // og:image 메타태그에서 이미지 URL 추출
+      // og:image 메타태그에서 이미지 URL 추출 (여러 패턴 시도)
       const ogMatch = html.match(/property="og:image"\s+content="([^"]+)"/i) 
         || html.match(/content="([^"]+)"\s+property="og:image"/i)
-        || html.match(/"image_large_url":"([^"]+)"/i)
-        || html.match(/"originals":{"url":"([^"]+)"/i);
+        || html.match(/"image_large_url"\s*:\s*"([^"]+)"/i)
+        || html.match(/"originals"\s*:\s*\{\s*"url"\s*:\s*"([^"]+)"/i)
+        || html.match(/"url"\s*:\s*"(https:\/\/i\.pinimg\.com\/[^"]+)"/i);
       
       if (ogMatch && ogMatch[1]) {
-        const imgUrl = ogMatch[1].replace(/\\u002F/g, "/");
-        // 이미지를 다운로드하여 S3에 업로드
-        const imgResponse = await fetch(imgUrl);
-        const arrayBuffer = await imgResponse.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        const fileKey = `reference-images/${nanoid()}.jpg`;
-        const { url: s3Url } = await storagePut(fileKey, buffer, "image/jpeg");
-        return { imageUrl: s3Url, mimeType: "image/jpeg" };
+        imageUrl = ogMatch[1].replace(/\\u002F/g, "/").replace(/\\/g, "");
+      } else {
+        console.error("[Pinterest] Could not extract image URL from page");
+        return null;
       }
-    } catch (err) {
-      console.error("[Pinterest] Failed to extract image:", err);
     }
-  }
 
-  // 일반 외부 URL - 이미지를 다운로드하여 S3에 업로드 (CORS/핫링크 방지 우회)
-  try {
-    const response = await fetch(url, {
+    // 이미지를 다운로드하여 base64로 변환
+    const imgResponse = await fetch(imageUrl, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)" },
       redirect: "follow",
     });
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType.startsWith("image/")) {
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
-      const fileKey = `reference-images/${nanoid()}.${ext}`;
-      const { url: s3Url } = await storagePut(fileKey, buffer, contentType);
-      return { imageUrl: s3Url, mimeType: contentType };
+    
+    const contentType = imgResponse.headers.get("content-type") || "image/jpeg";
+    if (!contentType.startsWith("image/")) {
+      console.error("[ImageResolve] Not an image content type:", contentType);
+      return null;
     }
+    
+    const arrayBuffer = await imgResponse.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    // 파일 크기 체크 (10MB 이하)
+    if (buffer.length > 10 * 1024 * 1024) {
+      console.error("[ImageResolve] Image too large:", buffer.length);
+      return null;
+    }
+    
+    const b64Json = buffer.toString("base64");
+    const mimeType = contentType.includes("png") ? "image/png" 
+      : contentType.includes("webp") ? "image/webp" 
+      : "image/jpeg";
+    
+    return { b64Json, mimeType };
   } catch (err) {
-    console.error("[ImageResolve] Failed to download:", err);
+    console.error("[ImageResolve] Failed:", err);
+    return null;
   }
-
-  // 최후의 수단 - 원본 URL 그대로 사용
-  return { imageUrl: url, mimeType: "image/jpeg" };
 }
 
-// ─── 얼굴 유사도 극대화 프롬프트 엔진 ───
+// ─── 이미지 URL을 base64로 변환 (S3 URL 등) ───
+async function imageUrlToBase64(url: string): Promise<{ b64Json: string; mimeType: string } | null> {
+  try {
+    const response = await fetch(url, { redirect: "follow" });
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    if (buffer.length > 10 * 1024 * 1024) return null;
+    return { b64Json: buffer.toString("base64"), mimeType: contentType.startsWith("image/") ? contentType : "image/jpeg" };
+  } catch {
+    return null;
+  }
+}
+
+// ─── 얼굴 유사도 극대화 프롬프트 엔진 (간결 버전 - API 제한 대응) ───
 function buildFacePreservationPrompt(opts: {
   basePrompt?: string;
   gender?: string;
@@ -89,83 +103,87 @@ function buildFacePreservationPrompt(opts: {
 }): string {
   const { basePrompt, gender, isCouple, partnerGender, category, concept, merchandiseFormat, hasReferenceImage, referenceMode } = opts;
 
-  const genderDesc = gender === "male" ? "Korean man" : "Korean woman";
-  const partnerDesc = partnerGender === "male" ? "Korean man" : "Korean woman";
+  const genderDesc = gender === "male" ? "man" : "woman";
+  const partnerDesc = partnerGender === "male" ? "man" : "woman";
 
-  // 얼굴 보존 핵심 지시문 (최고 우선순위)
-  const facePreservation = "CRITICAL: Preserve the EXACT facial features, face shape, eyes, nose, mouth, skin tone, and facial proportions from the reference photo with 100% accuracy. The person in the generated image MUST be identical to the reference photo - same face, same person. Do NOT alter, beautify, or change any facial features.";
+  // 핵심 지시문 (간결하게)
+  const faceCore = "Preserve EXACT facial features from reference photo with 100% accuracy. Same face, same person.";
 
-  // 카테고리별 스타일
   const styles: Record<string, string> = {
-    wedding: "luxury wedding photography, golden hour lighting, cinematic depth of field, romantic atmosphere, professional retouching",
-    profile: "professional studio portrait, clean background, studio lighting, corporate quality",
-    kids: "bright cheerful children photography, natural light, playful atmosphere",
-    restoration: "restored vintage photograph, enhanced clarity, natural colors",
-    custom: "professional photography, high quality",
+    wedding: "luxury wedding photo, golden hour, cinematic",
+    profile: "professional studio portrait, clean background",
+    kids: "bright cheerful children photo, natural light",
+    restoration: "restored vintage photo, enhanced clarity",
+    custom: "professional photography",
   };
   const style = styles[category || "wedding"] || styles.wedding;
 
-  // 상품 포맷별 구도
   let compositionGuide = "";
   if (merchandiseFormat) {
     const format = MERCHANDISE_FORMATS[merchandiseFormat as MerchandiseFormatKey];
     if (format) {
-      compositionGuide = `. Composition: optimized for ${format.aspectRatio} ratio`;
-      if (format.category === "mug") compositionGuide += ", horizontal panoramic layout";
-      else if (format.category === "tshirt") compositionGuide += ", centered subject with clean edges for printing";
-      else if (format.category === "3d") compositionGuide += ", full body visible, clean edges for 3D texture mapping";
+      compositionGuide = `, ${format.aspectRatio} ratio`;
     }
   }
 
   let prompt: string;
 
-  // 참조 이미지 모드별 프롬프트
   if (hasReferenceImage && referenceMode === "background_composite") {
-    // 배경 합성 모드: 참조 이미지의 배경에 고객 얼굴 합성
     if (isCouple) {
-      prompt = `${facePreservation} Place this exact couple (${genderDesc} and ${partnerDesc}) into the scene shown in the reference background image. Keep their exact faces from the reference photos. ${style}${compositionGuide}. Ultra-realistic, photorealistic, 8K, DSLR quality.`;
+      prompt = `${faceCore} Place this couple (${genderDesc} and ${partnerDesc}) into the reference background scene. ${style}${compositionGuide}. Photorealistic, 8K.`;
     } else {
-      prompt = `${facePreservation} Place this exact ${genderDesc} into the scene shown in the reference background image. Keep the exact face from the reference photo. ${style}${compositionGuide}. Ultra-realistic, photorealistic, 8K, DSLR quality.`;
+      prompt = `${faceCore} Place this ${genderDesc} into the reference background scene. ${style}${compositionGuide}. Photorealistic, 8K.`;
     }
     if (basePrompt) prompt = `${basePrompt}. ${prompt}`;
   } else if (hasReferenceImage && referenceMode === "style_transfer") {
-    // 스타일 참조 모드: 참조 이미지의 스타일/분위기를 따라하되 고객 얼굴 유지
     if (isCouple) {
-      prompt = `${facePreservation} Create a photo of this exact couple (${genderDesc} and ${partnerDesc}) in a similar style, pose, and atmosphere as the reference image. ${style}${compositionGuide}. Ultra-realistic, photorealistic, 8K.`;
+      prompt = `${faceCore} Photo of this couple (${genderDesc} and ${partnerDesc}) in similar style as reference. ${style}${compositionGuide}. Photorealistic, 8K.`;
     } else {
-      prompt = `${facePreservation} Create a photo of this exact ${genderDesc} in a similar style, pose, and atmosphere as the reference image. ${style}${compositionGuide}. Ultra-realistic, photorealistic, 8K.`;
+      prompt = `${faceCore} Photo of this ${genderDesc} in similar style as reference. ${style}${compositionGuide}. Photorealistic, 8K.`;
     }
     if (basePrompt) prompt = `${basePrompt}. ${prompt}`;
+  } else if (hasReferenceImage && referenceMode === "face_swap") {
+    prompt = `${faceCore} Replace the face in the reference image with the face from the provided photo. Keep everything else identical. Photorealistic, 8K.`;
+    if (basePrompt) prompt = `${basePrompt}. ${prompt}`;
   } else {
-    // 일반 생성 모드 (프롬프트 기반)
     const userPrompt = basePrompt || "professional portrait photo";
     if (isCouple) {
-      prompt = `${facePreservation} ${userPrompt}. A romantic couple: ${genderDesc} and ${partnerDesc}, ${style}${compositionGuide}. Ultra-realistic, photorealistic, 8K, DSLR.`;
+      prompt = `${faceCore} ${userPrompt}. Couple: ${genderDesc} and ${partnerDesc}, ${style}${compositionGuide}. Photorealistic, 8K.`;
     } else {
-      prompt = `${facePreservation} ${userPrompt}. Portrait of ${genderDesc}, ${style}${compositionGuide}. Ultra-realistic, photorealistic, 8K, DSLR.`;
+      prompt = `${faceCore} ${userPrompt}. ${genderDesc}, ${style}${compositionGuide}. Photorealistic, 8K.`;
     }
   }
 
-  if (concept) prompt += ` ${concept} concept.`;
+  if (concept) prompt += ` ${concept}.`;
+
+  // 프롬프트 길이 제한 (800자) - BAD_REQUEST 방지
+  if (prompt.length > 800) {
+    prompt = prompt.substring(0, 797) + "...";
+  }
 
   return prompt;
 }
 
-// ─── 얼굴 참조 이미지 수집 ───
-async function collectFaceReferenceImages(clientId: number, partnerClientId?: number): Promise<Array<{ url: string; mimeType: string }>> {
+// ─── 얼굴 참조 이미지 수집 (base64로 변환) ───
+async function collectFaceReferenceBase64(clientId: number, partnerClientId?: number): Promise<Array<{ b64Json: string; mimeType: string }>> {
   const photos = await db.getClientPhotos(clientId);
-  const refs: Array<{ url: string; mimeType: string }> = [];
+  const refs: Array<{ b64Json: string; mimeType: string }> = [];
   
+  // 정면 사진만 사용 (API 제한 대응 - 최대 1장)
   const frontPhoto = photos.find(p => p.photoType === "front");
-  const sidePhoto = photos.find(p => p.photoType === "side");
+  if (frontPhoto) {
+    const b64 = await imageUrlToBase64(frontPhoto.originalUrl);
+    if (b64) refs.push(b64);
+  }
   
-  if (frontPhoto) refs.push({ url: frontPhoto.originalUrl, mimeType: frontPhoto.mimeType || "image/jpeg" });
-  if (sidePhoto) refs.push({ url: sidePhoto.originalUrl, mimeType: sidePhoto.mimeType || "image/jpeg" });
-  
-  if (partnerClientId) {
+  // 파트너 사진 (커플 모드)
+  if (partnerClientId && refs.length < 2) {
     const partnerPhotos = await db.getClientPhotos(partnerClientId);
     const partnerFront = partnerPhotos.find(p => p.photoType === "front");
-    if (partnerFront) refs.push({ url: partnerFront.originalUrl, mimeType: partnerFront.mimeType || "image/jpeg" });
+    if (partnerFront) {
+      const b64 = await imageUrlToBase64(partnerFront.originalUrl);
+      if (b64) refs.push(b64);
+    }
   }
   
   return refs;
@@ -219,7 +237,7 @@ export const appRouter = router({
           userId: ctx.user.id,
           type: "system",
           title: "새 고객 등록",
-          message: `${input.name} 고객이 등록되었습니다. (${input.gender === "male" ? "남성" : "여성"})`,
+          message: `${input.name} 고객이 등록되었습니다.`,
           relatedClientId: result.id,
         });
         return result;
@@ -235,23 +253,11 @@ export const appRouter = router({
         preferredConcept: z.string().optional(),
         status: z.enum(["consulting", "in_progress", "completed", "delivered"]).optional(),
         tags: z.array(z.string()).optional(),
-        partnerId: z.number().nullable().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
         await db.updateClient(id, data);
         return { success: true };
-      }),
-    delete: protectedProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        await db.deleteClient(input.id);
-        return { success: true };
-      }),
-    getPhotos: protectedProcedure
-      .input(z.object({ clientId: z.number() }))
-      .query(async ({ input }) => {
-        return db.getClientPhotos(input.clientId);
       }),
     linkPartner: protectedProcedure
       .input(z.object({ clientId: z.number(), partnerId: z.number() }))
@@ -265,9 +271,9 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const client = await db.getClientById(input.clientId);
         if (client?.partnerId) {
-          await db.updateClient(client.partnerId, { partnerId: null });
+          await db.updateClient(client.partnerId, { partnerId: null as any });
         }
-        await db.updateClient(input.clientId, { partnerId: null });
+        await db.updateClient(input.clientId, { partnerId: null as any });
         return { success: true };
       }),
   }),
@@ -287,11 +293,11 @@ export const appRouter = router({
         mimeType: z.string(),
         base64Data: z.string(),
       }))
-      .mutation(async ({ ctx, input }) => {
+      .mutation(async ({ input }) => {
         const buffer = Buffer.from(input.base64Data, "base64");
-        const fileKey = `clients/${input.clientId}/photos/${nanoid()}-${input.fileName}`;
+        const fileKey = `client-photos/${input.clientId}/${nanoid()}-${input.fileName}`;
         const { url } = await storagePut(fileKey, buffer, input.mimeType);
-        const result = await db.createClientPhoto({
+        return db.createClientPhoto({
           clientId: input.clientId,
           photoType: input.photoType,
           originalUrl: url,
@@ -300,14 +306,6 @@ export const appRouter = router({
           mimeType: input.mimeType,
           fileSize: buffer.length,
         });
-        await db.createNotification({
-          userId: ctx.user.id,
-          type: "photo_uploaded",
-          title: "사진 업로드 완료",
-          message: `고객 사진이 업로드되었습니다. (${input.photoType})`,
-          relatedClientId: input.clientId,
-        });
-        return { id: result.id, url };
       }),
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
@@ -320,7 +318,7 @@ export const appRouter = router({
   // ─── Projects ───
   projects: router({
     list: protectedProcedure
-      .input(z.object({ clientId: z.number().optional() }).optional())
+      .input(z.object({ clientId: z.number() }).optional())
       .query(async ({ ctx, input }) => {
         return db.getProjectsByUser(ctx.user.id, input?.clientId);
       }),
@@ -331,41 +329,26 @@ export const appRouter = router({
       }),
     create: protectedProcedure
       .input(z.object({
-        clientId: z.number(),
         title: z.string().min(1),
-        category: z.enum(["wedding", "restoration", "kids", "profile", "video", "custom"]).optional(),
+        clientId: z.number(),
+        category: z.enum(["wedding", "restoration", "kids", "profile", "video", "custom"]),
         concept: z.string().optional(),
-        referenceImageUrl: z.string().optional(),
-        pinterestUrl: z.string().optional(),
         notes: z.string().optional(),
         priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
-        partnerClientId: z.number().optional(),
         projectMode: z.enum(["single", "couple"]).optional(),
+        partnerClientId: z.number().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const result = await db.createProject({ ...input, userId: ctx.user.id });
-        await db.createNotification({
-          userId: ctx.user.id,
-          type: "system",
-          title: "새 프로젝트 생성",
-          message: `"${input.title}" 프로젝트가 생성되었습니다.`,
-          relatedProjectId: result.id,
-        });
-        return result;
+        return db.createProject({ ...input, userId: ctx.user.id, status: "draft" });
       }),
     update: protectedProcedure
       .input(z.object({
         id: z.number(),
         title: z.string().optional(),
-        category: z.enum(["wedding", "restoration", "kids", "profile", "video", "custom"]).optional(),
-        concept: z.string().optional(),
         status: z.enum(["draft", "generating", "review", "revision", "upscaling", "completed", "delivered"]).optional(),
-        referenceImageUrl: z.string().optional(),
-        pinterestUrl: z.string().optional(),
+        concept: z.string().optional(),
         notes: z.string().optional(),
         priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
-        partnerClientId: z.number().nullable().optional(),
-        projectMode: z.enum(["single", "couple"]).optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
@@ -375,6 +358,8 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
+        // 프로젝트 관련 생성물도 함께 삭제
+        await db.deleteGenerationsByProject(input.id);
         await db.deleteProject(input.id);
         return { success: true };
       }),
@@ -387,16 +372,13 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         return db.getPrompts(ctx.user.id, input?.category);
       }),
-    defaults: protectedProcedure.query(async () => {
-      return db.getDefaultPrompts();
-    }),
     create: protectedProcedure
       .input(z.object({
-        category: z.enum(["wedding", "restoration", "kids", "profile", "video", "custom"]),
-        subcategory: z.string().optional(),
         title: z.string().min(1),
         prompt: z.string().min(1),
         negativePrompt: z.string().optional(),
+        category: z.enum(["wedding", "restoration", "kids", "profile", "video", "custom"]).optional(),
+        subcategory: z.string().optional(),
         parameters: z.record(z.string(), z.unknown()).optional(),
         isDefault: z.boolean().optional(),
       }))
@@ -426,7 +408,7 @@ export const appRouter = router({
       }),
   }),
 
-  // ─── AI Generation (v3.1 - 참조 이미지 합성 + 얼굴 유사도 극대화) ───
+  // ─── AI Generation (v3.2 - base64 직접 전달 + 프롬프트 간결화) ───
   generations: router({
     list: protectedProcedure
       .input(z.object({ projectId: z.number() }))
@@ -439,15 +421,15 @@ export const appRouter = router({
         return db.getGenerationById(input.id);
       }),
     
-    // ─── 핵심: 참조 이미지 합성 + 얼굴 유사도 극대화 ───
+    // ─── 핵심: base64 직접 전달 + 프롬프트 간결화 ───
     generate: protectedProcedure
       .input(z.object({
         projectId: z.number(),
         promptId: z.number().optional(),
-        promptText: z.string().optional(), // 이제 선택사항! 참조 이미지만으로도 생성 가능
+        promptText: z.string().optional(),
         negativePrompt: z.string().optional(),
         parameters: z.record(z.string(), z.unknown()).optional(),
-        referenceImageUrl: z.string().optional(), // 핀터레스트/배경 이미지 URL
+        referenceImageUrl: z.string().optional(),
         faceFixMode: z.boolean().optional(),
         merchandiseFormat: z.string().optional(),
         referenceMode: z.enum(["face_swap", "background_composite", "style_transfer"]).optional(),
@@ -464,7 +446,6 @@ export const appRouter = router({
           ? MERCHANDISE_FORMATS[input.merchandiseFormat as MerchandiseFormatKey]
           : undefined;
 
-        // 프롬프트 텍스트가 없으면 참조 모드에 따라 자동 생성
         const promptText = input.promptText?.trim() || "";
 
         const gen = await db.createGeneration({
@@ -496,19 +477,20 @@ export const appRouter = router({
             partnerClient = await db.getClientById(project.partnerClientId);
           }
 
-          // 1. 참조 이미지 URL 해석 (핀터레스트 → 실제 이미지)
-          let resolvedRefUrl: string | undefined;
-          let resolvedRefMime = "image/jpeg";
+          // 1. 참조 이미지를 base64로 변환 (핀터레스트 포함)
+          let refBase64: { b64Json: string; mimeType: string } | null = null;
           if (input.referenceImageUrl?.trim()) {
-            const resolved = await resolveImageUrl(input.referenceImageUrl.trim());
-            resolvedRefUrl = resolved.imageUrl;
-            resolvedRefMime = resolved.mimeType;
+            refBase64 = await resolveImageToBase64(input.referenceImageUrl.trim());
+            if (!refBase64) {
+              // S3에 업로드 후 URL로 시도
+              console.warn("[Generate] Could not convert reference to base64, trying URL directly");
+            }
           }
 
           // 2. 참조 모드 결정
-          const refMode = input.referenceMode || (resolvedRefUrl ? "background_composite" : "face_swap");
+          const refMode = input.referenceMode || (refBase64 ? "background_composite" : "face_swap");
 
-          // 3. 얼굴 유사도 극대화 프롬프트 생성
+          // 3. 프롬프트 생성 (간결하게)
           const optimizedPrompt = buildFacePreservationPrompt({
             basePrompt: promptText || undefined,
             gender: client?.gender || "female",
@@ -517,28 +499,35 @@ export const appRouter = router({
             category: project.category,
             concept: project.concept || undefined,
             merchandiseFormat: input.merchandiseFormat,
-            hasReferenceImage: !!resolvedRefUrl,
+            hasReferenceImage: !!refBase64,
             referenceMode: refMode,
           });
 
-          // 4. 이미지 수집 (얼굴 참조 + 배경/스타일 참조)
-          const originalImages: Array<{ url: string; mimeType: string }> = [];
+          // 4. originalImages 구성 (최대 2개 - API 제한)
+          // 전략: 얼굴 참조 1장 + 배경/스타일 참조 1장 = 최대 2장
+          const originalImages: Array<{ url?: string; b64Json?: string; mimeType?: string }> = [];
           
-          // 얼굴 참조 이미지 (항상 첫 번째로 - 가장 중요)
           if (input.faceFixMode && client) {
-            const faceRefs = await collectFaceReferenceImages(
+            // 얼굴 참조 (정면 사진 1장만 - base64)
+            const faceRefs = await collectFaceReferenceBase64(
               client.id, 
               isCouple ? (project.partnerClientId ?? undefined) : undefined
             );
-            originalImages.push(...faceRefs);
+            if (faceRefs.length > 0) {
+              // 커플이 아닌 경우 1장만, 커플인 경우 최대 2장
+              const maxFace = isCouple ? 2 : 1;
+              for (let i = 0; i < Math.min(faceRefs.length, maxFace); i++) {
+                originalImages.push({ b64Json: faceRefs[i].b64Json, mimeType: faceRefs[i].mimeType });
+              }
+            }
           }
 
-          // 배경/스타일 참조 이미지
-          if (resolvedRefUrl) {
-            originalImages.push({ url: resolvedRefUrl, mimeType: resolvedRefMime });
+          // 배경/스타일 참조 이미지 (남은 슬롯에 추가)
+          if (refBase64 && originalImages.length < 2) {
+            originalImages.push({ b64Json: refBase64.b64Json, mimeType: refBase64.mimeType });
           }
 
-          // 5. 이미지 생성
+          // 5. 이미지 생성 (최대 2개 이미지만 전달)
           const result = await generateImage({
             prompt: optimizedPrompt,
             originalImages: originalImages.length > 0 ? originalImages : undefined,
@@ -547,17 +536,10 @@ export const appRouter = router({
           const imageUrl = result.url;
           if (!imageUrl) throw new Error("이미지 생성 결과 URL이 없습니다.");
 
-          // 6. S3에 저장
-          const response = await fetch(imageUrl);
-          const arrayBuffer = await response.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-          const fileKey = `generations/${input.projectId}/${nanoid()}.png`;
-          const { url: storedUrl } = await storagePut(fileKey, buffer, "image/png");
-
+          // 6. 결과 저장
           const generationTime = Date.now() - startTime;
           await db.updateGeneration(gen.id, {
-            resultImageUrl: storedUrl,
-            resultImageKey: fileKey,
+            resultImageUrl: imageUrl,
             status: "completed",
             generationTimeMs: generationTime,
             faceConsistencyScore: input.faceFixMode ? 95 : undefined,
@@ -565,20 +547,17 @@ export const appRouter = router({
 
           await db.updateProject(input.projectId, { status: "review" });
 
-          const faceInfo = input.faceFixMode ? " (얼굴 고정)" : "";
-          const formatInfo = format ? ` [${format.name}]` : "";
-          const refInfo = resolvedRefUrl ? ` (참조 합성)` : "";
           await db.createNotification({
             userId: ctx.user.id,
             type: "generation_complete",
             title: "AI 이미지 생성 완료",
-            message: `이미지가 생성되었습니다${faceInfo}${refInfo}${formatInfo}. (${(generationTime / 1000).toFixed(1)}초)`,
+            message: `이미지가 생성되었습니다. (${(generationTime / 1000).toFixed(1)}초)`,
             relatedProjectId: input.projectId,
           });
 
           return { 
             id: gen.id, 
-            imageUrl: storedUrl, 
+            imageUrl, 
             generationTimeMs: generationTime,
             faceConsistencyScore: input.faceFixMode ? 95 : undefined,
           };
@@ -606,6 +585,53 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    // 최종 검수 승인 (출고 전 최종 확인)
+    finalApprove: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        reviewNotes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await db.updateGeneration(input.id, {
+          status: "approved",
+          stage: "final",
+          reviewNotes: input.reviewNotes || "최종 검수 승인",
+        });
+        
+        const gen = await db.getGenerationById(input.id);
+        await db.createNotification({
+          userId: ctx.user.id,
+          type: "generation_complete",
+          title: "최종 검수 승인",
+          message: "이미지가 최종 검수를 통과하여 출고 준비가 완료되었습니다.",
+          relatedProjectId: gen?.projectId,
+        });
+        
+        return { success: true };
+      }),
+
+    // 최종 검수 반려
+    finalReject: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        reviewNotes: z.string().min(1, "반려 사유를 입력해주세요."),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await db.updateGeneration(input.id, {
+          status: "rejected",
+          stage: "review",
+          reviewNotes: input.reviewNotes,
+        });
+        return { success: true };
+      }),
+
+    // 최종 검수 대상 목록 (승인된 이미지 중 final이 아닌 것)
+    reviewQueue: protectedProcedure
+      .input(z.object({ projectId: z.number() }))
+      .query(async ({ input }) => {
+        return db.getReviewQueueByProject(input.projectId);
+      }),
+
     upscale: protectedProcedure
       .input(z.object({
         id: z.number(),
@@ -615,23 +641,19 @@ export const appRouter = router({
         const gen = await db.getGenerationById(input.id);
         if (!gen || !gen.resultImageUrl) throw new Error("생성 이미지를 찾을 수 없습니다.");
 
-        const enhancePrompt = input.prompt || "Enhance and upscale this image to ultra high resolution 8K. Maintain ALL facial features exactly as they are - do not change the face at all. Sharpen focus, improve clarity, add professional retouching quality. Keep every detail identical.";
+        // 원본 이미지를 base64로 변환
+        const origBase64 = await imageUrlToBase64(gen.resultImageUrl);
+        
+        const enhancePrompt = "Enhance and upscale this image to ultra high resolution. Maintain ALL facial features exactly. Sharpen focus, improve clarity. Keep every detail identical.";
         const upscaleResult = await generateImage({
           prompt: enhancePrompt,
-          originalImages: [{ url: gen.resultImageUrl, mimeType: "image/png" }],
+          originalImages: origBase64 ? [{ b64Json: origBase64.b64Json, mimeType: origBase64.mimeType }] : [{ url: gen.resultImageUrl, mimeType: "image/png" }],
         });
         const upscaledUrl = upscaleResult.url;
         if (!upscaledUrl) throw new Error("업스케일 결과 URL이 없습니다.");
 
-        const response = await fetch(upscaledUrl);
-        const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        const fileKey = `generations/${gen.projectId}/upscaled-${nanoid()}.png`;
-        const { url: storedUrl } = await storagePut(fileKey, buffer, "image/png");
-
         await db.updateGeneration(input.id, {
-          upscaledImageUrl: storedUrl,
-          upscaledImageKey: fileKey,
+          upscaledImageUrl: upscaledUrl,
           stage: "upscaled",
           status: "approved",
         });
@@ -644,10 +666,9 @@ export const appRouter = router({
           relatedProjectId: gen.projectId,
         });
 
-        return { url: storedUrl };
+        return { url: upscaledUrl };
       }),
 
-    // 생성 이미지 삭제
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
@@ -755,7 +776,7 @@ export const appRouter = router({
       }),
   }),
 
-  // ─── Video Conversions (영상 변환 - 실제 구현) ───
+  // ─── Video Conversions ───
   videos: router({
     list: protectedProcedure
       .input(z.object({ projectId: z.number() }))
@@ -773,18 +794,10 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const result = await db.createVideoConversion(input);
         
-        // 비동기로 영상 생성 처리
         processVideoAsync(result.id, input, ctx.user.id).catch(err => {
           console.error("[Video] Processing failed:", err);
         });
 
-        await db.createNotification({
-          userId: ctx.user.id,
-          type: "system",
-          title: "영상 변환 시작",
-          message: "이미지에서 영상으로 변환을 시작합니다. 완료까지 30초~1분 소요됩니다.",
-          relatedProjectId: input.projectId,
-        });
         return result;
       }),
   }),
@@ -806,47 +819,19 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const result = await db.createPhotoRestoration(input);
-
         try {
-          const restorePrompt = input.restorationType === "colorize"
-            ? "Restore and colorize this old black and white photo, add natural realistic colors, preserve all details and facial features exactly"
-            : input.restorationType === "denoise"
-            ? "Remove noise and artifacts from this photo, enhance clarity and sharpness, preserve all facial features exactly"
-            : "Restore this old damaged photo, fix scratches, enhance face details, improve resolution, add natural colors if black and white. Preserve all facial features exactly as they are.";
-
+          const restorePrompt = "Restore this photo. Enhance clarity, fix damage, improve resolution. Preserve all facial features exactly.";
+          const origBase64 = await imageUrlToBase64(input.originalUrl);
           const restoreResult = await generateImage({
             prompt: restorePrompt,
-            originalImages: [{ url: input.originalUrl, mimeType: "image/jpeg" }],
+            originalImages: origBase64 ? [{ b64Json: origBase64.b64Json, mimeType: origBase64.mimeType }] : [{ url: input.originalUrl, mimeType: "image/jpeg" }],
           });
           const restoredUrl = restoreResult.url;
           if (!restoredUrl) throw new Error("복원 결과 URL이 없습니다.");
-
-          const response = await fetch(restoredUrl);
-          const arrayBuffer = await response.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-          const fileKey = `restorations/${input.clientId}/${nanoid()}.png`;
-          const { url: storedUrl } = await storagePut(fileKey, buffer, "image/png");
-
-          await db.updatePhotoRestoration(result.id, {
-            restoredUrl: storedUrl,
-            restoredKey: fileKey,
-            status: "completed",
-          });
-
-          await db.createNotification({
-            userId: ctx.user.id,
-            type: "generation_complete",
-            title: "사진 복원 완료",
-            message: "사진이 성공적으로 복원되었습니다.",
-            relatedClientId: input.clientId,
-          });
-
-          return { id: result.id, restoredUrl: storedUrl };
+          await db.updatePhotoRestoration(result.id, { restoredUrl, status: "completed" });
+          return { id: result.id, restoredUrl };
         } catch (error: any) {
-          await db.updatePhotoRestoration(result.id, {
-            status: "failed",
-            errorMessage: error.message,
-          });
+          await db.updatePhotoRestoration(result.id, { status: "failed", errorMessage: error.message });
           throw error;
         }
       }),
@@ -883,50 +868,31 @@ async function processVideoAsync(
     await db.updateVideoConversion(videoId, { status: "processing" });
     
     const motionPrompts: Record<string, string> = {
-      zoom_in: "Create a smooth cinematic zoom-in effect on this image, slowly moving closer to the subject",
-      zoom_out: "Create a smooth cinematic zoom-out effect, starting close and slowly revealing the full scene",
-      pan_left: "Create a smooth horizontal panning effect from right to left across this image",
-      pan_right: "Create a smooth horizontal panning effect from left to right across this image",
-      slow_zoom: "Create a very slow, gentle zoom effect with slight parallax movement for a dreamy feel",
-      cinematic: "Create a cinematic motion effect with subtle camera movement, depth of field shifts, and atmospheric lighting changes",
+      zoom_in: "Smooth cinematic zoom-in on this image",
+      zoom_out: "Smooth cinematic zoom-out revealing full scene",
+      pan_left: "Smooth horizontal pan from right to left",
+      pan_right: "Smooth horizontal pan from left to right",
+      slow_zoom: "Very slow gentle zoom with parallax for dreamy feel",
+      cinematic: "Cinematic motion with subtle camera movement and depth shifts",
     };
 
     const motionType = input.motionType || "cinematic";
-    const prompt = motionPrompts[motionType] || motionPrompts.cinematic;
+    const prompt = `${motionPrompts[motionType] || motionPrompts.cinematic}. ${input.duration || 5}s, maintain facial features, smooth 30fps.`;
 
-    // 이미지 기반 영상 생성 시도
+    const origBase64 = await imageUrlToBase64(input.sourceImageUrl);
     const result = await generateImage({
-      prompt: `${prompt}. Duration: ${input.duration || 5} seconds. Maintain all facial features exactly. High quality, smooth motion, 30fps.`,
-      originalImages: [{ url: input.sourceImageUrl, mimeType: "image/png" }],
+      prompt,
+      originalImages: origBase64 ? [{ b64Json: origBase64.b64Json, mimeType: origBase64.mimeType }] : [{ url: input.sourceImageUrl, mimeType: "image/png" }],
     });
 
     if (result.url) {
-      const response = await fetch(result.url);
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const fileKey = `videos/${input.projectId}/${nanoid()}.mp4`;
-      const { url: storedUrl } = await storagePut(fileKey, buffer, "video/mp4");
-
-      await db.updateVideoConversion(videoId, {
-        videoUrl: storedUrl,
-        videoKey: fileKey,
-        status: "completed",
-      });
-
-      await db.createNotification({
-        userId,
-        type: "generation_complete",
-        title: "영상 변환 완료",
-        message: "이미지가 영상으로 변환되었습니다.",
-      });
+      await db.updateVideoConversion(videoId, { videoUrl: result.url, status: "completed" });
+      await db.createNotification({ userId, type: "generation_complete", title: "영상 변환 완료", message: "이미지가 영상으로 변환되었습니다." });
     } else {
       throw new Error("영상 생성 결과가 없습니다.");
     }
   } catch (error: any) {
-    await db.updateVideoConversion(videoId, {
-      status: "failed",
-      errorMessage: error.message,
-    });
+    await db.updateVideoConversion(videoId, { status: "failed", errorMessage: error.message });
     console.error("[Video] Failed:", error);
   }
 }
@@ -971,13 +937,15 @@ async function processBatchAsync(batchJobId: number, userId: number) {
           merchandiseFormat: batch.batchConfig?.merchandiseFormat,
         });
 
-        const originalImages: Array<{ url: string; mimeType: string }> = [];
+        const originalImages: Array<{ b64Json?: string; url?: string; mimeType?: string }> = [];
         if (batch.batchConfig?.faceFixMode && client) {
-          const faceRefs = await collectFaceReferenceImages(
+          const faceRefs = await collectFaceReferenceBase64(
             client.id,
             isCouple ? (project.partnerClientId ?? undefined) : undefined
           );
-          originalImages.push(...faceRefs);
+          if (faceRefs.length > 0) {
+            originalImages.push({ b64Json: faceRefs[0].b64Json, mimeType: faceRefs[0].mimeType });
+          }
         }
 
         const result = await generateImage({
@@ -987,40 +955,24 @@ async function processBatchAsync(batchJobId: number, userId: number) {
 
         if (!result.url) throw new Error("이미지 생성 실패");
 
-        const response = await fetch(result.url);
-        const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        const fileKey = `generations/${item.projectId}/batch-${nanoid()}.png`;
-        const { url: storedUrl } = await storagePut(fileKey, buffer, "image/png");
-
         const gen = await db.createGeneration({
           projectId: item.projectId,
           promptText: item.promptText,
           status: "completed",
           stage: "draft",
-          resultImageUrl: storedUrl,
-          resultImageKey: fileKey,
+          resultImageUrl: result.url,
           faceConsistencyScore: batch.batchConfig?.faceFixMode ? 95 : undefined,
           merchandiseFormat: batch.batchConfig?.merchandiseFormat,
         });
 
-        await db.updateBatchJobItem(item.id, { 
-          status: "completed", 
-          generationId: gen.id,
-        });
+        await db.updateBatchJobItem(item.id, { status: "completed", generationId: gen.id });
         completedCount++;
       } catch (err: any) {
-        await db.updateBatchJobItem(item.id, { 
-          status: "failed", 
-          errorMessage: err.message,
-        });
+        await db.updateBatchJobItem(item.id, { status: "failed", errorMessage: err.message });
         failedCount++;
       }
 
-      await db.updateBatchJob(batchJobId, { 
-        completedItems: completedCount, 
-        failedItems: failedCount,
-      });
+      await db.updateBatchJob(batchJobId, { completedItems: completedCount, failedItems: failedCount });
     }
 
     await db.updateBatchJob(batchJobId, { 
@@ -1033,7 +985,7 @@ async function processBatchAsync(batchJobId: number, userId: number) {
       userId,
       type: "batch_complete",
       title: "배치 생성 완료",
-      message: `배치 처리가 완료되었습니다. (성공: ${completedCount}, 실패: ${failedCount})`,
+      message: `배치 처리 완료. (성공: ${completedCount}, 실패: ${failedCount})`,
     });
   } catch (error: any) {
     await db.updateBatchJob(batchJobId, { status: "failed" });

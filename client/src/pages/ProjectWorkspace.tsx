@@ -350,7 +350,7 @@ export default function ProjectWorkspace() {
                     <div>
                       <p className="text-sm font-medium text-foreground">얼굴 고정 모드</p>
                       <p className="text-xs text-muted-foreground">
-                        {faceFixMode ? "고객 얼굴을 90%+ 유사도로 합성" : "얼굴 참조 없이 생성"}
+                        {faceFixMode ? "고객 얼굴을 최대한 동일하게 합성 (100% 목표)" : "얼굴 참조 없이 생성"}
                       </p>
                     </div>
                   </div>
@@ -594,6 +594,13 @@ export default function ProjectWorkspace() {
                             )}
                           </div>
                         )}
+                        {/* 삭제 버튼 - 항상 표시 */}
+                        <button
+                          className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600/90 hover:bg-red-600 flex items-center justify-center shadow-lg transition-colors z-10"
+                          onClick={(e) => { e.stopPropagation(); if (confirm('이 이미지를 삭제하시겠습니까?')) deleteGenMutation.mutate({ id: gen.id }); }}
+                        >
+                          <Trash2 className="h-3 w-3 text-white" />
+                        </button>
                         <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-2 py-1">
                           <div className="flex items-center justify-between">
                             <Badge variant="outline" className="text-[10px] h-5">
