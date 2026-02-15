@@ -215,19 +215,20 @@ export default function ClientsPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-2">
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="h-8 w-8 text-red-500/70 hover:text-red-400 hover:bg-red-500/10 transition-all"
                         onClick={(e) => {
                           e.stopPropagation();
                           setDeleteTarget({ id: client.id, name: client.name });
                         }}
+                        title="고객 삭제"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4" />
                       </Button>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
                     </div>
                   </div>
                   <div className="space-y-1.5 text-sm text-muted-foreground">
