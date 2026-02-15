@@ -15,6 +15,7 @@ import {
   FolderPlus, Trash2, Phone, Mail, FileText, Heart, HeartOff, UserCircle, Users
 } from "lucide-react";
 import { toast } from "sonner";
+import { ImageLightbox } from "@/components/ImageLightbox";
 
 const photoTypeLabels: Record<string, string> = { front: "정면", side: "측면", additional: "추가" };
 const genderLabels: Record<string, string> = { female: "여성 (신부)", male: "남성 (신랑)" };
@@ -26,6 +27,8 @@ export default function ClientDetailPage() {
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
   const [isPartnerDialogOpen, setIsPartnerDialogOpen] = useState(false);
   const [uploadType, setUploadType] = useState<"front" | "side" | "additional">("front");
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [projectForm, setProjectForm] = useState({
     title: "", category: "wedding" as const, concept: "", notes: "", priority: "normal" as const,
@@ -123,7 +126,7 @@ export default function ClientDetailPage() {
 
   const frontPhotos = photos?.filter(p => p.photoType === "front") || [];
   const sidePhotos = photos?.filter(p => p.photoType === "side") || [];
-  const additionalPhotos = photos?.filter(p => p.photoType === "additional") || [];
+  // 추가사진은 더 이상 사용하지 않음
 
   return (
     <DashboardLayout>
@@ -310,8 +313,8 @@ export default function ClientDetailPage() {
               </p>
             </div>
 
-            {(["front", "side", "additional"] as const).map((type) => {
-              const typePhotos = type === "front" ? frontPhotos : type === "side" ? sidePhotos : additionalPhotos;
+            {(["front", "side"] as const).map((type) => {
+              const typePhotos = type === "front" ? frontPhotos : type === "side" ? sidePhotos : [];
               return (
                 <div key={type}>
                   <div className="flex items-center justify-between mb-3">
@@ -330,9 +333,19 @@ export default function ClientDetailPage() {
                   </div>
                   {typePhotos.length > 0 ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                      {typePhotos.map((photo) => (
-                        <div key={photo.id} className="relative rounded-lg overflow-hidden border border-border bg-secondary aspect-square">
-                          <img src={photo.originalUrl} alt={photo.fileName || ""} className="w-full h-full object-cover" />
+                      {typePhotos.map((photo, idx) => (
+                        <div
+                          key={photo.id}
+                          className="relative rounded-lg overflow-hidden border border-border bg-secondary aspect-square cursor-pointer group"
+                          onClick={() => {
+                            setLightboxIndex(idx);
+                            setLightboxOpen(true);
+                          }}
+                        >
+                          <img src={photo.originalUrl} alt={photo.fileName || ""} className="w-full h-full object-cover group-hover:opacity-75 transition-opacity" />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                            <ImageIcon className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
                           <button
                             className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-red-600/90 hover:bg-red-600 flex items-center justify-center shadow-lg transition-colors z-10"
                             onClick={(e) => { e.stopPropagation(); if (confirm('이 사진을 삭제하시겠습니까?')) deletePhoto.mutate({ id: photo.id }); }}
@@ -392,6 +405,16 @@ export default function ClientDetailPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Image Lightbox */}
+      {photos && (
+        <ImageLightbox
+          images={photos.map((p) => ({ id: p.id, url: p.originalUrl, alt: p.fileName || undefined }))}
+          initialIndex={lightboxIndex}
+          isOpen={lightboxOpen}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
     </DashboardLayout>
   );
 }

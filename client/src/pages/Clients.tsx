@@ -32,6 +32,7 @@ const genderColors: Record<string, string> = {
 export default function ClientsPage() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "in_progress" | "completed">("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -140,10 +141,38 @@ export default function ClientsPage() {
           </Dialog>
         </div>
 
-        {/* Search */}
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="고객 이름으로 검색..." className="pl-10" value={search} onChange={(e) => setSearch(e.target.value)} />
+        {/* Search and Filters */}
+        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="고객 이름으로 검색..." className="pl-10" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant={statusFilter === "all" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStatusFilter("all")}
+              className="whitespace-nowrap"
+            >
+              전체
+            </Button>
+            <Button
+              variant={statusFilter === "in_progress" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStatusFilter("in_progress")}
+              className="whitespace-nowrap"
+            >
+              진행중
+            </Button>
+            <Button
+              variant={statusFilter === "completed" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStatusFilter("completed")}
+              className="whitespace-nowrap"
+            >
+              완료
+            </Button>
+          </div>
         </div>
 
         {/* Client List */}
@@ -155,7 +184,14 @@ export default function ClientsPage() {
           </div>
         ) : clients && clients.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {clients.map((client) => (
+            {clients
+              .filter((client) => {
+                if (statusFilter === "all") return true;
+                if (statusFilter === "in_progress") return ["consulting", "in_progress"].includes(client.status);
+                if (statusFilter === "completed") return ["completed", "delivered"].includes(client.status);
+                return true;
+              })
+              .map((client) => (
               <Card
                 key={client.id}
                 className="bg-card border-border hover:border-primary/30 cursor-pointer transition-all duration-200 group"
