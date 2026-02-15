@@ -9,11 +9,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import { useParams, useLocation } from "wouter";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import {
   ArrowLeft, Sparkles, Wand2, Download, Check, X,
   RotateCcw, ArrowUpCircle, Loader2, ImageIcon, Lock, Unlock,
-  Package, Users, UserCircle, Video, Trash2, Link2, Image as ImageLucide
+  Package, Users, UserCircle, Video, Trash2, Link2, Image as ImageLucide,
+  Upload, Brain, ArrowRight, Plus, Eye
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -51,10 +52,14 @@ export default function ProjectWorkspace() {
   const [videoMotion, setVideoMotion] = useState("cinematic");
   const [videoDuration, setVideoDuration] = useState(5);
 
+  // 참조 이미지 다중 첨부
+  const [refImages, setRefImages] = useState<Array<{ url: string; preview: string; file?: File }>>([]);
+  const [aiPromptResult, setAiPromptResult] = useState<string>("");
+  const refFileInputRef = useRef<HTMLInputElement>(null);
+
   const utils = trpc.useUtils();
   const { data: project, isLoading } = trpc.projects.getById.useQuery({ id: projectId });
   const { data: generations } = trpc.generations.list.useQuery({ projectId });
-  const { data: prompts } = trpc.prompts.list.useQuery();
   const { data: formats } = trpc.generations.merchandiseFormats.useQuery();
   const { data: clientPhotos } = trpc.clientPhotos.list.useQuery(
     { clientId: project?.clientId || 0 },
@@ -108,6 +113,19 @@ export default function ProjectWorkspace() {
     onError: (err) => toast.error(`영상 변환 실패: ${err.message}`),
   });
 
+  // AI Vision 프롬프트 자동 생성
+  const analyzeImagesMutation = trpc.generations.analyzeReferenceImages.useMutation({
+    onSuccess: (data) => {
+      setAiPromptResult(data.prompt);
+      if (data.negativePrompt) setNegativePrompt(data.negativePrompt);
+      toast.success(`AI가 ${data.imageCount}장의 이미지를 분석하여 프롬프트를 생성했습니다.`);
+    },
+    onError: (err) => toast.error(`AI 분석 실패: ${err.message}`),
+  });
+
+  // 참조 이미지 파일 업로드 (S3)
+  const uploadRefImage = trpc.clientPhotos.upload.useMutation();
+
   const selectedGen = useMemo(() => generations?.find(g => g.id === selectedGenId), [generations, selectedGenId]);
   const frontPhoto = useMemo(() => clientPhotos?.find(p => p.photoType === "front"), [clientPhotos]);
   const hasFaceRef = !!frontPhoto;
@@ -127,31 +145,114 @@ export default function ProjectWorkspace() {
     "3d": "3D 프린팅", canvas: "캔버스", digital: "디지털",
   };
 
+  // 참조 이미지 파일 선택 핸들러
+  const handleRefFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file.type.startsWith("image/")) {
+        toast.error(`${file.name}은 이미지 파일이 아닙니다.`);
+        continue;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name}은 10MB를 초과합니다.`);
+        continue;
+      }
+
+      // 미리보기 생성
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const base64 = ev.target?.result as string;
+        
+        try {
+          // S3에 업로드
+          const result = await uploadRefImage.mutateAsync({
+            clientId: project?.clientId || 0,
+            photoType: "additional" as const,
+            fileName: file.name,
+            mimeType: file.type,
+            base64Data: base64.split(",")[1],
+          });
+          
+          setRefImages(prev => [...prev, {
+            url: (result as any).originalUrl || base64,
+            preview: base64,
+            file,
+          }]);
+          toast.success(`${file.name} 업로드 완료`);
+        } catch (err: any) {
+          // S3 업로드 실패 시 로컬 미리보기만 사용
+          setRefImages(prev => [...prev, {
+            url: base64,
+            preview: base64,
+            file,
+          }]);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+    
+    // input 초기화
+    if (refFileInputRef.current) refFileInputRef.current.value = "";
+  };
+
+  // 참조 이미지 URL 추가
+  const handleAddRefUrl = () => {
+    const url = referenceUrl.trim();
+    if (!url) return;
+    setRefImages(prev => [...prev, { url, preview: url }]);
+    setReferenceUrl("");
+    toast.success("참조 이미지 URL이 추가되었습니다.");
+  };
+
+  // 참조 이미지 삭제
+  const handleRemoveRefImage = (index: number) => {
+    setRefImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // AI 프롬프트 생성
+  const handleAnalyzeImages = () => {
+    if (refImages.length === 0) {
+      toast.error("분석할 참조 이미지를 먼저 첨부해주세요.");
+      return;
+    }
+    const urls = refImages.map(img => img.url);
+    analyzeImagesMutation.mutate({
+      imageUrls: urls,
+      category: project?.category as any,
+      gender: client?.gender as any,
+      isCouple: project?.projectMode === "couple",
+    });
+  };
+
+  // AI 프롬프트를 메인 프롬프트에 삽입
+  const handleInsertAiPrompt = () => {
+    setPromptText(aiPromptResult);
+    toast.success("AI 생성 프롬프트가 메인 프롬프트에 삽입되었습니다.");
+  };
+
   const handleGenerate = () => {
-    // 프롬프트 또는 참조 이미지 중 하나는 필수
-    if (!promptText.trim() && !referenceUrl.trim()) {
-      toast.error("프롬프트 또는 참조 이미지 URL 중 하나는 입력해주세요.");
+    if (!promptText.trim() && !referenceUrl.trim() && refImages.length === 0) {
+      toast.error("프롬프트 또는 참조 이미지 중 하나는 입력해주세요.");
       return;
     }
     if (faceFixMode && !hasFaceRef) {
       toast.error("얼굴 고정 모드를 사용하려면 고객 정면 사진이 필요합니다.");
       return;
     }
+    // 참조 이미지가 있으면 첫 번째 것을 referenceImageUrl로 전달
+    const refUrl = refImages.length > 0 ? refImages[0].url : (referenceUrl.trim() || undefined);
     generateMutation.mutate({
       projectId,
       promptText: promptText.trim() || undefined,
       negativePrompt: negativePrompt.trim() || undefined,
-      referenceImageUrl: referenceUrl.trim() || undefined,
+      referenceImageUrl: refUrl,
       faceFixMode,
       merchandiseFormat: merchandiseFormat && merchandiseFormat !== "none" ? merchandiseFormat : undefined,
-      referenceMode: referenceUrl.trim() ? referenceMode : undefined,
+      referenceMode: refUrl ? referenceMode : undefined,
     });
-  };
-
-  const handleApplyPrompt = (prompt: string, negative?: string | null) => {
-    setPromptText(prompt);
-    if (negative) setNegativePrompt(negative);
-    toast.success("프롬프트가 적용되었습니다.");
   };
 
   const handleCreateVideo = () => {
@@ -258,24 +359,132 @@ export default function ProjectWorkspace() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Quick Prompt Selection */}
-                {prompts && prompts.length > 0 && (
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">프롬프트 라이브러리</Label>
-                    <Select onValueChange={(v) => {
-                      const p = prompts.find(pr => pr.id.toString() === v);
-                      if (p) handleApplyPrompt(p.prompt, p.negativePrompt);
-                    }}>
-                      <SelectTrigger className="text-sm"><SelectValue placeholder="프롬프트 선택..." /></SelectTrigger>
-                      <SelectContent>
-                        {prompts.map(p => (
-                          <SelectItem key={p.id} value={p.id.toString()}>{p.title}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                {/* ═══ 참조 이미지 다중 첨부 (프롬프트 라이브러리 대체) ═══ */}
+                <div className="space-y-3">
+                  <Label className="text-foreground text-sm flex items-center gap-2">
+                    <ImageLucide className="h-3.5 w-3.5 text-primary" />
+                    참조 이미지 첨부
+                    <span className="text-xs text-muted-foreground">(최대 10장)</span>
+                  </Label>
+
+                  {/* 첨부된 이미지 미리보기 */}
+                  {refImages.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {refImages.map((img, idx) => (
+                        <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-border group">
+                          <img 
+                            src={img.preview.startsWith("data:") ? img.preview : img.url} 
+                            alt={`참조 ${idx + 1}`} 
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23333' width='100' height='100'/%3E%3Ctext x='50' y='55' text-anchor='middle' fill='%23999' font-size='12'%3EURL%3C/text%3E%3C/svg%3E";
+                            }}
+                          />
+                          <button
+                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600/90 hover:bg-red-600 flex items-center justify-center shadow-lg z-10"
+                            onClick={() => handleRemoveRefImage(idx)}
+                          >
+                            <X className="h-3 w-3 text-white" />
+                          </button>
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
+                            <p className="text-[9px] text-white/80 truncate">{idx + 1}번</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 이미지 첨부 버튼들 */}
+                  <div className="flex gap-2">
+                    <input
+                      ref={refFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleRefFileSelect}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 gap-1.5 text-xs"
+                      onClick={() => refFileInputRef.current?.click()}
+                      disabled={refImages.length >= 10}
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                      파일 첨부
+                    </Button>
+                  </div>
+
+                  {/* URL로 추가 */}
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="핀터레스트 URL 또는 이미지 URL..."
+                      value={referenceUrl}
+                      onChange={(e) => setReferenceUrl(e.target.value)}
+                      className="text-xs flex-1"
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAddRefUrl(); }}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddRefUrl}
+                      disabled={!referenceUrl.trim() || refImages.length >= 10}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    핀터레스트 링크, 직접 이미지 URL, 또는 파일을 첨부하세요. AI가 분석하여 동일한 장면의 프롬프트를 자동 생성합니다.
+                  </p>
+                </div>
+
+                {/* ═══ AI 프롬프트 자동 생성 ═══ */}
+                {refImages.length > 0 && (
+                  <div className="space-y-2 p-3 rounded-lg bg-gradient-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/20">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-foreground text-sm flex items-center gap-2">
+                        <Brain className="h-3.5 w-3.5 text-purple-400" />
+                        AI 프롬프트 자동 생성
+                      </Label>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs border-purple-500/30 hover:bg-purple-500/10"
+                        onClick={handleAnalyzeImages}
+                        disabled={analyzeImagesMutation.isPending}
+                      >
+                        {analyzeImagesMutation.isPending ? (
+                          <><Loader2 className="h-3 w-3 animate-spin" />분석 중...</>
+                        ) : (
+                          <><Eye className="h-3 w-3" />이미지 분석</>
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      AI Vision이 첨부된 이미지를 분석하여 동일한 장면, 구도, 조명, 스타일을 재현하는 프롬프트를 자동 생성합니다.
+                    </p>
+
+                    {/* AI 생성 프롬프트 결과 */}
+                    {aiPromptResult && (
+                      <div className="space-y-2 mt-2">
+                        <div className="p-2 rounded bg-black/20 border border-border">
+                          <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">{aiPromptResult}</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="w-full gap-1.5 bg-purple-600 hover:bg-purple-700 text-xs"
+                          onClick={handleInsertAiPrompt}
+                        >
+                          <ArrowRight className="h-3 w-3" />
+                          메인 프롬프트에 삽입
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
 
+                {/* 메인 프롬프트 */}
                 <div className="space-y-2">
                   <Label className="text-foreground text-sm">
                     메인 프롬프트 <span className="text-muted-foreground text-xs">(참조 이미지 사용 시 선택사항)</span>
@@ -299,26 +508,8 @@ export default function ProjectWorkspace() {
                   />
                 </div>
 
-                {/* 참조 이미지 URL (핀터레스트 지원) */}
-                <div className="space-y-2">
-                  <Label className="text-foreground text-sm flex items-center gap-2">
-                    <Link2 className="h-3.5 w-3.5" />
-                    참조 이미지 URL
-                    <span className="text-xs text-muted-foreground">(핀터레스트 지원)</span>
-                  </Label>
-                  <Input
-                    placeholder="핀터레스트 URL, 이미지 URL, 또는 배경 이미지 URL..."
-                    value={referenceUrl}
-                    onChange={(e) => setReferenceUrl(e.target.value)}
-                    className="text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    핀터레스트 링크를 넣으면 자동으로 이미지를 추출하여 합성합니다
-                  </p>
-                </div>
-
-                {/* 참조 모드 선택 (참조 URL이 있을 때만) */}
-                {referenceUrl.trim() && (
+                {/* 참조 모드 선택 (참조 이미지가 있을 때만) */}
+                {refImages.length > 0 && (
                   <div className="space-y-2">
                     <Label className="text-foreground text-sm flex items-center gap-2">
                       <ImageLucide className="h-3.5 w-3.5" />
@@ -616,7 +807,7 @@ export default function ProjectWorkspace() {
                   <div className="flex flex-col items-center justify-center py-12">
                     <Wand2 className="h-10 w-10 text-muted-foreground/50 mb-3" />
                     <p className="text-muted-foreground text-sm">아직 생성된 이미지가 없습니다</p>
-                    <p className="text-muted-foreground/70 text-xs mt-1">프롬프트를 입력하거나 참조 이미지를 넣고 생성해보세요</p>
+                    <p className="text-muted-foreground/70 text-xs mt-1">참조 이미지를 첨부하고 AI 프롬프트를 생성한 후 이미지를 생성해보세요</p>
                   </div>
                 )}
               </CardContent>

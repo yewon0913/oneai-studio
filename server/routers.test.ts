@@ -679,3 +679,72 @@ describe("Delivery Packages Router", () => {
     expect(result).toHaveProperty("id");
   });
 });
+
+describe("AI Vision Prompt Generation (참조 이미지 분석)", () => {
+  it("analyzes reference images and generates a prompt", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.generations.analyzeReferenceImages({
+      imageUrls: ["https://example.com/wedding-ref.jpg"],
+      category: "wedding",
+      gender: "female",
+      isCouple: false,
+    });
+    expect(result).toHaveProperty("prompt");
+    expect(result).toHaveProperty("negativePrompt");
+    expect(result).toHaveProperty("imageCount", 1);
+    expect(typeof result.prompt).toBe("string");
+    expect(result.prompt.length).toBeGreaterThan(0);
+  });
+
+  it("analyzes multiple reference images", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.generations.analyzeReferenceImages({
+      imageUrls: [
+        "https://example.com/ref1.jpg",
+        "https://example.com/ref2.jpg",
+        "https://example.com/ref3.jpg",
+      ],
+      category: "wedding",
+      isCouple: true,
+    });
+    expect(result.imageCount).toBe(3);
+    expect(result.prompt.length).toBeGreaterThan(0);
+  });
+
+  it("handles Pinterest URLs in analysis", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.generations.analyzeReferenceImages({
+      imageUrls: ["https://pin.it/test123"],
+      category: "wedding",
+      gender: "female",
+    });
+    expect(result).toHaveProperty("prompt");
+    expect(result.imageCount).toBe(1);
+  });
+
+  it("rejects empty image array", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.generations.analyzeReferenceImages({
+        imageUrls: [],
+        category: "wedding",
+      })
+    ).rejects.toThrow();
+  });
+
+  it("rejects more than 10 images", async () => {
+    const ctx = createTestContext();
+    const caller = appRouter.createCaller(ctx);
+    const urls = Array.from({ length: 11 }, (_, i) => `https://example.com/img${i}.jpg`);
+    await expect(
+      caller.generations.analyzeReferenceImages({
+        imageUrls: urls,
+        category: "wedding",
+      })
+    ).rejects.toThrow();
+  });
+});

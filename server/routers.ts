@@ -682,6 +682,106 @@ export const appRouter = router({
         ...format,
       }));
     }),
+
+    // ─── AI Vision 프롬프트 자동 생성 (참조 이미지 분석) ───
+    analyzeReferenceImages: protectedProcedure
+      .input(z.object({
+        imageUrls: z.array(z.string()).min(1).max(10),
+        category: z.enum(["wedding", "restoration", "kids", "profile", "video", "custom"]).optional(),
+        gender: z.enum(["female", "male"]).optional(),
+        isCouple: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        try {
+          // 이미지 URL들을 LLM Vision에 전달하여 정밀 프롬프트 생성
+          const imageContents: Array<{ type: "image_url"; image_url: { url: string; detail: "high" } }> = [];
+          
+          for (const url of input.imageUrls) {
+            // 핀터레스트 URL인 경우 실제 이미지 URL 추출
+            let imageUrl = url;
+            if (url.includes("pinterest") || url.includes("pin.it")) {
+              const resolved = await resolveImageToBase64(url);
+              if (resolved) {
+                // base64를 data URL로 변환
+                imageUrl = `data:${resolved.mimeType};base64,${resolved.b64Json}`;
+              }
+            } else {
+              // 일반 URL도 접근 가능한지 확인, 불가능하면 base64로 변환
+              try {
+                const resolved = await imageUrlToBase64(url);
+                if (resolved) {
+                  imageUrl = `data:${resolved.mimeType};base64,${resolved.b64Json}`;
+                }
+              } catch {
+                // URL 그대로 사용
+              }
+            }
+            
+            imageContents.push({
+              type: "image_url",
+              image_url: { url: imageUrl, detail: "high" },
+            });
+          }
+
+          const categoryContext: Record<string, string> = {
+            wedding: "웨딩 사진 촬영",
+            profile: "프로필 사진 촬영",
+            kids: "아동 사진 촬영",
+            restoration: "사진 복원",
+            video: "영상 제작",
+            custom: "커스텀 사진 촬영",
+          };
+
+          const context = categoryContext[input.category || "wedding"] || "사진 촬영";
+          const genderHint = input.gender === "male" ? "남성" : "여성";
+          const coupleHint = input.isCouple ? "커플(남녀)" : genderHint;
+
+          const systemPrompt = `You are an expert AI image generation prompt engineer specializing in photorealistic portrait photography.
+Your task is to analyze reference images and create a detailed prompt that will reproduce the EXACT same scene, composition, lighting, and style.
+
+IMPORTANT RULES:
+1. Describe the scene in extreme detail: background, lighting direction, color temperature, time of day, weather
+2. Describe the pose, body position, camera angle, focal length
+3. Describe clothing, accessories, hair style in detail
+4. Describe the mood, atmosphere, color grading
+5. Do NOT describe facial features - those will come from the client's reference photo
+6. Write the prompt in English only
+7. Keep the prompt under 600 characters
+8. Focus on making the output photorealistic and cinematic
+9. The subject is: ${coupleHint} for ${context}`;
+
+          const userContent: Array<any> = [
+            ...imageContents,
+            {
+              type: "text" as const,
+              text: `Analyze these ${input.imageUrls.length} reference image(s) and create a single detailed image generation prompt that will reproduce the exact same scene, composition, lighting, style, and atmosphere. The subject will be ${coupleHint}. Remember: do NOT describe facial features, only the scene, pose, clothing, lighting, and atmosphere. Output ONLY the prompt text, nothing else.`,
+            },
+          ];
+
+          const result = await invokeLLM({
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userContent },
+            ],
+          });
+
+          const generatedPrompt = typeof result.choices[0]?.message?.content === "string" 
+            ? result.choices[0].message.content.trim()
+            : "";
+
+          if (!generatedPrompt) {
+            throw new Error("프롬프트 생성에 실패했습니다.");
+          }
+
+          return {
+            prompt: generatedPrompt,
+            negativePrompt: "(deformed, distorted, disfigured:1.3), poorly drawn, bad anatomy, wrong anatomy, extra limb, missing limb, floating limbs, (mutated hands and fingers:1.4), disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation, plastic skin, cartoon, anime, illustration, painting, drawing, sketch",
+            imageCount: input.imageUrls.length,
+          };
+        } catch (error: any) {
+          throw new Error(`이미지 분석 실패: ${error.message}`);
+        }
+      }),
   }),
 
   // ─── Batch Jobs (대량 생성) ───
