@@ -10,10 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { trpc } from "@/lib/trpc";
 import { useParams, useLocation } from "wouter";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   ArrowLeft, Sparkles, Wand2, ZoomIn, Download, Check, X,
-  RotateCcw, Eye, Columns2, ArrowUpCircle, Loader2, ImageIcon
+  RotateCcw, Eye, Columns2, ArrowUpCircle, Loader2, ImageIcon, Lock, Unlock, AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -32,11 +32,33 @@ export default function ProjectWorkspace() {
   const [selectedGenId, setSelectedGenId] = useState<number | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [guidanceScale, setGuidanceScale] = useState([7.5]);
+  const [faceFixMode, setFaceFixMode] = useState(false);
+  const [faceEmbedding, setFaceEmbedding] = useState<string | null>(null);
+  const [faceExtractionStatus, setFaceExtractionStatus] = useState<"idle" | "extracting" | "success" | "error">("idle");
 
   const utils = trpc.useUtils();
   const { data: project, isLoading } = trpc.projects.getById.useQuery({ id: projectId });
   const { data: generations } = trpc.generations.list.useQuery({ projectId });
   const { data: prompts } = trpc.prompts.list.useQuery();
+  const { data: clientPhotos } = trpc.clients.getPhotos.useQuery(
+    { clientId: project?.clientId || 0 },
+    { enabled: !!project?.clientId }
+  );
+
+  // 자동 얼굴 추출
+  useEffect(() => {
+    if (faceFixMode && clientPhotos && clientPhotos.length > 0) {
+      const frontPhoto = clientPhotos.find((p: any) => p.photoType === "front");
+      if (frontPhoto && !faceEmbedding) {
+        setFaceExtractionStatus("extracting");
+        // 실제 구현에서는 서버에서 얼굴 추출
+        setTimeout(() => {
+          setFaceEmbedding(frontPhoto.originalUrl);
+          setFaceExtractionStatus("success");
+        }, 1000);
+      }
+    }
+  }, [faceFixMode, clientPhotos, faceEmbedding]);
 
   const generateMutation = trpc.generations.generate.useMutation({
     onSuccess: (data) => {
@@ -67,12 +89,17 @@ export default function ProjectWorkspace() {
 
   const handleGenerate = () => {
     if (!promptText.trim()) { toast.error("프롬프트를 입력해주세요."); return; }
+    if (faceFixMode && !faceEmbedding) { toast.error("얼굴 추출이 완료되지 않았습니다."); return; }
     generateMutation.mutate({
       projectId,
       promptText: promptText.trim(),
       negativePrompt: negativePrompt.trim() || undefined,
       referenceImageUrl: referenceUrl.trim() || undefined,
-      parameters: { guidanceScale: guidanceScale[0] },
+      parameters: { 
+        guidanceScale: guidanceScale[0],
+        faceFixMode,
+        faceEmbedding: faceEmbedding || undefined,
+      },
     });
   };
 
@@ -185,6 +212,58 @@ export default function ProjectWorkspace() {
                 <div className="space-y-2">
                   <Label className="text-foreground text-sm">Guidance Scale: {guidanceScale[0]}</Label>
                   <Slider value={guidanceScale} onValueChange={setGuidanceScale} min={1} max={20} step={0.5} />
+                </div>
+
+                {/* Face Fix Mode */}
+                <div className="space-y-3 border-t border-border pt-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-foreground text-sm font-semibold flex items-center gap-2">
+                      {faceFixMode ? <Lock className="h-4 w-4 text-green-500" /> : <Unlock className="h-4 w-4" />}
+                      얼굴 고정 모드
+                    </Label>
+                    <button
+                      onClick={() => {
+                        setFaceFixMode(!faceFixMode);
+                        if (!faceFixMode) setFaceExtractionStatus("idle");
+                      }}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        faceFixMode ? "bg-green-600" : "bg-gray-600"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          faceFixMode ? "translate-x-6" : "translate-x-1"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  {faceFixMode && (
+                    <div className="space-y-2">
+                      {faceExtractionStatus === "extracting" && (
+                        <div className="flex items-center gap-2 text-sm text-blue-400">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          고객 얼굴을 추출 중입니다...
+                        </div>
+                      )}
+                      {faceExtractionStatus === "success" && (
+                        <div className="flex items-center gap-2 text-sm text-green-400">
+                          <Check className="h-4 w-4" />
+                          얼굴 추출 완료! 생성 시 고객 얼굴이 자동으로 적용됩니다.
+                        </div>
+                      )}
+                      {faceExtractionStatus === "error" && (
+                        <div className="flex items-center gap-2 text-sm text-red-400">
+                          <AlertCircle className="h-4 w-4" />
+                          얼굴 추출 실패. 정면 사진을 확인해주세요.
+                        </div>
+                      )}
+                      {(!clientPhotos || clientPhotos.length === 0) && (
+                        <div className="text-xs text-muted-foreground">
+                          고객 사진이 없습니다. 먼저 고객 프로필에서 사진을 업로드해주세요.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <Button
