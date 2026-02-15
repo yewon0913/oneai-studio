@@ -324,6 +324,13 @@ export async function getVideoConversionsByProject(projectId: number) {
   return db.select().from(videoConversions).where(eq(videoConversions.projectId, projectId));
 }
 
+export async function getVideoConversionById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(videoConversions).where(eq(videoConversions.id, id)).limit(1);
+  return result[0];
+}
+
 export async function updateVideoConversion(id: number, data: Partial<InsertVideoConversion>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, Sparkles, Layers, Bell, ImageIcon, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, FolderOpen, Sparkles, Bell, ShieldCheck, Flame } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -31,8 +31,7 @@ const menuItems = [
   { icon: LayoutDashboard, label: "대시보드", path: "/" },
   { icon: Users, label: "고객 관리", path: "/clients" },
   { icon: FolderOpen, label: "프로젝트", path: "/projects" },
-  { icon: Sparkles, label: "프롬프트 라이브러리", path: "/prompts" },
-  { icon: Layers, label: "배치 생성", path: "/batches" },
+  { icon: Flame, label: "AI 템플릿 갤러리", path: "/#templates-section" },
   { icon: ShieldCheck, label: "최종 검수", path: "/review" },
   { icon: Bell, label: "알림", path: "/notifications" },
 ];
@@ -67,10 +66,10 @@ export default function DashboardLayout({
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
           <div className="flex flex-col items-center gap-6">
             <h1 className="text-2xl font-semibold tracking-tight text-center">
-              Sign in to continue
+              로그인이 필요합니다
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Access to this dashboard requires authentication. Continue to launch the login flow.
+              대시보드에 접근하려면 인증이 필요합니다. 로그인을 진행해주세요.
             </p>
           </div>
           <Button
@@ -80,7 +79,7 @@ export default function DashboardLayout({
             size="lg"
             className="w-full shadow-lg hover:shadow-xl transition-all"
           >
-            Sign in
+            로그인
           </Button>
         </div>
       </div>
@@ -231,7 +230,7 @@ function DashboardLayoutContent({
                   className="cursor-pointer text-destructive focus:text-destructive"
                 >
                   <LogOut className="mr-2 h-4 w-4" />
-                  <span>Sign out</span>
+                  <span>로그아웃</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

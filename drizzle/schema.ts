@@ -195,6 +195,8 @@ export const videoConversions = mysqlTable("video_conversions", {
   videoUrl: text("videoUrl"),
   videoKey: varchar("videoKey", { length: 512 }),
   duration: int("duration").default(5),
+  motionType: varchar("motionType", { length: 50 }),
+  customPrompt: text("customPrompt"),
   status: mysqlEnum("status", ["queued", "processing", "completed", "failed"]).default("queued").notNull(),
   errorMessage: text("errorMessage"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

@@ -99,7 +99,7 @@ function buildFacePreservationPrompt(opts: {
   concept?: string;
   merchandiseFormat?: string;
   hasReferenceImage?: boolean;
-  referenceMode?: "face_swap" | "background_composite" | "style_transfer";
+  referenceMode?: "face_swap" | "background_composite" | "style_transfer" | "direct_apply";
 }): string {
   const { basePrompt, gender, isCouple, partnerGender, category, concept, merchandiseFormat, hasReferenceImage, referenceMode } = opts;
 
@@ -144,6 +144,10 @@ function buildFacePreservationPrompt(opts: {
     if (basePrompt) prompt = `${basePrompt}. ${prompt}`;
   } else if (hasReferenceImage && referenceMode === "face_swap") {
     prompt = `${faceCore} Replace the face in the reference image with the face from the provided photo. Keep everything else identical. Photorealistic, 8K.`;
+    if (basePrompt) prompt = `${basePrompt}. ${prompt}`;
+  } else if (hasReferenceImage && referenceMode === "direct_apply") {
+    // 원본 직접 적용 모드: 참조 이미지를 그대로 적용, 프롬프트 변환 최소화
+    prompt = `${faceCore} Reproduce this exact reference image with the provided face photo. Keep the exact same composition, background, lighting, clothing, pose, and every detail identical. Only replace the face. Photorealistic, 8K.`;
     if (basePrompt) prompt = `${basePrompt}. ${prompt}`;
   } else {
     const userPrompt = basePrompt || "professional portrait photo";
@@ -432,7 +436,7 @@ export const appRouter = router({
         referenceImageUrl: z.string().optional(),
         faceFixMode: z.boolean().optional(),
         merchandiseFormat: z.string().optional(),
-        referenceMode: z.enum(["face_swap", "background_composite", "style_transfer"]).optional(),
+        referenceMode: z.enum(["face_swap", "background_composite", "style_transfer", "direct_apply"]).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const startTime = Date.now();
@@ -890,15 +894,59 @@ IMPORTANT RULES:
         sourceImageUrl: z.string(),
         duration: z.number().optional(),
         motionType: z.enum(["zoom_in", "zoom_out", "pan_left", "pan_right", "slow_zoom", "cinematic"]).optional(),
+        customPrompt: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const result = await db.createVideoConversion(input);
+        const result = await db.createVideoConversion({
+          generationId: input.generationId,
+          projectId: input.projectId,
+          sourceImageUrl: input.sourceImageUrl,
+          duration: input.duration,
+          motionType: input.motionType,
+          customPrompt: input.customPrompt,
+        });
         
         processVideoAsync(result.id, input, ctx.user.id).catch(err => {
           console.error("[Video] Processing failed:", err);
         });
 
         return result;
+      }),
+    // 영상 재생성 (커스텀 프롬프트로)
+    regenerate: protectedProcedure
+      .input(z.object({
+        videoId: z.number(),
+        customPrompt: z.string().min(1),
+        motionType: z.enum(["zoom_in", "zoom_out", "pan_left", "pan_right", "slow_zoom", "cinematic"]).optional(),
+        duration: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const existingVideo = await db.getVideoConversionById(input.videoId);
+        if (!existingVideo) throw new Error("영상을 찾을 수 없습니다.");
+
+        await db.updateVideoConversion(input.videoId, {
+          status: "queued",
+          customPrompt: input.customPrompt,
+          motionType: input.motionType || existingVideo.motionType,
+          videoUrl: null,
+          errorMessage: null,
+        });
+
+        processVideoAsync(
+          input.videoId,
+          {
+            sourceImageUrl: existingVideo.sourceImageUrl,
+            duration: input.duration || existingVideo.duration || 5,
+            motionType: input.motionType || existingVideo.motionType || "cinematic",
+            projectId: existingVideo.projectId,
+            customPrompt: input.customPrompt,
+          },
+          ctx.user.id
+        ).catch((err: any) => {
+          console.error("[Video Regen] Processing failed:", err);
+        });
+
+        return { success: true };
       }),
   }),
 
@@ -961,7 +1009,7 @@ IMPORTANT RULES:
 // ─── 영상 생성 비동기 처리 ───
 async function processVideoAsync(
   videoId: number, 
-  input: { sourceImageUrl: string; duration?: number; motionType?: string; projectId: number },
+  input: { sourceImageUrl: string; duration?: number; motionType?: string; projectId: number; customPrompt?: string },
   userId: number
 ) {
   try {
@@ -977,7 +1025,10 @@ async function processVideoAsync(
     };
 
     const motionType = input.motionType || "cinematic";
-    const prompt = `${motionPrompts[motionType] || motionPrompts.cinematic}. ${input.duration || 5}s, maintain facial features, smooth 30fps.`;
+    // 커스텀 프롬프트가 있으면 사용, 없으면 모션 프롬프트 사용
+    const prompt = input.customPrompt 
+      ? `${input.customPrompt}. ${input.duration || 5}s, maintain facial features, smooth 30fps.`
+      : `${motionPrompts[motionType] || motionPrompts.cinematic}. ${input.duration || 5}s, maintain facial features, smooth 30fps.`;
 
     const origBase64 = await imageUrlToBase64(input.sourceImageUrl);
     const result = await generateImage({

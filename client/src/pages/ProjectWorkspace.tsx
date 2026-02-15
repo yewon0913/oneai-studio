@@ -14,9 +14,11 @@ import {
   ArrowLeft, Sparkles, Wand2, Download, Check, X,
   RotateCcw, ArrowUpCircle, Loader2, ImageIcon, Lock, Unlock,
   Package, Users, UserCircle, Video, Trash2, Link2, Image as ImageLucide,
-  Upload, Brain, ArrowRight, Plus, Eye
+  Upload, Brain, ArrowRight, Plus, Eye, Play, RefreshCw, Zap
 } from "lucide-react";
 import { toast } from "sonner";
+import AIEngineSelector from "@/components/AIEngineSelector";
+import type { AIEngineId } from "../../../shared/aiEngines";
 
 const statusLabels: Record<string, string> = {
   draft: "초안", generating: "생성중", review: "검수중", revision: "수정중",
@@ -27,6 +29,7 @@ const referenceModeLabels: Record<string, { label: string; desc: string }> = {
   background_composite: { label: "배경 합성", desc: "참조 이미지의 배경에 고객 얼굴을 합성합니다" },
   style_transfer: { label: "스타일 참조", desc: "참조 이미지의 스타일/분위기를 따라합니다" },
   face_swap: { label: "얼굴 교체", desc: "참조 이미지의 인물 얼굴을 고객 얼굴로 교체합니다" },
+  direct_apply: { label: "원본 직접 적용", desc: "참조 이미지를 프롬프트 변환 없이 originalImages로 직접 전달합니다" },
 };
 
 const motionTypes = [
@@ -45,17 +48,33 @@ export default function ProjectWorkspace() {
   const [promptText, setPromptText] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("(deformed, distorted, disfigured:1.3), poorly drawn, bad anatomy, wrong anatomy, extra limb, missing limb, floating limbs, (mutated hands and fingers:1.4), disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation, plastic skin, cartoon, anime");
   const [referenceUrl, setReferenceUrl] = useState("");
-  const [referenceMode, setReferenceMode] = useState<"background_composite" | "style_transfer" | "face_swap">("background_composite");
+  const [referenceMode, setReferenceMode] = useState<"background_composite" | "style_transfer" | "face_swap" | "direct_apply">("background_composite");
   const [selectedGenId, setSelectedGenId] = useState<number | null>(null);
   const [faceFixMode, setFaceFixMode] = useState(true);
   const [merchandiseFormat, setMerchandiseFormat] = useState<string>("");
   const [videoMotion, setVideoMotion] = useState("cinematic");
   const [videoDuration, setVideoDuration] = useState(5);
+  const [videoCustomPrompt, setVideoCustomPrompt] = useState("");
 
   // 참조 이미지 다중 첨부
   const [refImages, setRefImages] = useState<Array<{ url: string; preview: string; file?: File }>>([]);
   const [aiPromptResult, setAiPromptResult] = useState<string>("");
   const refFileInputRef = useRef<HTMLInputElement>(null);
+
+  // 영상 재생성 다이얼로그
+  const [regenVideoId, setRegenVideoId] = useState<number | null>(null);
+  const [regenPrompt, setRegenPrompt] = useState("");
+  const [regenMotion, setRegenMotion] = useState("cinematic");
+
+  // 멀티 AI 엔진 선택
+  const [selectedEngines, setSelectedEngines] = useState<AIEngineId[]>(["flux_lora", "midjourney_omniref"]);
+  const handleToggleEngine = (engineId: AIEngineId) => {
+    setSelectedEngines(prev =>
+      prev.includes(engineId)
+        ? prev.filter(id => id !== engineId)
+        : [...prev, engineId]
+    );
+  };
 
   const utils = trpc.useUtils();
   const { data: project, isLoading } = trpc.projects.getById.useQuery({ id: projectId });
@@ -69,7 +88,16 @@ export default function ProjectWorkspace() {
     { id: project?.clientId || 0 },
     { enabled: !!project?.clientId }
   );
-  const { data: videos } = trpc.videos.list.useQuery({ projectId });
+  const { data: videos } = trpc.videos.list.useQuery({ projectId }, {
+    refetchInterval: (query) => {
+      // 처리중인 영상이 있으면 5초마다 자동 새로고침
+      const data = query.state.data;
+      if (data && Array.isArray(data) && data.some((v: any) => v.status === "processing" || v.status === "queued")) {
+        return 5000;
+      }
+      return false;
+    },
+  });
 
   const generateMutation = trpc.generations.generate.useMutation({
     onSuccess: (data) => {
@@ -111,6 +139,16 @@ export default function ProjectWorkspace() {
       toast.success("영상 변환이 시작되었습니다. 완료까지 30초~1분 소요됩니다.");
     },
     onError: (err) => toast.error(`영상 변환 실패: ${err.message}`),
+  });
+
+  const regenVideoMutation = trpc.videos.regenerate.useMutation({
+    onSuccess: () => {
+      utils.videos.list.invalidate();
+      setRegenVideoId(null);
+      setRegenPrompt("");
+      toast.success("영상 재생성이 시작되었습니다.");
+    },
+    onError: (err) => toast.error(`영상 재생성 실패: ${err.message}`),
   });
 
   // AI Vision 프롬프트 자동 생성
@@ -161,13 +199,11 @@ export default function ProjectWorkspace() {
         continue;
       }
 
-      // 미리보기 생성
       const reader = new FileReader();
       reader.onload = async (ev) => {
         const base64 = ev.target?.result as string;
         
         try {
-          // S3에 업로드
           const result = await uploadRefImage.mutateAsync({
             clientId: project?.clientId || 0,
             photoType: "additional" as const,
@@ -182,8 +218,7 @@ export default function ProjectWorkspace() {
             file,
           }]);
           toast.success(`${file.name} 업로드 완료`);
-        } catch (err: any) {
-          // S3 업로드 실패 시 로컬 미리보기만 사용
+        } catch {
           setRefImages(prev => [...prev, {
             url: base64,
             preview: base64,
@@ -194,7 +229,6 @@ export default function ProjectWorkspace() {
       reader.readAsDataURL(file);
     }
     
-    // input 초기화
     if (refFileInputRef.current) refFileInputRef.current.value = "";
   };
 
@@ -242,16 +276,21 @@ export default function ProjectWorkspace() {
       toast.error("얼굴 고정 모드를 사용하려면 고객 정면 사진이 필요합니다.");
       return;
     }
-    // 참조 이미지가 있으면 첫 번째 것을 referenceImageUrl로 전달
     const refUrl = refImages.length > 0 ? refImages[0].url : (referenceUrl.trim() || undefined);
+    
+    // direct_apply 모드에서는 referenceMode를 face_swap으로 전달하되, 프롬프트를 최소화
+    const effectiveMode = referenceMode === "direct_apply" ? "face_swap" : referenceMode;
+    
     generateMutation.mutate({
       projectId,
-      promptText: promptText.trim() || undefined,
+      promptText: referenceMode === "direct_apply" 
+        ? (promptText.trim() || "Reproduce this exact image with the provided face. Keep everything identical.")
+        : (promptText.trim() || undefined),
       negativePrompt: negativePrompt.trim() || undefined,
       referenceImageUrl: refUrl,
       faceFixMode,
       merchandiseFormat: merchandiseFormat && merchandiseFormat !== "none" ? merchandiseFormat : undefined,
-      referenceMode: refUrl ? referenceMode : undefined,
+      referenceMode: refUrl ? effectiveMode : undefined,
     });
   };
 
@@ -266,6 +305,19 @@ export default function ProjectWorkspace() {
       sourceImageUrl: selectedGen.upscaledImageUrl || selectedGen.resultImageUrl,
       duration: videoDuration,
       motionType: videoMotion as any,
+      customPrompt: videoCustomPrompt.trim() || undefined,
+    });
+  };
+
+  const handleRegenVideo = () => {
+    if (!regenVideoId || !regenPrompt.trim()) {
+      toast.error("재생성할 프롬프트를 입력해주세요.");
+      return;
+    }
+    regenVideoMutation.mutate({
+      videoId: regenVideoId,
+      customPrompt: regenPrompt.trim(),
+      motionType: regenMotion as any,
     });
   };
 
@@ -329,7 +381,7 @@ export default function ProjectWorkspace() {
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   {frontPhoto ? (
-                    <img src={frontPhoto.originalUrl} alt="Face ref" className="w-12 h-12 rounded-lg object-cover border border-border" />
+                    <img src={frontPhoto.originalUrl} alt="얼굴 참조" className="w-12 h-12 rounded-lg object-cover border border-border" />
                   ) : (
                     <div className="w-12 h-12 rounded-lg bg-secondary flex items-center justify-center border border-border">
                       <UserCircle className="h-6 w-6 text-muted-foreground" />
@@ -359,7 +411,7 @@ export default function ProjectWorkspace() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* ═══ 참조 이미지 다중 첨부 (프롬프트 라이브러리 대체) ═══ */}
+                {/* ═══ 참조 이미지 다중 첨부 ═══ */}
                 <div className="space-y-3">
                   <Label className="text-foreground text-sm flex items-center gap-2">
                     <ImageLucide className="h-3.5 w-3.5 text-primary" />
@@ -367,7 +419,6 @@ export default function ProjectWorkspace() {
                     <span className="text-xs text-muted-foreground">(최대 10장)</span>
                   </Label>
 
-                  {/* 첨부된 이미지 미리보기 */}
                   {refImages.length > 0 && (
                     <div className="grid grid-cols-3 gap-2">
                       {refImages.map((img, idx) => (
@@ -394,7 +445,6 @@ export default function ProjectWorkspace() {
                     </div>
                   )}
 
-                  {/* 이미지 첨부 버튼들 */}
                   <div className="flex gap-2">
                     <input
                       ref={refFileInputRef}
@@ -416,7 +466,6 @@ export default function ProjectWorkspace() {
                     </Button>
                   </div>
 
-                  {/* URL로 추가 */}
                   <div className="flex gap-2">
                     <Input
                       placeholder="핀터레스트 URL 또는 이미지 URL..."
@@ -435,12 +484,12 @@ export default function ProjectWorkspace() {
                     </Button>
                   </div>
                   <p className="text-[10px] text-muted-foreground">
-                    핀터레스트 링크, 직접 이미지 URL, 또는 파일을 첨부하세요. AI가 분석하여 동일한 장면의 프롬프트를 자동 생성합니다.
+                    핀터레스트 링크, 직접 이미지 URL, 또는 파일을 첨부하세요.
                   </p>
                 </div>
 
                 {/* ═══ AI 프롬프트 자동 생성 ═══ */}
-                {refImages.length > 0 && (
+                {refImages.length > 0 && referenceMode !== "direct_apply" && (
                   <div className="space-y-2 p-3 rounded-lg bg-gradient-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/20">
                     <div className="flex items-center justify-between">
                       <Label className="text-foreground text-sm flex items-center gap-2">
@@ -465,7 +514,6 @@ export default function ProjectWorkspace() {
                       AI Vision이 첨부된 이미지를 분석하여 동일한 장면, 구도, 조명, 스타일을 재현하는 프롬프트를 자동 생성합니다.
                     </p>
 
-                    {/* AI 생성 프롬프트 결과 */}
                     {aiPromptResult && (
                       <div className="space-y-2 mt-2">
                         <div className="p-2 rounded bg-black/20 border border-border">
@@ -481,6 +529,19 @@ export default function ProjectWorkspace() {
                         </Button>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* 원본 직접 적용 모드 안내 */}
+                {referenceMode === "direct_apply" && refImages.length > 0 && (
+                  <div className="p-3 rounded-lg bg-gradient-to-br from-green-500/10 to-emerald-500/10 border border-green-500/20">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Zap className="h-3.5 w-3.5 text-green-400" />
+                      <Label className="text-foreground text-sm font-medium">원본 직접 적용 모드</Label>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      참조 이미지가 프롬프트 변환 없이 AI에 직접 전달됩니다. 고객 얼굴과 참조 이미지를 최대한 동일하게 합성합니다.
+                    </p>
                   </div>
                 )}
 
@@ -552,6 +613,17 @@ export default function ProjectWorkspace() {
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${faceFixMode ? "translate-x-6" : "translate-x-1"}`} />
                   </button>
                 </div>
+
+                {/* 멀티 AI 엔진 일관성 전략 */}
+                {faceFixMode && (
+                  <div className="p-3 rounded-lg bg-gradient-to-br from-indigo-500/5 to-purple-500/5 border border-indigo-500/20">
+                    <AIEngineSelector
+                      selectedEngines={selectedEngines}
+                      onToggleEngine={handleToggleEngine}
+                      compact
+                    />
+                  </div>
+                )}
 
                 {/* 상품 포맷 선택 */}
                 <div className="space-y-2">
@@ -653,6 +725,16 @@ export default function ProjectWorkspace() {
                                 </SelectContent>
                               </Select>
                             </div>
+                            <div className="space-y-2">
+                              <Label className="text-sm text-foreground">커스텀 프롬프트 <span className="text-xs text-muted-foreground">(선택사항)</span></Label>
+                              <Textarea
+                                placeholder="영상에 원하는 움직임이나 효과를 설명하세요..."
+                                rows={2}
+                                value={videoCustomPrompt}
+                                onChange={(e) => setVideoCustomPrompt(e.target.value)}
+                                className="text-sm"
+                              />
+                            </div>
                             <div className="rounded-lg overflow-hidden border border-border bg-black/20 max-h-48">
                               <img src={selectedGen.upscaledImageUrl || selectedGen.resultImageUrl} alt="" className="w-full h-auto object-contain max-h-48" />
                             </div>
@@ -681,7 +763,7 @@ export default function ProjectWorkspace() {
                   <div className="rounded-lg overflow-hidden border border-border bg-black/20">
                     <img
                       src={selectedGen.upscaledImageUrl || selectedGen.resultImageUrl}
-                      alt="Generated"
+                      alt="생성 결과"
                       className="w-full h-auto max-h-[600px] object-contain"
                     />
                   </div>
@@ -713,7 +795,7 @@ export default function ProjectWorkspace() {
               </Card>
             )}
 
-            {/* Videos Section */}
+            {/* ═══ Videos Section - 인라인 플레이어 + 재생성 ═══ */}
             {videos && videos.length > 0 && (
               <Card className="bg-card border-border">
                 <CardHeader className="pb-3">
@@ -723,25 +805,86 @@ export default function ProjectWorkspace() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-4">
                     {videos.map((video: any) => (
-                      <div key={video.id} className="rounded-lg border border-border p-3 bg-secondary/30">
-                        <div className="flex items-center justify-between mb-2">
-                          <Badge variant={video.status === "completed" ? "default" : video.status === "processing" ? "secondary" : "destructive"} className="text-xs">
-                            {video.status === "completed" ? "완료" : video.status === "processing" ? "변환중..." : "실패"}
-                          </Badge>
-                          {video.status === "processing" && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+                      <div key={video.id} className="rounded-lg border border-border p-4 bg-secondary/30">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Badge variant={video.status === "completed" ? "default" : video.status === "processing" || video.status === "queued" ? "secondary" : "destructive"} className="text-xs">
+                              {video.status === "completed" ? "완료" : video.status === "processing" ? "변환중..." : video.status === "queued" ? "대기중..." : "실패"}
+                            </Badge>
+                            {video.motionType && (
+                              <span className="text-xs text-muted-foreground">
+                                {motionTypes.find(m => m.value === video.motionType)?.label || video.motionType}
+                              </span>
+                            )}
+                            {video.customPrompt && (
+                              <span className="text-xs text-purple-400 truncate max-w-[200px]" title={video.customPrompt}>
+                                커스텀: {video.customPrompt}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {(video.status === "processing" || video.status === "queued") && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+                          </div>
                         </div>
-                        {video.videoUrl ? (
-                          <a href={video.videoUrl} target="_blank" rel="noopener noreferrer">
-                            <Button variant="outline" size="sm" className="w-full gap-1.5">
-                              <Download className="h-3.5 w-3.5" />영상 다운로드
-                            </Button>
-                          </a>
+                        
+                        {/* 인라인 비디오 플레이어 */}
+                        {video.videoUrl && video.status === "completed" ? (
+                          <div className="space-y-3">
+                            <div className="rounded-lg overflow-hidden border border-border bg-black aspect-video">
+                              <video
+                                src={video.videoUrl}
+                                controls
+                                className="w-full h-full object-contain"
+                                preload="metadata"
+                                playsInline
+                              >
+                                <source src={video.videoUrl} type="video/mp4" />
+                                브라우저가 비디오를 지원하지 않습니다.
+                              </video>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <a href={video.videoUrl} target="_blank" rel="noopener noreferrer">
+                                <Button variant="outline" size="sm" className="gap-1.5">
+                                  <Download className="h-3.5 w-3.5" />다운로드
+                                </Button>
+                              </a>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5 border-purple-500/30 hover:bg-purple-500/10"
+                                onClick={() => {
+                                  setRegenVideoId(video.id);
+                                  setRegenMotion(video.motionType || "cinematic");
+                                  setRegenPrompt("");
+                                }}
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" />프롬프트로 재생성
+                              </Button>
+                            </div>
+                          </div>
                         ) : video.status === "failed" ? (
-                          <p className="text-xs text-destructive">변환에 실패했습니다.</p>
+                          <div className="space-y-2">
+                            <p className="text-xs text-destructive">변환에 실패했습니다: {video.errorMessage || "알 수 없는 오류"}</p>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5"
+                              onClick={() => {
+                                setRegenVideoId(video.id);
+                                setRegenMotion(video.motionType || "cinematic");
+                                setRegenPrompt("");
+                              }}
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />다시 시도
+                            </Button>
+                          </div>
                         ) : (
-                          <p className="text-xs text-muted-foreground">변환 중입니다...</p>
+                          <div className="flex items-center gap-2 py-4 justify-center">
+                            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                            <p className="text-sm text-muted-foreground">영상을 변환하고 있습니다...</p>
+                          </div>
                         )}
                       </div>
                     ))}
@@ -749,6 +892,45 @@ export default function ProjectWorkspace() {
                 </CardContent>
               </Card>
             )}
+
+            {/* 영상 재생성 다이얼로그 */}
+            <Dialog open={regenVideoId !== null} onOpenChange={(open) => { if (!open) setRegenVideoId(null); }}>
+              <DialogContent className="bg-card border-border">
+                <DialogHeader>
+                  <DialogTitle className="text-foreground">영상 재생성</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-2">
+                    <Label className="text-sm text-foreground">커스텀 프롬프트</Label>
+                    <Textarea
+                      placeholder="원하는 영상 움직임이나 효과를 설명하세요. 예: 부드러운 줌인과 함께 꽃잎이 날리는 효과..."
+                      rows={3}
+                      value={regenPrompt}
+                      onChange={(e) => setRegenPrompt(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm text-foreground">모션 효과</Label>
+                    <Select value={regenMotion} onValueChange={setRegenMotion}>
+                      <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {motionTypes.map(m => (
+                          <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" size="sm" onClick={() => setRegenVideoId(null)}>취소</Button>
+                  <Button size="sm" className="gap-1.5" onClick={handleRegenVideo} disabled={regenVideoMutation.isPending || !regenPrompt.trim()}>
+                    {regenVideoMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    재생성 시작
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {/* Generation History */}
             <Card className="bg-card border-border">
@@ -785,7 +967,6 @@ export default function ProjectWorkspace() {
                             )}
                           </div>
                         )}
-                        {/* 삭제 버튼 - 항상 표시 */}
                         <button
                           className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600/90 hover:bg-red-600 flex items-center justify-center shadow-lg transition-colors z-10"
                           onClick={(e) => { e.stopPropagation(); if (confirm('이 이미지를 삭제하시겠습니까?')) deleteGenMutation.mutate({ id: gen.id }); }}
