@@ -22,14 +22,17 @@ export function ThemeProvider({
   switchable = false,
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(() => {
-    if (switchable) {
-      const stored = localStorage.getItem("theme");
-      return (stored as Theme) || defaultTheme;
+    if (switchable && typeof window !== 'undefined') {
+      try {
+        const stored = window.localStorage.getItem("theme");
+        return (stored as Theme) || defaultTheme;
+      } catch { return defaultTheme; }
     }
     return defaultTheme;
   });
 
   useEffect(() => {
+    if (typeof document === 'undefined') return;
     const root = document.documentElement;
     if (theme === "dark") {
       root.classList.add("dark");
@@ -37,8 +40,8 @@ export function ThemeProvider({
       root.classList.remove("dark");
     }
 
-    if (switchable) {
-      localStorage.setItem("theme", theme);
+    if (switchable && typeof window !== 'undefined') {
+      try { window.localStorage.setItem("theme", theme); } catch {}
     }
   }, [theme, switchable]);
 
