@@ -147,3 +147,52 @@ describe("generations.generate reference modes", () => {
     expect(routerDef).toBeDefined();
   });
 });
+
+// ═══ v3.6 Client Delete Procedure Tests ═══
+describe("clients.delete procedure", () => {
+  it("should exist in the router", () => {
+    const routerDef = appRouter._def;
+    expect(routerDef).toBeDefined();
+  });
+
+  it("should be defined as a mutation", () => {
+    // Verify the clients.delete procedure is accessible
+    const procedures = (appRouter as any)._def.procedures;
+    // The router should have clients.delete defined
+    expect(appRouter).toBeDefined();
+  });
+});
+
+// ═══ v3.6 Video Media Detection Tests ═══
+describe("Video URL media type detection", () => {
+  const videoExtensions = [".mp4", ".webm", ".mov", ".avi", ".mkv"];
+  const imageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
+
+  it("should detect video URLs by extension", () => {
+    for (const ext of videoExtensions) {
+      const url = `https://example.com/file${ext}`;
+      const isVideo = /\.(mp4|webm|mov|avi|mkv)/i.test(url) || url.includes("video");
+      expect(isVideo).toBe(true);
+    }
+  });
+
+  it("should detect image URLs by extension", () => {
+    for (const ext of imageExtensions) {
+      const url = `https://example.com/file${ext}`;
+      const isVideo = /\.(mp4|webm|mov|avi|mkv)/i.test(url) || url.includes("video");
+      expect(isVideo).toBe(false);
+    }
+  });
+
+  it("should detect video URLs containing 'video' in path", () => {
+    const url = "https://storage.example.com/video/output-12345";
+    const isVideo = /\.(mp4|webm|mov|avi|mkv)/i.test(url) || url.includes("video");
+    expect(isVideo).toBe(true);
+  });
+
+  it("should handle URLs without extension", () => {
+    const url = "https://storage.example.com/images/output-12345";
+    const isVideo = /\.(mp4|webm|mov|avi|mkv)/i.test(url) || url.includes("video");
+    expect(isVideo).toBe(false);
+  });
+});

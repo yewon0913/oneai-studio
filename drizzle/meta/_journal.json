@@ -29,6 +29,20 @@
       "when": 1771158982605,
       "tag": "0003_sharp_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1771166778142,
+      "tag": "0004_yellow_bishop",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1771168543546,
+      "tag": "0005_eager_synch",
+      "breakpoints": true
     }
   ]
 }

@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Plus, Search, Phone, Mail, MessageSquare, ChevronRight, UserCircle, Users, Heart } from "lucide-react";
+import { Plus, Search, Phone, Mail, MessageSquare, ChevronRight, UserCircle, Users, Heart, Trash2 } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 
 const statusLabels: Record<string, string> = {
@@ -42,6 +43,8 @@ export default function ClientsPage() {
     status: "consulting" as const,
   });
 
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
+
   const utils = trpc.useUtils();
   const { data: clients, isLoading } = trpc.clients.list.useQuery({ search: search || undefined });
   const createClient = trpc.clients.create.useMutation({
@@ -51,6 +54,15 @@ export default function ClientsPage() {
       setIsDialogOpen(false);
       setFormData({ name: "", gender: "female", phone: "", email: "", consultationNotes: "", preferredConcept: "", status: "consulting" });
       toast.success("고객이 등록되었습니다.");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const deleteClient = trpc.clients.delete.useMutation({
+    onSuccess: () => {
+      utils.clients.list.invalidate();
+      utils.dashboard.stats.invalidate();
+      setDeleteTarget(null);
+      toast.success("고객이 삭제되었습니다.");
     },
     onError: (err) => toast.error(err.message),
   });
@@ -167,7 +179,20 @@ export default function ClientsPage() {
                         </div>
                       </div>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget({ id: client.id, name: client.name });
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
                   </div>
                   <div className="space-y-1.5 text-sm text-muted-foreground">
                     {client.phone && (
@@ -200,6 +225,27 @@ export default function ClientsPage() {
           </Card>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-foreground">고객 삭제</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{deleteTarget?.name}</strong> 고객을 정말 삭제하시겠습니까? 관련된 사진과 데이터가 모두 삭제되며, 이 작업은 되돌릴 수 없습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => deleteTarget && deleteClient.mutate({ id: deleteTarget.id })}
+            >
+              {deleteClient.isPending ? "삭제 중..." : "삭제"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }

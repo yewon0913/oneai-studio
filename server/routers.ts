@@ -280,6 +280,12 @@ export const appRouter = router({
         await db.updateClient(input.clientId, { partnerId: null as any });
         return { success: true };
       }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteClient(input.id);
+        return { success: true };
+      }),
   }),
 
   // ─── Client Photos ───

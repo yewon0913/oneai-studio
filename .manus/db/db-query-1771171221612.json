@@ -1,0 +1,34 @@
+{
+  "query": "SELECT id, status, videoUrl, errorMessage, motionType, customPrompt FROM video_conversions ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwpsvKFx5LRFYeB.2be5db1eb4d7 --database XqpmVNg2gXVc63dygihuzB --execute SELECT id, status, videoUrl, errorMessage, motionType, customPrompt FROM video_conversions ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "60001",
+      "status": "completed",
+      "videoUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/generated/1771170874322.png",
+      "errorMessage": "NULL",
+      "motionType": "pan_left",
+      "customPrompt": "웃고 있은 모습"
+    },
+    {
+      "id": "30001",
+      "status": "completed",
+      "videoUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/generated/1771161011623.png",
+      "errorMessage": "NULL",
+      "motionType": "cinematic",
+      "customPrompt": "서로 포옹하는 모습"
+    },
+    {
+      "id": "1",
+      "status": "completed",
+      "videoUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/generated/1771157719135.png",
+      "errorMessage": "NULL",
+      "motionType": "NULL",
+      "customPrompt": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\tvideoUrl\terrorMessage\tmotionType\tcustomPrompt\n60001\tcompleted\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/generated/1771170874322.png\tNULL\tpan_left\t웃고 있은 모습\n30001\tcompleted\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/generated/1771161011623.png\tNULL\tcinematic\t서로 포옹하는 모습\n1\tcompleted\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/generated/1771157719135.png\tNULL\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 1526
+}

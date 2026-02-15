@@ -829,23 +829,45 @@ export default function ProjectWorkspace() {
                           </div>
                         </div>
                         
-                        {/* 인라인 비디오 플레이어 */}
+                        {/* 인라인 미디어 플레이어 (비디오 또는 이미지 자동 감지) */}
                         {video.videoUrl && video.status === "completed" ? (
                           <div className="space-y-3">
-                            <div className="rounded-lg overflow-hidden border border-border bg-black aspect-video">
-                              <video
-                                src={video.videoUrl}
-                                controls
-                                className="w-full h-full object-contain"
-                                preload="metadata"
-                                playsInline
-                              >
-                                <source src={video.videoUrl} type="video/mp4" />
-                                브라우저가 비디오를 지원하지 않습니다.
-                              </video>
-                            </div>
+                            {(() => {
+                              const url = video.videoUrl || "";
+                              const isVideo = /\.(mp4|webm|mov|avi|mkv)/i.test(url) || url.includes("video");
+                              if (isVideo) {
+                                return (
+                                  <div className="rounded-lg overflow-hidden border border-border bg-black aspect-video">
+                                    <video
+                                      controls
+                                      className="w-full h-full object-contain"
+                                      preload="metadata"
+                                      playsInline
+                                      crossOrigin="anonymous"
+                                      onError={(e) => {
+                                        const target = e.currentTarget;
+                                        const parent = target.parentElement;
+                                        if (parent) {
+                                          parent.innerHTML = `<div class="w-full h-full flex flex-col items-center justify-center gap-2 p-4"><img src="${url}" alt="" class="max-w-full max-h-full object-contain rounded" /><p class="text-xs text-muted-foreground mt-2">이미지로 생성되었습니다 (영상 API 제한)</p></div>`;
+                                        }
+                                      }}
+                                    >
+                                      <source src={url} type="video/mp4" />
+                                      <source src={url} type="video/webm" />
+                                    </video>
+                                  </div>
+                                );
+                              }
+                              // URL이 이미지인 경우 이미지로 표시
+                              return (
+                                <div className="rounded-lg overflow-hidden border border-border bg-black aspect-video flex flex-col items-center justify-center">
+                                  <img src={url} alt="생성 결과" className="max-w-full max-h-[80%] object-contain rounded" />
+                                  <p className="text-xs text-muted-foreground mt-2">이미지로 생성되었습니다 (모션 효과 적용됨)</p>
+                                </div>
+                              );
+                            })()}
                             <div className="flex items-center gap-2 flex-wrap">
-                              <a href={video.videoUrl} target="_blank" rel="noopener noreferrer">
+                              <a href={video.videoUrl} target="_blank" rel="noopener noreferrer" download>
                                 <Button variant="outline" size="sm" className="gap-1.5">
                                   <Download className="h-3.5 w-3.5" />다운로드
                                 </Button>
