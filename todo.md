@@ -155,3 +155,10 @@
 - [x] 기존 프로시저 정리 (finalApprove, finalReject, reviewQueue, updateStatus 유지)
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 업데이트 및 통과 (103개 전체 통과)
+
+## v4.4 videos 라우터 fal.ai Kling Video 전환
+- [x] 기존 videos 라우터를 fal.ai Kling Video 기반으로 교체
+- [x] create: Kling AI image-to-video 비동기 처리
+- [x] regenerate: 커스텀 프롬프트로 재생성
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 업데이트 및 통과 (103개 전체 통과)

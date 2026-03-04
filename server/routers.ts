@@ -1008,71 +1008,153 @@ Score each 0-100 and reply with ONLY valid JSON:
       }),
   }),
 
-  // ─── Video Conversions ───
+  // ─── Video Conversions (Kling AI via fal.ai) ───
   videos: router({
+    // ── 목록 ──
     list: protectedProcedure
       .input(z.object({ projectId: z.number() }))
       .query(async ({ input }) => {
         return db.getVideoConversionsByProject(input.projectId);
       }),
+
+    // ── 영상 생성 (Kling AI) ──
     create: protectedProcedure
       .input(z.object({
         generationId: z.number(),
         projectId: z.number(),
         sourceImageUrl: z.string(),
-        duration: z.number().optional(),
-        motionType: z.enum(["zoom_in", "zoom_out", "pan_left", "pan_right", "slow_zoom", "cinematic"]).optional(),
+        duration: z.number().default(5),
+        motionType: z.string().optional(),
         customPrompt: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const result = await db.createVideoConversion({
+        // DB에 먼저 저장
+        const video = await db.createVideoConversion({
           generationId: input.generationId,
           projectId: input.projectId,
           sourceImageUrl: input.sourceImageUrl,
           duration: input.duration,
           motionType: input.motionType,
           customPrompt: input.customPrompt,
-        });
-        
-        processVideoAsync(result.id, input, ctx.user.id).catch(err => {
-          console.error("[Video] Processing failed:", err);
+          status: "queued",
         });
 
-        return result;
+        // 백그라운드 비동기 처리
+        (async () => {
+          try {
+            await db.updateVideoConversion(video.id, { status: "processing" });
+
+            const falClient = await import("@fal-ai/client");
+            falClient.fal.config({ credentials: process.env.FAL_KEY || "" });
+
+            const motionPrompts: Record<string, string> = {
+              cinematic: "cinematic wedding video, smooth motion, romantic atmosphere",
+              zoom_in: "slow cinematic zoom in, romantic wedding",
+              zoom_out: "slow cinematic zoom out, dreamy wedding",
+              pan_left: "smooth pan left, elegant wedding photography",
+              pan_right: "smooth pan right, cinematic wedding",
+              slow_zoom: "ultra slow zoom, ethereal wedding moment",
+            };
+
+            const prompt = input.customPrompt ||
+              motionPrompts[input.motionType || "cinematic"] ||
+              "cinematic wedding video";
+
+            const result = await falClient.fal.subscribe(
+              "fal-ai/kling-video/v1.6/standard/image-to-video",
+              {
+                input: {
+                  image_url: input.sourceImageUrl,
+                  prompt,
+                  duration: input.duration <= 5 ? "5" : "10",
+                },
+              }
+            );
+
+            const videoUrl =
+              (result as any).data?.video?.url || input.sourceImageUrl;
+
+            await db.updateVideoConversion(video.id, {
+              videoUrl,
+              status: "completed",
+            });
+
+            await db.createNotification({
+              userId: ctx.user.id,
+              type: "generation_complete",
+              title: "영상 변환 완료",
+              message: "Kling AI로 이미지가 영상으로 변환되었습니다.",
+            });
+          } catch (err: any) {
+            await db.updateVideoConversion(video.id, {
+              status: "failed",
+              errorMessage: err.message,
+            });
+          }
+        })();
+
+        return video;
       }),
-    // 영상 재생성 (커스텀 프롬프트로)
+
+    // ── 영상 재생성 ──
     regenerate: protectedProcedure
       .input(z.object({
         videoId: z.number(),
-        customPrompt: z.string().min(1),
-        motionType: z.enum(["zoom_in", "zoom_out", "pan_left", "pan_right", "slow_zoom", "cinematic"]).optional(),
-        duration: z.number().optional(),
+        customPrompt: z.string(),
+        motionType: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const existingVideo = await db.getVideoConversionById(input.videoId);
-        if (!existingVideo) throw new Error("영상을 찾을 수 없습니다.");
+        const video = await db.getVideoConversionById(input.videoId);
+        if (!video) throw new Error("영상을 찾을 수 없습니다");
 
         await db.updateVideoConversion(input.videoId, {
           status: "queued",
           customPrompt: input.customPrompt,
-          motionType: input.motionType || existingVideo.motionType,
+          motionType: input.motionType,
           videoUrl: null,
           errorMessage: null,
         });
 
-        processVideoAsync(
-          input.videoId,
-          {
-            sourceImageUrl: existingVideo.sourceImageUrl,
-            duration: input.duration || existingVideo.duration || 5,
-            motionType: input.motionType || existingVideo.motionType || "cinematic",
-            projectId: existingVideo.projectId,
-            customPrompt: input.customPrompt,
-          },
-          ctx.user.id
-        ).catch((err: any) => {
-          console.error("[Video Regen] Processing failed:", err);
-        });
+        // 백그라운드 재생성
+        (async () => {
+          try {
+            await db.updateVideoConversion(input.videoId, { status: "processing" });
+
+            const falClient = await import("@fal-ai/client");
+            falClient.fal.config({ credentials: process.env.FAL_KEY || "" });
+
+            const result = await falClient.fal.subscribe(
+              "fal-ai/kling-video/v1.6/standard/image-to-video",
+              {
+                input: {
+                  image_url: video.sourceImageUrl,
+                  prompt: input.customPrompt,
+                  duration: (video.duration || 5) <= 5 ? "5" : "10",
+                },
+              }
+            );
+
+            const videoUrl =
+              (result as any).data?.video?.url || video.sourceImageUrl;
+
+            await db.updateVideoConversion(input.videoId, {
+              videoUrl,
+              status: "completed",
+            });
+
+            await db.createNotification({
+              userId: ctx.user.id,
+              type: "generation_complete",
+              title: "영상 재생성 완료",
+              message: "Kling AI로 영상이 재생성되었습니다.",
+            });
+          } catch (err: any) {
+            await db.updateVideoConversion(input.videoId, {
+              status: "failed",
+              errorMessage: err.message,
+            });
+          }
+        })();
 
         return { success: true };
       }),
@@ -1134,47 +1216,7 @@ Score each 0-100 and reply with ONLY valid JSON:
   }),
 });
 
-// ─── 영상 생성 비동기 처리 ───
-async function processVideoAsync(
-  videoId: number, 
-  input: { sourceImageUrl: string; duration?: number; motionType?: string; projectId: number; customPrompt?: string },
-  userId: number
-) {
-  try {
-    await db.updateVideoConversion(videoId, { status: "processing" });
-    
-    const motionPrompts: Record<string, string> = {
-      zoom_in: "Smooth cinematic zoom-in on this image",
-      zoom_out: "Smooth cinematic zoom-out revealing full scene",
-      pan_left: "Smooth horizontal pan from right to left",
-      pan_right: "Smooth horizontal pan from left to right",
-      slow_zoom: "Very slow gentle zoom with parallax for dreamy feel",
-      cinematic: "Cinematic motion with subtle camera movement and depth shifts",
-    };
-
-    const motionType = input.motionType || "cinematic";
-    // 커스텀 프롬프트가 있으면 사용, 없으면 모션 프롬프트 사용
-    const prompt = input.customPrompt 
-      ? `${input.customPrompt}. ${input.duration || 5}s, maintain facial features, smooth 30fps.`
-      : `${motionPrompts[motionType] || motionPrompts.cinematic}. ${input.duration || 5}s, maintain facial features, smooth 30fps.`;
-
-    const origBase64 = await imageUrlToBase64(input.sourceImageUrl);
-    const result = await generateImage({
-      prompt,
-      originalImages: origBase64 ? [{ b64Json: origBase64.b64Json, mimeType: origBase64.mimeType }] : [{ url: input.sourceImageUrl, mimeType: "image/png" }],
-    });
-
-    if (result.url) {
-      await db.updateVideoConversion(videoId, { videoUrl: result.url, status: "completed" });
-      await db.createNotification({ userId, type: "generation_complete", title: "영상 변환 완료", message: "이미지가 영상으로 변환되었습니다." });
-    } else {
-      throw new Error("영상 생성 결과가 없습니다.");
-    }
-  } catch (error: any) {
-    await db.updateVideoConversion(videoId, { status: "failed", errorMessage: error.message });
-    console.error("[Video] Failed:", error);
-  }
-}
+// processVideoAsync removed - video processing is now inline in the videos router using fal.ai Kling Video API
 
 // ─── 배치 비동기 처리 ───
 async function processBatchAsync(batchJobId: number, userId: number) {
