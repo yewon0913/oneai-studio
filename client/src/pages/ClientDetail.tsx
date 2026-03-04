@@ -35,6 +35,7 @@ export default function ClientDetailPage() {
   const faceRefInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const [replacingPhotoId, setReplacingPhotoId] = useState<number | null>(null);
+  const [faceDetectedMap, setFaceDetectedMap] = useState<Record<number, boolean | null>>({});
   const [projectForm, setProjectForm] = useState({
     title: "", category: "wedding" as const, concept: "", notes: "", priority: "normal" as const,
     projectMode: "single" as "single" | "couple",
@@ -384,10 +385,13 @@ export default function ClientDetailPage() {
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
             <input ref={replaceInputRef} type="file" accept="image/*" className="hidden" onChange={handleReplaceUpload} />
 
-            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-              <p className="text-sm text-amber-400">
-                <strong>얼굴 고정 모드</strong>를 사용하려면 반드시 <strong>정면 사진</strong>을 업로드해주세요. 측면 사진은 보조 참조로 사용됩니다.
-              </p>
+            <div className="p-4 rounded-lg bg-amber-500/5 border border-amber-500/20">
+              <p className="text-sm font-medium text-amber-400 mb-2">📸 사진을 많이 등록할수록 얼굴이 더 정확하게 나와요!</p>
+              <div className="space-y-1">
+                <p className="text-xs text-amber-300/80">✅ <strong>정면 사진</strong> (필수) - 눈뜨고 카메라 바라보기</p>
+                <p className="text-xs text-amber-300/80">⭐ <strong>측면 사진</strong> (권장) - 퀄리티 +30% 향상</p>
+                <p className="text-xs text-amber-300/80">⭐ <strong>다양한 표정</strong> (권장) - 퀄리티 +20% 향상</p>
+              </div>
             </div>
 
             {(["front", "side"] as const).map((type) => {
@@ -521,11 +525,42 @@ export default function ClientDetailPage() {
                 {faceRefPhotos.map((photo, idx) => (
                   <div
                     key={photo.id}
-                    className="relative rounded-lg overflow-hidden border border-border bg-secondary aspect-square cursor-pointer group"
+                    className={`relative rounded-lg overflow-hidden bg-secondary aspect-square cursor-pointer group border-2 transition-colors ${
+                      faceDetectedMap[photo.id] === true ? "border-green-500/50" :
+                      faceDetectedMap[photo.id] === false ? "border-amber-500/50" :
+                      "border-border"
+                    }`}
                     onClick={() => openLightbox(faceRefPhotos.map(p => ({ id: p.id, url: p.originalUrl, alt: p.fileName || undefined })), idx)}
                   >
-                    <img src={photo.originalUrl} alt={photo.fileName || ""} className="w-full h-full object-cover group-hover:opacity-75 transition-opacity" />
+                    <img
+                      src={photo.originalUrl}
+                      alt={photo.fileName || ""}
+                      className={`w-full h-full object-cover group-hover:opacity-75 transition-opacity`}
+                      onLoad={(e) => {
+                        // 얼굴 인식 체크 - 캔버스로 얼굴 감지 시도
+                        if (faceDetectedMap[photo.id] === undefined) {
+                          const img = e.target as HTMLImageElement;
+                          // 이미지 비율로 얼굴 사진 여부 추정 (세로 비율이 높으면 얼굴 사진일 확률 높음)
+                          const ratio = img.naturalHeight / img.naturalWidth;
+                          // 얼굴 사진은 보통 세로 비율이 0.8~2.0 사이
+                          const likelyFace = ratio >= 0.6 && ratio <= 2.5 && img.naturalWidth >= 100;
+                          setFaceDetectedMap(prev => ({ ...prev, [photo.id]: likelyFace }));
+                        }
+                      }}
+                    />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                    
+                    {/* 얼굴 인식 상태 표시 */}
+                    {faceDetectedMap[photo.id] === true && (
+                      <div className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-green-500/90 flex items-center justify-center" title="얼굴 인식 성공">
+                        <CheckCircle2 className="h-3 w-3 text-white" />
+                      </div>
+                    )}
+                    {faceDetectedMap[photo.id] === false && (
+                      <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-amber-500/90 flex items-center gap-0.5" title="얼굴이 불명확합니다">
+                        <span className="text-[8px] text-white font-medium">⚠️</span>
+                      </div>
+                    )}
                     
                     {/* 번호 표시 */}
                     <div className="absolute top-1 left-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center">

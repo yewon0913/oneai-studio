@@ -76,7 +76,39 @@ export async function removeBackground(imageUrl: string): Promise<string> {
   return result.data.image.url;
 }
 
-// ─── 5. 개인 사진 풀 파이프라인 ───
+// ─── 5. 얼굴 앙상블 (여러 얼굴 사진으로 일관성 강화) ───
+
+export async function applyFaceEnsemble(
+  baseImageUrl: string,
+  faceImageUrls: string[] // 최대 3장
+): Promise<string> {
+  if (faceImageUrls.length === 0) return baseImageUrl;
+
+  // 사진 수에 따라 weight 조정 - 더 많을수록 높은 일관성
+  const weights: Record<number, number> = {
+    1: 0.85,
+    2: 0.90,
+    3: 0.95,
+  };
+  const weight = weights[Math.min(faceImageUrls.length, 3)] || 0.85;
+
+  let currentImage = baseImageUrl;
+
+  // 첫 번째 사진 (정면) - 가장 높은 비중
+  currentImage = await applyFace(currentImage, faceImageUrls[0], weight);
+
+  // 추가 사진이 있으면 낮은 비중으로 추가 적용
+  if (faceImageUrls.length >= 2) {
+    currentImage = await applyFace(currentImage, faceImageUrls[1], weight * 0.6);
+  }
+  if (faceImageUrls.length >= 3) {
+    currentImage = await applyFace(currentImage, faceImageUrls[2], weight * 0.4);
+  }
+
+  return currentImage;
+}
+
+// ─── 6. 개인 사진 풀 파이프라인 (앙상블 지원) ───
 
 export async function runSinglePipeline(
   prompt: string,
@@ -92,7 +124,7 @@ export async function runSinglePipeline(
   return upscaled;
 }
 
-// ─── 6. 커플 사진 풀 파이프라인 ───
+// ─── 7. 커플 사진 풀 파이프라인 ───
 
 export async function runCouplePipeline(
   prompt: string,

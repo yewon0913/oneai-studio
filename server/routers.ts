@@ -10,7 +10,7 @@ import { storagePut } from "./storage";
 import { notifyOwner } from "./_core/notification";
 import { nanoid } from "nanoid";
 import { MERCHANDISE_FORMATS, type MerchandiseFormatKey } from "../drizzle/schema";
-import { runSinglePipeline, runCouplePipeline, upscale4K, generateBaseImage } from "./services/image-pipeline";
+import { runSinglePipeline, runCouplePipeline, upscale4K, generateBaseImage, applyFaceEnsemble } from "./services/image-pipeline";
 import Anthropic from "@anthropic-ai/sdk";
 
 // ─── 핀터레스트/외부 URL에서 실제 이미지를 다운로드하여 base64로 변환 ───
@@ -635,26 +635,54 @@ export const appRouter = router({
           const neg = input.negativePrompt;
 
           if (input.faceFixMode && frontPhoto) {
+            // 얼굴 참조 사진들 수집 (정면 + face_reference 최대 2장)
+            const faceRefPhotos = clientPhotos
+              .filter(p => p.photoType === "face_reference")
+              .slice(0, 2);
+            const allFaceUrls = [
+              frontPhoto.originalUrl,
+              ...faceRefPhotos.map(p => p.originalUrl),
+            ];
+
             if (isCouple && project.partnerClientId) {
               // 커플 파이프라인
               const partnerPhotos = await db.getClientPhotos(project.partnerClientId);
               const partnerFront = partnerPhotos.find(p => p.photoType === "front");
 
               if (partnerFront) {
+                const partnerFaceRefs = partnerPhotos
+                  .filter(p => p.photoType === "face_reference")
+                  .slice(0, 2);
+                const partnerFaceUrls = [
+                  partnerFront.originalUrl,
+                  ...partnerFaceRefs.map(p => p.originalUrl),
+                ];
+
                 // 성별에 따라 신랑/신부 결정
                 const isBride = client?.gender === "female";
-                resultImageUrl = await runCouplePipeline(
-                  prompt,
-                  isBride ? frontPhoto.originalUrl : partnerFront.originalUrl,
-                  isBride ? partnerFront.originalUrl : frontPhoto.originalUrl,
-                  neg
+                const baseUrl = await generateBaseImage(prompt, neg);
+                // 신부 얼굴 앙상블 먼저 적용
+                const withBride = await applyFaceEnsemble(
+                  baseUrl,
+                  isBride ? allFaceUrls : partnerFaceUrls
                 );
+                // 신랑 얼굴 앙상블 적용
+                const withCouple = await applyFaceEnsemble(
+                  withBride,
+                  isBride ? partnerFaceUrls : allFaceUrls
+                );
+                resultImageUrl = await upscale4K(withCouple);
               } else {
-                resultImageUrl = await runSinglePipeline(prompt, frontPhoto.originalUrl, neg);
+                // 파트너 정면 사진 없으면 개인 앙상블로 대체
+                const baseUrl = await generateBaseImage(prompt, neg);
+                const withFace = await applyFaceEnsemble(baseUrl, allFaceUrls);
+                resultImageUrl = await upscale4K(withFace);
               }
             } else {
-              // 개인 파이프라인
-              resultImageUrl = await runSinglePipeline(prompt, frontPhoto.originalUrl, neg);
+              // 개인 파이프라인 - 앙상블 적용
+              const baseUrl = await generateBaseImage(prompt, neg);
+              const withFace = await applyFaceEnsemble(baseUrl, allFaceUrls);
+              resultImageUrl = await upscale4K(withFace);
             }
           } else {
             // 얼굴 고정 없이 기본 생성

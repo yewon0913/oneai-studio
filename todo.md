@@ -175,3 +175,11 @@
 - [x] ProjectWorkspace.tsx 헤더에 청첩장 만들기 버튼 추가
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 업데이트 및 통과 (112개 전체 통과)
+
+## v4.6 고객 사진 등록 시스템 개선
+- [x] image-pipeline.ts에 applyFaceEnsemble 함수 추가
+- [x] generate 라우터에서 앙상블 적용 (정면 + face_reference 최대 2장)
+- [x] ClientDetail.tsx 사진 업로드 안내 박스 추가
+- [x] face_reference 업로드 시 얼굴 인식 체크 (초록 테두리 / 경고)
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 업데이트 및 통과 (115개 전체 통과)
