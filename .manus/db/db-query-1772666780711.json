@@ -1,0 +1,40 @@
+{
+  "query": "SELECT id, clientId, photoType, SUBSTRING(originalUrl, 1, 100) as url_preview FROM client_photos ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwpsvKFx5LRFYeB.2be5db1eb4d7 --database XqpmVNg2gXVc63dygihuzB --execute SELECT id, clientId, photoType, SUBSTRING(originalUrl, 1, 100) as url_preview FROM client_photos ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "990001",
+      "clientId": "60001",
+      "photoType": "additional",
+      "url_preview": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/"
+    },
+    {
+      "id": "960001",
+      "clientId": "60001",
+      "photoType": "additional",
+      "url_preview": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/"
+    },
+    {
+      "id": "930001",
+      "clientId": "60001",
+      "photoType": "additional",
+      "url_preview": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/"
+    },
+    {
+      "id": "900010",
+      "clientId": "60001",
+      "photoType": "additional",
+      "url_preview": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/"
+    },
+    {
+      "id": "900009",
+      "clientId": "60001",
+      "photoType": "additional",
+      "url_preview": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tclientId\tphotoType\turl_preview\n990001\t60001\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/\n960001\t60001\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/\n930001\t60001\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/\n900010\t60001\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/\n900009\t60001\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/\n",
+  "stderr": "",
+  "execution_time_ms": 1549
+}

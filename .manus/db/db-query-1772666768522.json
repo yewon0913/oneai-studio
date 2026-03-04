@@ -1,0 +1,70 @@
+{
+  "query": "SELECT cp.id, cp.clientId, cp.photoType, cp.originalUrl FROM client_photos cp ORDER BY cp.id DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwpsvKFx5LRFYeB.2be5db1eb4d7 --database XqpmVNg2gXVc63dygihuzB --execute SELECT cp.id, cp.clientId, cp.photoType, cp.originalUrl FROM client_photos cp ORDER BY cp.id DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "990001",
+      "clientId": "60001",
+      "photoType": "additional",
+      "originalUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/SKRAgTGVQXtXti2iTrFIt-IMG_9873.jpeg"
+    },
+    {
+      "id": "960001",
+      "clientId": "60001",
+      "photoType": "additional",
+      "originalUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/otvyTVuyvJsCloBmPJ-ku-IMG_9873.jpeg"
+    },
+    {
+      "id": "930001",
+      "clientId": "60001",
+      "photoType": "additional",
+      "originalUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/qENyI2DD0KvU_mFRbS7sG-IMG_9875.jpeg"
+    },
+    {
+      "id": "900010",
+      "clientId": "60001",
+      "photoType": "additional",
+      "originalUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/ORKdObP3YWNRzkXgeKYTV-IMG_9699.jpeg"
+    },
+    {
+      "id": "900009",
+      "clientId": "60001",
+      "photoType": "additional",
+      "originalUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/VP3qhWjlXTR7ZHP7Rutwg-IMG_9697.jpeg"
+    },
+    {
+      "id": "900008",
+      "clientId": "60001",
+      "photoType": "additional",
+      "originalUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/7LVTKJvoe8E_bMy5x7du9-IMG_9702.jpeg"
+    },
+    {
+      "id": "900007",
+      "clientId": "60001",
+      "photoType": "additional",
+      "originalUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/hu6npArTCj6CtDIDszVW0-IMG_9694.jpeg"
+    },
+    {
+      "id": "900006",
+      "clientId": "2",
+      "photoType": "additional",
+      "originalUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/2/1Kxzuu5TCf1z6mbpLuvgq-IMG_9683.jpeg"
+    },
+    {
+      "id": "900005",
+      "clientId": "2",
+      "photoType": "additional",
+      "originalUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/2/nqrdh6DJ253AeJ5fDVzDH-IMG_9693.jpeg"
+    },
+    {
+      "id": "900004",
+      "clientId": "2",
+      "photoType": "additional",
+      "originalUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/2/6Y_wPWFOeoghoBAgiMG0H-IMG_9711.jpeg"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tclientId\tphotoType\toriginalUrl\n990001\t60001\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/SKRAgTGVQXtXti2iTrFIt-IMG_9873.jpeg\n960001\t60001\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/otvyTVuyvJsCloBmPJ-ku-IMG_9873.jpeg\n930001\t60001\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/qENyI2DD0KvU_mFRbS7sG-IMG_9875.jpeg\n900010\t60001\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/ORKdObP3YWNRzkXgeKYTV-IMG_9699.jpeg\n900009\t60001\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/VP3qhWjlXTR7ZHP7Rutwg-IMG_9697.jpeg\n900008\t60001\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/7LVTKJvoe8E_bMy5x7du9-IMG_9702.jpeg\n900007\t60001\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/60001/hu6npArTCj6CtDIDszVW0-IMG_9694.jpeg\n900006\t2\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/2/1Kxzuu5TCf1z6mbpLuvgq-IMG_9683.jpeg\n900005\t2\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/2/nqrdh6DJ253AeJ5fDVzDH-IMG_9693.jpeg\n900004\t2\tadditional\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663303025775/XqpmVNg2gXVc63dygihuzB/client-photos/2/6Y_wPWFOeoghoBAgiMG0H-IMG_9711.jpeg\n",
+  "stderr": "",
+  "execution_time_ms": 1622
+}
