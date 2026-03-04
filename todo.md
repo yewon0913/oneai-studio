@@ -220,3 +220,12 @@
 - [x] 프론트엔드 워크스페이스: 가족 모드 - 구성원별 참조 이미지 업로드 UI
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 업데이트 및 통과 (144개 전체 통과)
+
+## v5.1 총체적 버그 수정
+- [x] 커플 모드일 때 "얼굴 참조 사진 준비됨" 카드 숨기기 (역할별 참조만 표시)
+- [x] 이미지 생성 "Forbidden" 에러 수정 - fal.ai 잔액 소진 시 명확한 안내 메시지 표시
+- [x] AI 엔진 일관성 전략 실제 연동 - 선택된 엔진에 따라 buildMultiEngineConsistencyPrompt로 프롬프트 강화
+- [x] 프롬프트 미리보기 에러 핸들링 개선 (fal.ai 잔액 소진 시 명확한 안내)
+- [x] 동영상 Kling v1.6 → Kling 3.0 업그레이드 (fal-ai/kling-video/v3/standard/image-to-video)
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 업데이트 및 통과 (147개 전체 통과)

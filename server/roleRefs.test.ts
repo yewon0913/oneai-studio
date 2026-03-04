@@ -89,6 +89,13 @@ vi.mock("./_core/llm", () => ({
 vi.mock("./_core/notification", () => ({
   notifyOwner: vi.fn().mockResolvedValue(true),
 }));
+vi.mock("./services/image-pipeline", () => ({
+  runSinglePipeline: vi.fn().mockResolvedValue("https://mock.com/result.png"),
+  runCouplePipeline: vi.fn().mockResolvedValue("https://mock.com/couple-result.png"),
+  upscale4K: vi.fn().mockResolvedValue("https://mock.com/upscaled.png"),
+  generateBaseImage: vi.fn().mockResolvedValue("https://mock.com/base.png"),
+  applyFaceEnsemble: vi.fn().mockResolvedValue("https://mock.com/face.png"),
+}));
 
 // Override storagePut to return unique URLs
 import { storagePut } from "./storage";
@@ -348,5 +355,44 @@ describe("projects.create with family mode", () => {
 
     expect(project.id).toBeDefined();
     expect(mockProjects[project.id]).toBeDefined();
+  });
+});
+
+describe("buildMultiEngineConsistencyPrompt", () => {
+  it("should include flux_lora directives when flux_lora engine is selected", async () => {
+    const { buildMultiEngineConsistencyPrompt } = await import("../shared/aiEngines");
+    const result = buildMultiEngineConsistencyPrompt({
+      basePrompt: "romantic wedding photo",
+      engines: ["flux_lora"],
+      gender: "female",
+    });
+    expect(result).toContain("LoRA");
+    expect(result).toContain("romantic wedding photo");
+    expect(result).toContain("woman");
+  });
+
+  it("should include midjourney directives for midjourney_omniref engine", async () => {
+    const { buildMultiEngineConsistencyPrompt } = await import("../shared/aiEngines");
+    const result = buildMultiEngineConsistencyPrompt({
+      basePrompt: "outdoor wedding",
+      engines: ["midjourney_omniref"],
+      gender: "male",
+    });
+    expect(result).toContain("character reference");
+    expect(result).toContain("man");
+  });
+
+  it("should combine multiple engine directives", async () => {
+    const { buildMultiEngineConsistencyPrompt } = await import("../shared/aiEngines");
+    const result = buildMultiEngineConsistencyPrompt({
+      basePrompt: "couple photo",
+      engines: ["flux_lora", "midjourney_omniref", "sd_ip_adapter"],
+      gender: "female",
+      isCouple: true,
+    });
+    expect(result).toContain("LoRA");
+    expect(result).toContain("character reference");
+    expect(result).toContain("IP-Adapter");
+    expect(result).toContain("couple");
   });
 });

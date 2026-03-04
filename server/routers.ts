@@ -11,6 +11,7 @@ import { notifyOwner } from "./_core/notification";
 import { nanoid } from "nanoid";
 import { MERCHANDISE_FORMATS, type MerchandiseFormatKey } from "../drizzle/schema";
 import { runSinglePipeline, runCouplePipeline, upscale4K, generateBaseImage, applyFaceEnsemble } from "./services/image-pipeline";
+import { buildMultiEngineConsistencyPrompt, type AIEngineId } from "../shared/aiEngines";
 
 // ─── 핀터레스트/외부 URL에서 실제 이미지를 다운로드하여 base64로 변환 ───
 async function resolveImageToBase64(url: string): Promise<{ b64Json: string; mimeType: string } | null> {
@@ -662,6 +663,7 @@ export const appRouter = router({
           "background_composite", "style_transfer", "face_swap", "direct_apply"
         ]).optional(),
         merchandiseFormat: z.string().optional(),
+        engines: z.array(z.enum(["flux_lora", "midjourney_omniref", "sd_ip_adapter", "dalle_native"])).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const startTime = Date.now();
@@ -705,7 +707,18 @@ export const appRouter = router({
           let resultImageUrl = "";
           const isCouple = project.projectMode === "couple" && !!project.partnerClientId;
           const isFamily = project.projectMode === "family";
-          const prompt = input.promptText || "romantic Korean wedding photo, golden hour";
+          const basePrompt = input.promptText || "romantic Korean wedding photo, golden hour";
+          // AI 엔진 일관성 전략 적용 - 선택된 엔진에 따라 프롬프트 강화
+          const engines = input.engines || ["flux_lora"];
+          const gender = client?.gender || "female";
+          const prompt = input.faceFixMode 
+            ? buildMultiEngineConsistencyPrompt({
+                basePrompt,
+                engines: engines as AIEngineId[],
+                gender,
+                isCouple: isCouple || isFamily,
+              })
+            : basePrompt;
           const neg = input.negativePrompt;
           const roleRefImages = (project.roleReferenceImages as Record<string, string[]>) || {};
 
@@ -808,11 +821,18 @@ export const appRouter = router({
           return { id: gen.id, imageUrl: resultImageUrl, generationTimeMs, faceConsistencyScore: input.faceFixMode ? 92 : undefined };
 
         } catch (error: any) {
+          // fal.ai 잔액 소진 에러 처리
+          const errMsg = error.message || "";
+          const errBody = error.body?.detail || "";
+          let userMessage = errMsg;
+          if (errMsg.includes("Forbidden") || errBody.includes("Exhausted balance") || errBody.includes("locked")) {
+            userMessage = "fal.ai API 잔액이 소진되었습니다. fal.ai 대시보드에서 잔액을 충전해주세요. (fal.ai/dashboard/billing)";
+          }
           await db.updateGeneration(gen.id, {
             status: "failed",
-            reviewNotes: error.message,
+            reviewNotes: userMessage,
           });
-          throw new Error(`이미지 생성 실패: ${error.message}`);
+          throw new Error(`이미지 생성 실패: ${userMessage}`);
         }
       }),
 
@@ -1052,11 +1072,20 @@ Score each 0-100 and reply with ONLY valid JSON:
         negativePrompt: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
-        const previewUrl = await generateBaseImage(
-          input.prompt,
-          input.negativePrompt || "(deformed, distorted, disfigured:1.3), poorly drawn, bad anatomy, wrong anatomy, extra limb, missing limb, floating limbs, (mutated hands and fingers:1.4), disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation, plastic skin, cartoon, anime",
-        );
-        return { previewUrl };
+        try {
+          const previewUrl = await generateBaseImage(
+            input.prompt,
+            input.negativePrompt || "(deformed, distorted, disfigured:1.3), poorly drawn, bad anatomy, wrong anatomy, extra limb, missing limb, floating limbs, (mutated hands and fingers:1.4), disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation, plastic skin, cartoon, anime",
+          );
+          return { previewUrl };
+        } catch (error: any) {
+          const errMsg = error.message || "";
+          const errBody = error.body?.detail || "";
+          if (errMsg.includes("Forbidden") || errBody.includes("Exhausted balance") || errBody.includes("locked")) {
+            throw new Error("미리보기 생성 실패: fal.ai API 잔액이 소진되었습니다. fal.ai 대시보드에서 잔액을 충전해주세요.");
+          }
+          throw new Error(`미리보기 생성 실패: ${errMsg}`);
+        }
       }),
   }),
 
@@ -1204,19 +1233,25 @@ Score each 0-100 and reply with ONLY valid JSON:
               motionPrompts[input.motionType || "cinematic"] ||
               "cinematic wedding video";
 
+            // Kling 3.0 API (fal-ai/kling-video/v3)
+            const durationNum = Math.max(3, Math.min(15, input.duration || 5));
             const result = await falClient.fal.subscribe(
-              "fal-ai/kling-video/v1.6/standard/image-to-video",
+              "fal-ai/kling-video/v3/standard/image-to-video",
               {
                 input: {
-                  image_url: input.sourceImageUrl,
+                  start_image_url: input.sourceImageUrl,
                   prompt,
-                  duration: input.duration <= 5 ? "5" : "10",
+                  duration: String(durationNum),
+                  generate_audio: false,
+                  aspect_ratio: "16:9",
+                  negative_prompt: "blur, distort, low quality, shaky, jittery",
+                  cfg_scale: 0.5,
                 },
               }
             );
 
             const videoUrl =
-              (result as any).data?.video?.url || input.sourceImageUrl;
+              (result as any).data?.video?.url || (result as any).video?.url || input.sourceImageUrl;
 
             await db.updateVideoConversion(video.id, {
               videoUrl,
@@ -1227,12 +1262,18 @@ Score each 0-100 and reply with ONLY valid JSON:
               userId: ctx.user.id,
               type: "generation_complete",
               title: "영상 변환 완료",
-              message: "Kling AI로 이미지가 영상으로 변환되었습니다.",
+              message: "Kling 3.0으로 이미지가 고품질 영상으로 변환되었습니다.",
             });
           } catch (err: any) {
+            const errMsg = err.message || "";
+            const errBody = err.body?.detail || "";
+            let userError = errMsg;
+            if (errMsg.includes("Forbidden") || errBody.includes("Exhausted balance") || errBody.includes("locked")) {
+              userError = "fal.ai API 잔액이 소진되었습니다. fal.ai 대시보드에서 잔액을 충전해주세요.";
+            }
             await db.updateVideoConversion(video.id, {
               status: "failed",
-              errorMessage: err.message,
+              errorMessage: userError,
             });
           }
         })();
@@ -1267,19 +1308,25 @@ Score each 0-100 and reply with ONLY valid JSON:
             const falClient = await import("@fal-ai/client");
             falClient.fal.config({ credentials: process.env.FAL_KEY || "" });
 
+            // Kling 3.0 API
+            const durationNum = Math.max(3, Math.min(15, video.duration || 5));
             const result = await falClient.fal.subscribe(
-              "fal-ai/kling-video/v1.6/standard/image-to-video",
+              "fal-ai/kling-video/v3/standard/image-to-video",
               {
                 input: {
-                  image_url: video.sourceImageUrl,
+                  start_image_url: video.sourceImageUrl,
                   prompt: input.customPrompt,
-                  duration: (video.duration || 5) <= 5 ? "5" : "10",
+                  duration: String(durationNum),
+                  generate_audio: false,
+                  aspect_ratio: "16:9",
+                  negative_prompt: "blur, distort, low quality, shaky, jittery",
+                  cfg_scale: 0.5,
                 },
               }
             );
 
             const videoUrl =
-              (result as any).data?.video?.url || video.sourceImageUrl;
+              (result as any).data?.video?.url || (result as any).video?.url || video.sourceImageUrl;
 
             await db.updateVideoConversion(input.videoId, {
               videoUrl,
@@ -1290,12 +1337,18 @@ Score each 0-100 and reply with ONLY valid JSON:
               userId: ctx.user.id,
               type: "generation_complete",
               title: "영상 재생성 완료",
-              message: "Kling AI로 영상이 재생성되었습니다.",
+              message: "Kling 3.0으로 영상이 재생성되었습니다.",
             });
           } catch (err: any) {
+            const errMsg = err.message || "";
+            const errBody = err.body?.detail || "";
+            let userError = errMsg;
+            if (errMsg.includes("Forbidden") || errBody.includes("Exhausted balance") || errBody.includes("locked")) {
+              userError = "fal.ai API 잔액이 소진되었습니다. fal.ai 대시보드에서 잔액을 충전해주세요.";
+            }
             await db.updateVideoConversion(input.videoId, {
               status: "failed",
-              errorMessage: err.message,
+              errorMessage: userError,
             });
           }
         })();

@@ -345,6 +345,7 @@ export default function ProjectWorkspace() {
       faceFixMode,
       merchandiseFormat: merchandiseFormat && merchandiseFormat !== "none" ? merchandiseFormat : undefined,
       referenceMode: refUrl ? effectiveMode : undefined,
+      engines: selectedEngines.length > 0 ? selectedEngines : undefined,
     });
   };
 
@@ -460,50 +461,52 @@ export default function ProjectWorkspace() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: Prompt & Controls */}
           <div className="lg:col-span-1 space-y-4">
-            {/* 얼굴 참조 상태 */}
-            <Card className={`border ${hasFaceRef ? "bg-green-500/5 border-green-500/20" : "bg-amber-500/5 border-amber-500/20"}`}>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  {frontPhoto ? (
-                    <div className="relative">
-                      <img src={frontPhoto.originalUrl} alt="얼굴 참조" className="w-12 h-12 rounded-lg object-cover border border-border" />
-                      {faceRefPhotos.length > 0 && (
-                        <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                          <span className="text-[9px] font-bold text-primary-foreground">{totalFacePhotos}</span>
-                        </div>
-                      )}
+            {/* 얼굴 참조 상태 - 개인 모드(single)일 때만 표시 */}
+            {project.projectMode === "single" && (
+              <Card className={`border ${hasFaceRef ? "bg-green-500/5 border-green-500/20" : "bg-amber-500/5 border-amber-500/20"}`}>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    {frontPhoto ? (
+                      <div className="relative">
+                        <img src={frontPhoto.originalUrl} alt="얼굴 참조" className="w-12 h-12 rounded-lg object-cover border border-border" />
+                        {faceRefPhotos.length > 0 && (
+                          <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                            <span className="text-[9px] font-bold text-primary-foreground">{totalFacePhotos}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="w-12 h-12 rounded-lg bg-secondary flex items-center justify-center border border-border">
+                        <UserCircle className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">
+                        {hasFaceRef ? "얼굴 참조 사진 준비됨" : "얼굴 참조 사진 없음"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {hasFaceRef 
+                          ? `정면 1장 + 얼굴참조 ${faceRefPhotos.length}장 = 총 ${totalFacePhotos}장 등록됨`
+                          : "고객 프로필에서 정면 사진을 업로드해주세요"
+                        }
+                      </p>
                     </div>
-                  ) : (
-                    <div className="w-12 h-12 rounded-lg bg-secondary flex items-center justify-center border border-border">
-                      <UserCircle className="h-6 w-6 text-muted-foreground" />
-                    </div>
-                  )}
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">
-                      {hasFaceRef ? "얼굴 참조 사진 준비됨" : "얼굴 참조 사진 없음"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {hasFaceRef 
-                        ? `정면 1장 + 얼굴참조 ${faceRefPhotos.length}장 = 총 ${totalFacePhotos}장 등록됨`
-                        : "고객 프로필에서 정면 사진을 업로드해주세요"
-                      }
-                    </p>
-                  </div>
-                  {hasFaceRef ? (
-                    <div className="flex items-center gap-1">
-                      <Check className="h-5 w-5 text-green-500" />
-                      <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={() => setLocation(`/clients/${project?.clientId}`)}>
-                        관리
+                    {hasFaceRef ? (
+                      <div className="flex items-center gap-1">
+                        <Check className="h-5 w-5 text-green-500" />
+                        <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={() => setLocation(`/clients/${project?.clientId}`)}>
+                          관리
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button variant="outline" size="sm" className="text-xs" onClick={() => setLocation(`/clients/${project?.clientId}`)}>
+                        사진 등록
                       </Button>
-                    </div>
-                  ) : (
-                    <Button variant="outline" size="sm" className="text-xs" onClick={() => setLocation(`/clients/${project?.clientId}`)}>
-                      사진 등록
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* ═══ 역할별 참조 이미지 (커플/가족 모드) ═══ */}
             {(project.projectMode === "couple" || project.projectMode === "family") && (
