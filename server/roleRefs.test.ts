@@ -13,7 +13,7 @@ const mockProjects: Record<number, any> = {};
 let projectIdCounter = 100;
 let uploadCounter = 0;
 
-// Mock db as namespace import (import * as db from "./db")
+// Mock db as namespace import
 vi.mock("./db", () => ({
   getDb: vi.fn().mockResolvedValue(null),
   upsertUser: vi.fn(),
@@ -94,7 +94,7 @@ vi.mock("./services/image-pipeline", () => ({
   runCouplePipeline: vi.fn().mockResolvedValue("https://mock.com/couple-result.png"),
   upscale4K: vi.fn().mockResolvedValue("https://mock.com/upscaled.png"),
   generateBaseImage: vi.fn().mockResolvedValue("https://mock.com/base.png"),
-  applyFaceEnsemble: vi.fn().mockResolvedValue("https://mock.com/face.png"),
+  generateWithFaceId: vi.fn().mockResolvedValue("https://mock.com/face-id.png"),
 }));
 
 // Override storagePut to return unique URLs
@@ -359,26 +359,26 @@ describe("projects.create with family mode", () => {
 });
 
 describe("buildMultiEngineConsistencyPrompt", () => {
-  it("should include flux_lora directives when flux_lora engine is selected", async () => {
+  it("should include face identity directives when flux_pulid engine is selected", async () => {
     const { buildMultiEngineConsistencyPrompt } = await import("../shared/aiEngines");
     const result = buildMultiEngineConsistencyPrompt({
       basePrompt: "romantic wedding photo",
-      engines: ["flux_lora"],
+      engines: ["flux_pulid"],
       gender: "female",
     });
-    expect(result).toContain("LoRA");
+    expect(result).toContain("facial identity");
     expect(result).toContain("romantic wedding photo");
     expect(result).toContain("woman");
   });
 
-  it("should include midjourney directives for midjourney_omniref engine", async () => {
+  it("should include dalle directives for dalle_native engine", async () => {
     const { buildMultiEngineConsistencyPrompt } = await import("../shared/aiEngines");
     const result = buildMultiEngineConsistencyPrompt({
       basePrompt: "outdoor wedding",
-      engines: ["midjourney_omniref"],
+      engines: ["dalle_native"],
       gender: "male",
     });
-    expect(result).toContain("character reference");
+    expect(result).toContain("reference image");
     expect(result).toContain("man");
   });
 
@@ -386,13 +386,43 @@ describe("buildMultiEngineConsistencyPrompt", () => {
     const { buildMultiEngineConsistencyPrompt } = await import("../shared/aiEngines");
     const result = buildMultiEngineConsistencyPrompt({
       basePrompt: "couple photo",
-      engines: ["flux_lora", "midjourney_omniref", "sd_ip_adapter"],
+      engines: ["flux_pulid", "dalle_native"],
       gender: "female",
       isCouple: true,
     });
-    expect(result).toContain("LoRA");
-    expect(result).toContain("character reference");
-    expect(result).toContain("IP-Adapter");
+    expect(result).toContain("facial identity");
+    expect(result).toContain("reference image");
     expect(result).toContain("couple");
+  });
+
+  it("should return base prompt without directives for flux_dev only", async () => {
+    const { buildMultiEngineConsistencyPrompt } = await import("../shared/aiEngines");
+    const result = buildMultiEngineConsistencyPrompt({
+      basePrompt: "beautiful garden",
+      engines: ["flux_dev"],
+      gender: "female",
+    });
+    expect(result).toContain("beautiful garden");
+    expect(result).toContain("Photorealistic");
+  });
+});
+
+describe("AI Engine config", () => {
+  it("should have correct engine IDs", async () => {
+    const { AI_ENGINE_LIST, AI_ENGINES } = await import("../shared/aiEngines");
+    expect(AI_ENGINE_LIST.length).toBeGreaterThanOrEqual(3);
+    expect(AI_ENGINES.flux_pulid).toBeDefined();
+    expect(AI_ENGINES.flux_dev).toBeDefined();
+    expect(AI_ENGINES.dalle_native).toBeDefined();
+    expect(AI_ENGINES.flux_pulid.available).toBe(true);
+    expect(AI_ENGINES.flux_dev.available).toBe(true);
+    expect(AI_ENGINES.dalle_native.available).toBe(true);
+    expect(AI_ENGINES.sd_ip_adapter.available).toBe(false);
+  });
+
+  it("should have falModel for fal.ai engines", async () => {
+    const { AI_ENGINES } = await import("../shared/aiEngines");
+    expect(AI_ENGINES.flux_pulid.falModel).toBe("fal-ai/flux-pulid");
+    expect(AI_ENGINES.flux_dev.falModel).toBe("fal-ai/flux/dev");
   });
 });

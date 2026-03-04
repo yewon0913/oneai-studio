@@ -10,7 +10,7 @@ import { storagePut } from "./storage";
 import { notifyOwner } from "./_core/notification";
 import { nanoid } from "nanoid";
 import { MERCHANDISE_FORMATS, type MerchandiseFormatKey } from "../drizzle/schema";
-import { runSinglePipeline, runCouplePipeline, upscale4K, generateBaseImage, applyFaceEnsemble } from "./services/image-pipeline";
+import { runSinglePipeline, runCouplePipeline, upscale4K, generateBaseImage, generateWithFaceId } from "./services/image-pipeline";
 import { buildMultiEngineConsistencyPrompt, type AIEngineId } from "../shared/aiEngines";
 
 // ─── 핀터레스트/외부 URL에서 실제 이미지를 다운로드하여 base64로 변환 ───
@@ -663,7 +663,7 @@ export const appRouter = router({
           "background_composite", "style_transfer", "face_swap", "direct_apply"
         ]).optional(),
         merchandiseFormat: z.string().optional(),
-        engines: z.array(z.enum(["flux_lora", "midjourney_omniref", "sd_ip_adapter", "dalle_native"])).optional(),
+        engines: z.array(z.enum(["flux_pulid", "flux_dev", "dalle_native", "sd_ip_adapter"])).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const startTime = Date.now();
@@ -709,7 +709,7 @@ export const appRouter = router({
           const isFamily = project.projectMode === "family";
           const basePrompt = input.promptText || "romantic Korean wedding photo, golden hour";
           // AI 엔진 일관성 전략 적용 - 선택된 엔진에 따라 프롬프트 강화
-          const engines = input.engines || ["flux_lora"];
+          const engines = input.engines || ["flux_pulid"];
           const gender = client?.gender || "female";
           const prompt = input.faceFixMode 
             ? buildMultiEngineConsistencyPrompt({
@@ -736,62 +736,67 @@ export const appRouter = router({
             return [];
           }
 
-          if (input.faceFixMode && frontPhoto) {
-            // 기본 고객 얼굴 참조 수집
-            const faceRefPhotos = clientPhotos
-              .filter(p => p.photoType === "face_reference")
-              .slice(0, 2);
-            const mainFaceUrls = [
-              frontPhoto.originalUrl,
-              ...faceRefPhotos.map(p => p.originalUrl),
-            ];
+          // ── 엔진 선택에 따른 실제 모델 분기 ──
+          const usePulid = engines.includes("flux_pulid");
+          const useDalle = engines.includes("dalle_native");
+
+          if (input.faceFixMode && frontPhoto && usePulid) {
+            // ── flux-pulid 엔진: 얼굴 ID 보존 생성 ──
+            const mainFaceUrl = frontPhoto.originalUrl;
 
             if (isFamily && project.familyMembers) {
-              // ── 가족 모드: 각 구성원별 얼굴 앙상블 순차 적용 ──
-              const baseUrl = await generateBaseImage(prompt, neg);
-              let currentImage = baseUrl;
-
-              for (const member of (project.familyMembers as Array<{ role: string; label: string; clientId?: number }>)) {
+              const members = project.familyMembers as Array<{ role: string; label: string; clientId?: number }>;
+              let primaryFaceUrl = mainFaceUrl;
+              for (const member of members) {
                 const memberFaceUrls = await collectRoleFaceUrls(member.role, member.clientId);
                 if (memberFaceUrls.length > 0) {
-                  currentImage = await applyFaceEnsemble(currentImage, memberFaceUrls);
+                  primaryFaceUrl = memberFaceUrls[0];
+                  break;
                 }
               }
-              resultImageUrl = await upscale4K(currentImage);
+              const generated = await generateWithFaceId(prompt, primaryFaceUrl, {
+                negativePrompt: neg,
+                idWeight: 0.85,
+              });
+              resultImageUrl = await upscale4K(generated);
 
             } else if (isCouple && project.partnerClientId) {
-              // ── 커플 모드: 신랑/신부 각각 역할별 참조 이미지 사용 ──
-              const groomFaceUrls = await collectRoleFaceUrls("groom", 
-                client?.gender === "male" ? project.clientId : project.partnerClientId
-              );
               const brideFaceUrls = await collectRoleFaceUrls("bride",
                 client?.gender === "female" ? project.clientId : project.partnerClientId
               );
+              const groomFaceUrls = await collectRoleFaceUrls("groom", 
+                client?.gender === "male" ? project.clientId : project.partnerClientId
+              );
+              const primaryFaceUrl = brideFaceUrls.length > 0 
+                ? brideFaceUrls[0] 
+                : (groomFaceUrls.length > 0 ? groomFaceUrls[0] : mainFaceUrl);
 
-              // fallback: roleReferenceImages가 없으면 기존 방식
-              const finalGroomUrls = groomFaceUrls.length > 0 ? groomFaceUrls : 
-                (client?.gender === "male" ? mainFaceUrls : []);
-              const finalBrideUrls = brideFaceUrls.length > 0 ? brideFaceUrls :
-                (client?.gender === "female" ? mainFaceUrls : []);
-
-              const baseUrl = await generateBaseImage(prompt, neg);
-              let currentImage = baseUrl;
-              if (finalBrideUrls.length > 0) {
-                currentImage = await applyFaceEnsemble(currentImage, finalBrideUrls);
-              }
-              if (finalGroomUrls.length > 0) {
-                currentImage = await applyFaceEnsemble(currentImage, finalGroomUrls);
-              }
-              resultImageUrl = await upscale4K(currentImage);
+              const generated = await generateWithFaceId(prompt, primaryFaceUrl, {
+                negativePrompt: neg,
+                idWeight: 0.85,
+              });
+              resultImageUrl = await upscale4K(generated);
 
             } else {
-              // ── 개인 모드: 기존 앙상블 적용 ──
-              const baseUrl = await generateBaseImage(prompt, neg);
-              const withFace = await applyFaceEnsemble(baseUrl, mainFaceUrls);
-              resultImageUrl = await upscale4K(withFace);
+              const generated = await generateWithFaceId(prompt, mainFaceUrl, {
+                negativePrompt: neg,
+                idWeight: 0.9,
+              });
+              resultImageUrl = await upscale4K(generated);
             }
+
+          } else if (input.faceFixMode && frontPhoto && useDalle) {
+            // ── DALL-E / GPT-Image 엔진: Manus 내장 이미지 생성 ──
+            const { generateImage } = await import("./_core/imageGeneration");
+            const mainFaceUrl = frontPhoto.originalUrl;
+            const imgResult = await generateImage({
+              prompt: prompt,
+              originalImages: [{ url: mainFaceUrl, mimeType: "image/jpeg" }],
+            });
+            resultImageUrl = imgResult.url || "";
+
           } else {
-            // 얼굴 고정 없이 기본 생성
+            // ── flux/dev 기본 생성 (얼굴 참조 없음) ──
             resultImageUrl = await generateBaseImage(prompt, neg);
           }
 

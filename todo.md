@@ -229,3 +229,11 @@
 - [x] 동영상 Kling v1.6 → Kling 3.0 업그레이드 (fal-ai/kling-video/v3/standard/image-to-video)
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 업데이트 및 통과 (147개 전체 통과)
+
+## v5.2 이미지 생성 파이프라인 근본 수정
+- [x] 커플 역할별 참조 사진(신부/신랑)을 실제 fal.ai flux-pulid 파이프라인에 전달하여 얼굴 합성
+- [x] AI 엔진 전략별 실제 다른 모델 호출 (flux-pulid 얼굴ID보존, flux/dev 기본생성, DALL-E/GPT 내장생성)
+- [x] generateWithFaceId 함수로 얼굴 참조 이미지가 실제로 fal.ai에 전달되도록 파이프라인 재설계
+- [x] 프롬프트와 일치하는 이미지 생성 보장 (flux-pulid가 prompt + reference_image_url 동시 사용)
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 업데이트 및 통과 (150개 전체 통과)

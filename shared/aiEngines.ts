@@ -1,29 +1,25 @@
 /**
- * ═══ 멀티 AI 엔진 얼굴 일관성 전략 ═══
+ * ═══ AI 이미지 생성 엔진 설정 ═══
  * 
- * 각 AI 엔진의 얼굴 일관성 기술을 통합하여 최고의 결과를 도출합니다.
+ * fal.ai 기반 실제 작동하는 엔진들입니다.
  * 
- * 1. Flux LoRA (Low-Rank Adaptation)
- *    - 소량의 참조 이미지(3~5장)로 개인화된 얼굴 모델 생성
- *    - 가장 높은 얼굴 일관성 (95%+)
- *    - 다양한 포즈/조명에서도 동일 인물 유지
+ * 1. Flux PuLID (얼굴 ID 보존 생성)
+ *    - fal-ai/flux-pulid 모델 사용
+ *    - reference_image_url로 얼굴 참조 이미지 전달
+ *    - id_weight로 얼굴 보존 강도 조절 (0~1)
+ *    - 프롬프트 + 얼굴 참조를 한 번에 처리
  * 
- * 2. Midjourney OmniReference
- *    - --cref (Character Reference) 파라미터로 캐릭터 일관성 유지
- *    - --sref (Style Reference)와 결합하여 스타일+얼굴 동시 제어
- *    - 자연스러운 표정 변화 지원
+ * 2. Flux Dev (고품질 기본 생성)
+ *    - fal-ai/flux/dev 모델 사용
+ *    - 얼굴 참조 없이 프롬프트만으로 생성
+ *    - 가장 빠른 생성 속도
  * 
- * 3. Stable Diffusion IP-Adapter
- *    - IP-Adapter Face ID로 얼굴 특징 임베딩 추출
- *    - ControlNet과 결합하여 포즈 제어 + 얼굴 유지
- *    - InstantID 기술로 단일 이미지에서도 높은 일관성
- * 
- * 4. DALL-E / GPT-Image (현재 사용중)
- *    - originalImages 파라미터로 참조 이미지 전달
- *    - 프롬프트 엔지니어링으로 얼굴 보존 지시
+ * 3. DALL-E / GPT-Image (Manus 내장)
+ *    - generateImage 헬퍼 사용
+ *    - originalImages로 참조 이미지 전달
  */
 
-export type AIEngineId = "flux_lora" | "midjourney_omniref" | "sd_ip_adapter" | "dalle_native";
+export type AIEngineId = "flux_pulid" | "flux_dev" | "dalle_native" | "sd_ip_adapter";
 
 export interface AIEngineConfig {
   id: AIEngineId;
@@ -37,119 +33,120 @@ export interface AIEngineConfig {
   featuresKo: string[];
   promptStrategy: string;
   promptStrategyKo: string;
-  icon: string; // emoji
-  color: string; // tailwind color class
+  icon: string;
+  color: string;
   available: boolean;
   recommended: boolean;
+  falModel?: string; // fal.ai 모델 ID
 }
 
 export const AI_ENGINES: Record<AIEngineId, AIEngineConfig> = {
-  flux_lora: {
-    id: "flux_lora",
-    name: "Flux LoRA",
-    nameKo: "Flux LoRA",
-    description: "Low-Rank Adaptation for personalized face model training with 3-5 reference images",
-    descriptionKo: "3~5장의 참조 이미지로 개인화된 얼굴 모델을 학습하여 최고의 일관성을 제공합니다",
-    faceConsistencyScore: 97,
+  flux_pulid: {
+    id: "flux_pulid",
+    name: "Flux PuLID",
+    nameKo: "Flux PuLID (얼굴 ID 보존)",
+    description: "PuLID-based face identity preservation with Flux model",
+    descriptionKo: "참조 사진의 얼굴 ID를 보존하면서 프롬프트에 맞는 이미지를 생성합니다. 웨딩 사진에 최적화.",
+    faceConsistencyScore: 92,
     strengthLabel: "최고",
     features: [
-      "Personalized face model training",
-      "Highest consistency across poses",
-      "Works with minimal reference images",
-      "Supports diverse lighting conditions",
+      "Face identity preservation from reference photo",
+      "Prompt-guided scene generation",
+      "Adjustable face weight (id_weight)",
+      "High-quality photorealistic output",
     ],
     featuresKo: [
-      "개인화된 얼굴 모델 학습",
-      "다양한 포즈에서 최고 일관성",
-      "최소 3장의 참조 이미지로 작동",
-      "다양한 조명 조건 지원",
+      "참조 사진에서 얼굴 ID 보존",
+      "프롬프트 기반 장면 생성",
+      "얼굴 보존 강도 조절 가능 (id_weight)",
+      "고품질 포토리얼리스틱 출력",
     ],
-    promptStrategy: "Train LoRA weights on client face → Apply weights during generation → Face preservation 97%+",
-    promptStrategyKo: "고객 얼굴로 LoRA 가중치 학습 → 생성 시 가중치 적용 → 얼굴 보존율 97%+",
-    icon: "🔥",
+    promptStrategy: "Upload face reference → flux-pulid generates scene with preserved face ID",
+    promptStrategyKo: "얼굴 참조 업로드 → flux-pulid가 얼굴 ID를 보존하면서 장면 생성",
+    icon: "🎯",
     color: "text-orange-400 bg-orange-500/10 border-orange-500/30",
     available: true,
     recommended: true,
+    falModel: "fal-ai/flux-pulid",
   },
-  midjourney_omniref: {
-    id: "midjourney_omniref",
-    name: "Midjourney OmniReference",
-    nameKo: "미드저니 옴니레퍼런스",
-    description: "Character Reference (--cref) + Style Reference (--sref) for consistent character generation",
-    descriptionKo: "캐릭터 레퍼런스(--cref)와 스타일 레퍼런스(--sref)를 결합하여 일관된 캐릭터를 생성합니다",
-    faceConsistencyScore: 93,
-    strengthLabel: "매우 높음",
+  flux_dev: {
+    id: "flux_dev",
+    name: "Flux Dev",
+    nameKo: "Flux Dev (고품질 생성)",
+    description: "High-quality image generation without face reference",
+    descriptionKo: "얼굴 참조 없이 프롬프트만으로 고품질 이미지를 생성합니다. 배경/장면 생성에 적합.",
+    faceConsistencyScore: 0,
+    strengthLabel: "없음",
     features: [
-      "Character Reference (--cref) parameter",
-      "Style Reference (--sref) combination",
-      "Natural expression variations",
-      "High-quality artistic output",
+      "Prompt-only generation",
+      "Highest image quality",
+      "Fast generation speed",
+      "Best for backgrounds and scenes",
     ],
     featuresKo: [
-      "캐릭터 레퍼런스(--cref) 파라미터",
-      "스타일 레퍼런스(--sref) 결합",
-      "자연스러운 표정 변화 지원",
-      "고품질 아티스틱 출력",
+      "프롬프트만으로 생성",
+      "최고 이미지 품질",
+      "빠른 생성 속도",
+      "배경/장면 생성에 최적",
     ],
-    promptStrategy: "Upload reference → Apply --cref with weight 100 → Combine --sref for style → Generate",
-    promptStrategyKo: "참조 이미지 업로드 → --cref 가중치 100 적용 → --sref로 스타일 결합 → 생성",
-    icon: "🎨",
+    promptStrategy: "Generate from prompt only, no face reference",
+    promptStrategyKo: "프롬프트만으로 생성, 얼굴 참조 없음",
+    icon: "⚡",
     color: "text-blue-400 bg-blue-500/10 border-blue-500/30",
     available: true,
-    recommended: true,
-  },
-  sd_ip_adapter: {
-    id: "sd_ip_adapter",
-    name: "Stable Diffusion IP-Adapter",
-    nameKo: "스테이블 디퓨전 IP-Adapter",
-    description: "IP-Adapter Face ID + ControlNet + InstantID for single-image face consistency",
-    descriptionKo: "IP-Adapter Face ID와 ControlNet, InstantID를 결합하여 단일 이미지에서도 높은 얼굴 일관성을 제공합니다",
-    faceConsistencyScore: 91,
-    strengthLabel: "높음",
-    features: [
-      "IP-Adapter Face ID embedding",
-      "ControlNet pose control",
-      "InstantID single-image consistency",
-      "Fine-grained face feature control",
-    ],
-    featuresKo: [
-      "IP-Adapter Face ID 임베딩",
-      "ControlNet 포즈 제어",
-      "InstantID 단일 이미지 일관성",
-      "세밀한 얼굴 특징 제어",
-    ],
-    promptStrategy: "Extract face embedding → Apply IP-Adapter weights → ControlNet for pose → InstantID fusion",
-    promptStrategyKo: "얼굴 임베딩 추출 → IP-Adapter 가중치 적용 → ControlNet 포즈 제어 → InstantID 융합",
-    icon: "🧠",
-    color: "text-green-400 bg-green-500/10 border-green-500/30",
-    available: true,
     recommended: false,
+    falModel: "fal-ai/flux/dev",
   },
   dalle_native: {
     id: "dalle_native",
     name: "DALL-E / GPT-Image",
     nameKo: "DALL-E / GPT 이미지",
-    description: "Native image generation with originalImages parameter and prompt engineering",
-    descriptionKo: "originalImages 파라미터와 프롬프트 엔지니어링을 통한 네이티브 이미지 생성",
-    faceConsistencyScore: 85,
-    strengthLabel: "양호",
+    description: "Native image generation with originalImages parameter",
+    descriptionKo: "Manus 내장 이미지 생성 엔진. originalImages로 참조 이미지를 전달하여 생성합니다.",
+    faceConsistencyScore: 75,
+    strengthLabel: "보통",
     features: [
-      "Direct originalImages parameter",
-      "Prompt engineering for face preservation",
+      "Built-in Manus image generation",
+      "originalImages reference support",
       "Fast generation speed",
-      "No additional training required",
+      "No additional API key required",
     ],
     featuresKo: [
-      "originalImages 직접 전달",
-      "프롬프트 엔지니어링 얼굴 보존",
+      "Manus 내장 이미지 생성",
+      "originalImages 참조 지원",
       "빠른 생성 속도",
-      "추가 학습 불필요",
+      "추가 API 키 불필요",
     ],
-    promptStrategy: "Upload face reference → Build face preservation prompt → Generate with originalImages → Score consistency",
-    promptStrategyKo: "얼굴 참조 업로드 → 얼굴 보존 프롬프트 생성 → originalImages로 생성 → 일관성 점수 평가",
-    icon: "⚡",
+    promptStrategy: "Upload reference → Generate with originalImages parameter",
+    promptStrategyKo: "참조 이미지 업로드 → originalImages 파라미터로 생성",
+    icon: "🤖",
     color: "text-purple-400 bg-purple-500/10 border-purple-500/30",
     available: true,
+    recommended: false,
+  },
+  sd_ip_adapter: {
+    id: "sd_ip_adapter",
+    name: "Stable Diffusion IP-Adapter",
+    nameKo: "SD IP-Adapter (준비 중)",
+    description: "IP-Adapter Face ID + ControlNet for face consistency (coming soon)",
+    descriptionKo: "IP-Adapter와 ControlNet을 결합한 얼굴 일관성 엔진입니다. 곧 지원 예정.",
+    faceConsistencyScore: 88,
+    strengthLabel: "높음",
+    features: [
+      "IP-Adapter Face ID embedding",
+      "ControlNet pose control",
+      "Fine-grained face feature control",
+    ],
+    featuresKo: [
+      "IP-Adapter Face ID 임베딩",
+      "ControlNet 포즈 제어",
+      "세밀한 얼굴 특징 제어",
+    ],
+    promptStrategy: "Coming soon",
+    promptStrategyKo: "곧 지원 예정",
+    icon: "🧠",
+    color: "text-gray-400 bg-gray-500/10 border-gray-500/30",
+    available: false,
     recommended: false,
   },
 };
@@ -157,9 +154,7 @@ export const AI_ENGINES: Record<AIEngineId, AIEngineConfig> = {
 export const AI_ENGINE_LIST = Object.values(AI_ENGINES);
 
 /**
- * 멀티 엔진 일관성 전략 결합 프롬프트 생성
- * 
- * 모든 엔진의 베스트 프랙티스를 결합하여 최적의 프롬프트를 생성합니다.
+ * 엔진 선택에 따른 프롬프트 강화
  */
 export function buildMultiEngineConsistencyPrompt(opts: {
   basePrompt: string;
@@ -171,34 +166,25 @@ export function buildMultiEngineConsistencyPrompt(opts: {
   
   const consistencyDirectives: string[] = [];
   
-  if (engines.includes("flux_lora")) {
+  if (engines.includes("flux_pulid")) {
     consistencyDirectives.push(
-      "Apply LoRA-trained facial identity weights with strength 0.85-0.95 for maximum face preservation."
+      "CRITICAL: Preserve 100% facial identity from reference photo. Maintain exact face shape, eye distance, nose bridge, lip contour, jawline, skin tone."
     );
   }
   
-  if (engines.includes("midjourney_omniref")) {
+  if (engines.includes("dalle_native")) {
     consistencyDirectives.push(
-      "Use character reference consistency: maintain exact facial bone structure, eye shape, nose bridge, lip contour, and skin texture from reference."
+      "Match the face from the reference image as closely as possible."
     );
   }
-  
-  if (engines.includes("sd_ip_adapter")) {
-    consistencyDirectives.push(
-      "Apply IP-Adapter face embedding with weight 0.7, combined with InstantID for identity-preserving generation."
-    );
-  }
-  
-  // 공통 얼굴 보존 지시문
-  const faceCore = [
-    "CRITICAL: Preserve 100% facial identity from reference photo.",
-    "Maintain exact: face shape, eye distance, nose bridge angle, lip thickness, jawline contour, skin tone, facial proportions.",
-    ...consistencyDirectives,
-  ].join(" ");
   
   const subjectDesc = isCouple ? "couple" : (gender === "male" ? "man" : "woman");
   
-  return `${faceCore} ${basePrompt}. Subject: ${subjectDesc}. Photorealistic, 8K, professional photography.`;
+  if (consistencyDirectives.length > 0) {
+    return `${consistencyDirectives.join(" ")} ${basePrompt}. Subject: ${subjectDesc}. Photorealistic, 8K, professional photography.`;
+  }
+  
+  return `${basePrompt}. Subject: ${subjectDesc}. Photorealistic, 8K, professional photography.`;
 }
 
 /**
@@ -206,13 +192,13 @@ export function buildMultiEngineConsistencyPrompt(opts: {
  */
 export function getRecommendedRefCount(engine: AIEngineId): { min: number; max: number; optimal: number } {
   switch (engine) {
-    case "flux_lora":
-      return { min: 3, max: 10, optimal: 5 };
-    case "midjourney_omniref":
-      return { min: 1, max: 3, optimal: 1 };
-    case "sd_ip_adapter":
-      return { min: 1, max: 5, optimal: 3 };
+    case "flux_pulid":
+      return { min: 1, max: 5, optimal: 1 };
+    case "flux_dev":
+      return { min: 0, max: 0, optimal: 0 };
     case "dalle_native":
       return { min: 1, max: 2, optimal: 1 };
+    case "sd_ip_adapter":
+      return { min: 1, max: 5, optimal: 3 };
   }
 }

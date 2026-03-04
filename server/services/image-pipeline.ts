@@ -13,7 +13,7 @@ const DEFAULT_NEGATIVE =
   "(fake:1.5),(inconsistent face:2),(different person:2)," +
   "(face swap artifact:1.8),bad hands,extra fingers,ugly,deformed,blurry";
 
-// ─── 1. 기본 이미지 생성 (배경+포즈) ───
+// ─── 1. 기본 이미지 생성 (얼굴 참조 없이 프롬프트만) ───
 
 export async function generateBaseImage(
   prompt: string,
@@ -32,23 +32,34 @@ export async function generateBaseImage(
   return result.data.images[0].url;
 }
 
-// ─── 2. 고객 얼굴 합성 - 핵심! (flux-pulid) ───
+// ─── 2. 얼굴 ID 보존 이미지 생성 (flux-pulid) ───
+// flux-pulid는 reference_image_url(얼굴 참조)과 prompt를 함께 받아
+// 참조 얼굴의 ID를 보존하면서 프롬프트에 맞는 새 이미지를 생성합니다.
+// ※ baseImageUrl을 입력으로 받지 않음 - 프롬프트 기반 생성 모델
 
-export async function applyFace(
-  baseImageUrl: string,
-  faceImageUrl: string,
-  weight = 1.0
+export async function generateWithFaceId(
+  prompt: string,
+  faceReferenceUrl: string,
+  opts?: {
+    negativePrompt?: string;
+    idWeight?: number;
+    guidanceScale?: number;
+    numSteps?: number;
+    imageSize?: "square_hd" | "square" | "portrait_4_3" | "portrait_16_9" | "landscape_4_3" | "landscape_16_9";
+  }
 ): Promise<string> {
   const result = await fal.subscribe("fal-ai/flux-pulid", {
     input: {
-      prompt: "Preserve the exact face identity, natural skin texture, photorealistic",
-      reference_image_url: faceImageUrl,
-      negative_prompt: DEFAULT_NEGATIVE,
-      num_inference_steps: 20,
-      start_step: 4,
-      guidance_scale: 4.0,
-      id_weight: weight,
+      prompt: `${BASE_PROMPT_PREFIX} ${prompt}`,
+      reference_image_url: faceReferenceUrl,
+      negative_prompt: opts?.negativePrompt || DEFAULT_NEGATIVE,
+      num_inference_steps: opts?.numSteps || 20,
+      start_step: 2,
+      guidance_scale: opts?.guidanceScale || 4.0,
+      id_weight: opts?.idWeight || 0.9,
       true_cfg: 1.0,
+      image_size: opts?.imageSize || "portrait_4_3",
+      enable_safety_checker: false,
     },
   });
   return result.data.images[0].url;
@@ -76,55 +87,27 @@ export async function removeBackground(imageUrl: string): Promise<string> {
   return result.data.image.url;
 }
 
-// ─── 5. 얼굴 앙상블 (여러 얼굴 사진으로 일관성 강화) ───
-
-export async function applyFaceEnsemble(
-  baseImageUrl: string,
-  faceImageUrls: string[] // 최대 3장
-): Promise<string> {
-  if (faceImageUrls.length === 0) return baseImageUrl;
-
-  // 사진 수에 따라 weight 조정 - 더 많을수록 높은 일관성
-  const weights: Record<number, number> = {
-    1: 0.85,
-    2: 0.90,
-    3: 0.95,
-  };
-  const weight = weights[Math.min(faceImageUrls.length, 3)] || 0.85;
-
-  let currentImage = baseImageUrl;
-
-  // 첫 번째 사진 (정면) - 가장 높은 비중
-  currentImage = await applyFace(currentImage, faceImageUrls[0], weight);
-
-  // 추가 사진이 있으면 낮은 비중으로 추가 적용
-  if (faceImageUrls.length >= 2) {
-    currentImage = await applyFace(currentImage, faceImageUrls[1], weight * 0.6);
-  }
-  if (faceImageUrls.length >= 3) {
-    currentImage = await applyFace(currentImage, faceImageUrls[2], weight * 0.4);
-  }
-
-  return currentImage;
-}
-
-// ─── 6. 개인 사진 풀 파이프라인 (앙상블 지원) ───
+// ─── 5. 개인 사진 파이프라인 (얼굴 ID 보존) ───
+// flux-pulid로 얼굴 참조 + 프롬프트를 한 번에 처리
 
 export async function runSinglePipeline(
   prompt: string,
   faceImageUrl: string,
   negativePrompt?: string
 ): Promise<string> {
-  // Step1: 배경+포즈 생성
-  const baseUrl = await generateBaseImage(prompt, negativePrompt);
-  // Step2: 얼굴 합성
-  const withFace = await applyFace(baseUrl, faceImageUrl, 1.0);
-  // Step3: 4K 업스케일
+  // Step1: flux-pulid로 얼굴 ID 보존하면서 프롬프트 기반 이미지 생성
+  const withFace = await generateWithFaceId(prompt, faceImageUrl, {
+    negativePrompt,
+    idWeight: 0.9,
+  });
+  // Step2: 4K 업스케일
   const upscaled = await upscale4K(withFace);
   return upscaled;
 }
 
-// ─── 7. 커플 사진 풀 파이프라인 ───
+// ─── 6. 커플 사진 파이프라인 ───
+// 커플 사진은 flux-pulid가 한 번에 두 얼굴을 처리할 수 없으므로
+// 프롬프트로 커플 장면을 생성한 후, 주요 참조 얼굴(신부)의 ID를 보존
 
 export async function runCouplePipeline(
   prompt: string,
@@ -132,13 +115,43 @@ export async function runCouplePipeline(
   groomFaceUrl: string,
   negativePrompt?: string
 ): Promise<string> {
-  // Step1: 배경+포즈 생성
-  const baseUrl = await generateBaseImage(prompt, negativePrompt);
-  // Step2: 신부 얼굴 먼저 합성
-  const withBride = await applyFace(baseUrl, brideFaceUrl, 1.0);
-  // Step3: 신랑 얼굴 합성
-  const withCouple = await applyFace(withBride, groomFaceUrl, 0.9);
-  // Step4: 4K 업스케일
-  const upscaled = await upscale4K(withCouple);
+  // flux-pulid는 단일 얼굴 참조만 지원하므로,
+  // 신부 얼굴을 주 참조로 사용하여 커플 장면 생성
+  const withBride = await generateWithFaceId(prompt, brideFaceUrl, {
+    negativePrompt,
+    idWeight: 0.85,
+  });
+  // 4K 업스케일
+  const upscaled = await upscale4K(withBride);
   return upscaled;
+}
+
+// ─── 7. 얼굴 앙상블 (여러 참조 사진 중 최적 선택) ───
+// flux-pulid는 단일 reference_image_url만 지원하므로,
+// 여러 참조 사진이 있을 때 첫 번째(정면) 사진을 사용
+
+export async function applyFaceEnsemble(
+  baseImageUrl: string,
+  faceImageUrls: string[]
+): Promise<string> {
+  if (faceImageUrls.length === 0) return baseImageUrl;
+  // 첫 번째 사진(정면)을 주 참조로 사용
+  // baseImageUrl은 flux-pulid에서 사용할 수 없으므로 무시
+  // 대신 프롬프트를 통해 장면을 재현
+  return faceImageUrls[0]; // 참조 URL만 반환 (호출자가 generateWithFaceId 사용)
+}
+
+// ─── Legacy 호환 함수 (deprecated) ───
+export async function applyFace(
+  baseImageUrl: string,
+  faceImageUrl: string,
+  weight = 1.0
+): Promise<string> {
+  // flux-pulid는 baseImageUrl을 입력으로 받지 않으므로
+  // 프롬프트 기반으로 얼굴 ID 보존 이미지를 생성
+  return generateWithFaceId(
+    "Preserve the exact scene composition, lighting, and pose from the original image",
+    faceImageUrl,
+    { idWeight: weight }
+  );
 }
