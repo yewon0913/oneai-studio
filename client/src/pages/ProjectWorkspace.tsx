@@ -67,6 +67,7 @@ export default function ProjectWorkspace() {
   const [regenMotion, setRegenMotion] = useState("cinematic");
 
   // 멀티 AI 엔진 선택
+  const [showAIReview, setShowAIReview] = useState(false);
   const [selectedEngines, setSelectedEngines] = useState<AIEngineId[]>(["flux_lora", "midjourney_omniref"]);
   const handleToggleEngine = (engineId: AIEngineId) => {
     setSelectedEngines(prev =>
@@ -75,6 +76,15 @@ export default function ProjectWorkspace() {
         : [...prev, engineId]
     );
   };
+
+  const aiReviewMutation = trpc.generations.requestAIReview.useMutation({
+    onSuccess: (data) => {
+      utils.generations.list.invalidate();
+      setShowAIReview(true);
+      toast.success(`AI 검수 완료! 종합 점수: ${data.aiReviewScore}/100`);
+    },
+    onError: (err: any) => toast.error(`AI 검수 실패: ${err.message}`),
+  });
 
   const utils = trpc.useUtils();
   const { data: project, isLoading } = trpc.projects.getById.useQuery({ id: projectId });
@@ -166,7 +176,9 @@ export default function ProjectWorkspace() {
 
   const selectedGen = useMemo(() => generations?.find(g => g.id === selectedGenId), [generations, selectedGenId]);
   const frontPhoto = useMemo(() => clientPhotos?.find(p => p.photoType === "front"), [clientPhotos]);
+  const faceRefPhotos = useMemo(() => clientPhotos?.filter(p => p.photoType === "face_reference") || [], [clientPhotos]);
   const hasFaceRef = !!frontPhoto;
+  const totalFacePhotos = (frontPhoto ? 1 : 0) + faceRefPhotos.length;
 
   const formatCategories = useMemo(() => {
     if (!formats) return {};
@@ -381,7 +393,14 @@ export default function ProjectWorkspace() {
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   {frontPhoto ? (
-                    <img src={frontPhoto.originalUrl} alt="얼굴 참조" className="w-12 h-12 rounded-lg object-cover border border-border" />
+                    <div className="relative">
+                      <img src={frontPhoto.originalUrl} alt="얼굴 참조" className="w-12 h-12 rounded-lg object-cover border border-border" />
+                      {faceRefPhotos.length > 0 && (
+                        <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                          <span className="text-[9px] font-bold text-primary-foreground">{totalFacePhotos}</span>
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <div className="w-12 h-12 rounded-lg bg-secondary flex items-center justify-center border border-border">
                       <UserCircle className="h-6 w-6 text-muted-foreground" />
@@ -393,12 +412,23 @@ export default function ProjectWorkspace() {
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {hasFaceRef 
-                        ? `${clientPhotos?.length || 0}장의 참조 사진이 등록되어 있습니다`
+                        ? `정면 1장 + 얼굴참조 ${faceRefPhotos.length}장 = 총 ${totalFacePhotos}장 등록됨`
                         : "고객 프로필에서 정면 사진을 업로드해주세요"
                       }
                     </p>
                   </div>
-                  {hasFaceRef && <Check className="h-5 w-5 text-green-500" />}
+                  {hasFaceRef ? (
+                    <div className="flex items-center gap-1">
+                      <Check className="h-5 w-5 text-green-500" />
+                      <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={() => setLocation(`/clients/${project?.clientId}`)}>
+                        관리
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button variant="outline" size="sm" className="text-xs" onClick={() => setLocation(`/clients/${project?.clientId}`)}>
+                      사진 등록
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -767,6 +797,75 @@ export default function ProjectWorkspace() {
                       className="w-full h-auto max-h-[600px] object-contain"
                     />
                   </div>
+                  {/* AI 검수 결과 패널 */}
+                  {(selectedGen as any).aiReviewScore != null && (
+                    <div className="mt-3 p-3 rounded-lg bg-gradient-to-br from-violet-500/5 to-blue-500/5 border border-violet-500/20">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Brain className="h-4 w-4 text-violet-400" />
+                          <span className="text-sm font-medium text-foreground">AI 검수 결과</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-lg font-bold ${
+                            (selectedGen as any).aiReviewScore >= 80 ? "text-green-400" :
+                            (selectedGen as any).aiReviewScore >= 60 ? "text-yellow-400" : "text-red-400"
+                          }`}>{(selectedGen as any).aiReviewScore}/100</span>
+                          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" onClick={() => setShowAIReview(!showAIReview)}>
+                            {showAIReview ? "접기" : "상세"}
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      {/* 점수 바 */}
+                      <div className="grid grid-cols-4 gap-2 mb-2">
+                        {[
+                          { label: "색감", score: (selectedGen as any).aiReviewDetails?.colorScore, color: "bg-blue-500" },
+                          { label: "구도", score: (selectedGen as any).aiReviewDetails?.compositionScore, color: "bg-purple-500" },
+                          { label: "손/손가락", score: (selectedGen as any).aiReviewDetails?.handScore, color: "bg-orange-500" },
+                          { label: "얼굴", score: (selectedGen as any).aiReviewDetails?.faceScore, color: "bg-pink-500" },
+                        ].map(item => (
+                          <div key={item.label} className="text-center">
+                            <div className="text-[10px] text-muted-foreground mb-1">{item.label}</div>
+                            <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+                              <div className={`h-full ${item.color} rounded-full transition-all`} style={{ width: `${item.score || 0}%` }} />
+                            </div>
+                            <div className="text-[10px] font-medium text-foreground mt-0.5">{item.score || 0}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {showAIReview && (selectedGen as any).aiReviewDetails && (
+                        <div className="space-y-2 mt-3 pt-3 border-t border-border/50">
+                          <p className="text-xs text-foreground/90">{(selectedGen as any).aiReviewDetails.overallFeedback}</p>
+                          {(selectedGen as any).aiReviewDetails.issues?.length > 0 && (
+                            <div>
+                              <p className="text-[10px] font-medium text-red-400 mb-1">발견된 문제점:</p>
+                              <ul className="space-y-0.5">
+                                {(selectedGen as any).aiReviewDetails.issues.map((issue: string, i: number) => (
+                                  <li key={i} className="text-[10px] text-muted-foreground flex items-start gap-1">
+                                    <span className="text-red-400 mt-0.5">•</span>{issue}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {(selectedGen as any).aiReviewDetails.suggestions?.length > 0 && (
+                            <div>
+                              <p className="text-[10px] font-medium text-blue-400 mb-1">개선 제안:</p>
+                              <ul className="space-y-0.5">
+                                {(selectedGen as any).aiReviewDetails.suggestions.map((sug: string, i: number) => (
+                                  <li key={i} className="text-[10px] text-muted-foreground flex items-start gap-1">
+                                    <span className="text-blue-400 mt-0.5">•</span>{sug}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground flex-wrap">
                     {selectedGen.generationTimeMs && <span>생성시간: {(selectedGen.generationTimeMs / 1000).toFixed(1)}초</span>}
                     {selectedGen.merchandiseFormat && <Badge variant="secondary" className="text-xs">{selectedGen.merchandiseFormat}</Badge>}
@@ -781,6 +880,12 @@ export default function ProjectWorkspace() {
                     <Button size="sm" variant="destructive" className="gap-1.5"
                       onClick={() => updateStatus.mutate({ id: selectedGen.id, status: "rejected" })}>
                       <X className="h-3.5 w-3.5" />반려
+                    </Button>
+                    <Button size="sm" variant="outline" className="gap-1.5 border-violet-500/30 hover:bg-violet-500/10"
+                      onClick={() => aiReviewMutation.mutate({ id: selectedGen.id })}
+                      disabled={aiReviewMutation.isPending}>
+                      {aiReviewMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />}
+                      AI 검수
                     </Button>
                     <Button size="sm" variant="outline" className="gap-1.5"
                       onClick={() => { setPromptText(selectedGen.promptText); toast.info("프롬프트를 재사용합니다."); }}>

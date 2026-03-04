@@ -173,14 +173,24 @@ async function collectFaceReferenceBase64(clientId: number, partnerClientId?: nu
   const photos = await db.getClientPhotos(clientId);
   const refs: Array<{ b64Json: string; mimeType: string }> = [];
   
-  // 정면 사진만 사용 (API 제한 대응 - 최대 1장)
+  // 1순위: 정면 사진 (필수)
   const frontPhoto = photos.find(p => p.photoType === "front");
   if (frontPhoto) {
     const b64 = await imageUrlToBase64(frontPhoto.originalUrl);
     if (b64) refs.push(b64);
   }
   
-  // 파트너 사진 (커플 모드)
+  // 2순위: 얼굴 참조 사진들 (face_reference) - 다양한 각도로 얼굴 일관성 향상
+  // API 제한으로 최대 2장까지만 전달 (정면 + 가장 최근 얼굴 참조 1장)
+  if (refs.length < 2) {
+    const faceRefs = photos.filter(p => p.photoType === "face_reference");
+    if (faceRefs.length > 0) {
+      const b64 = await imageUrlToBase64(faceRefs[0].originalUrl);
+      if (b64) refs.push(b64);
+    }
+  }
+  
+  // 파트너 사진 (커플 모드) - 파트너의 정면 사진 추가
   if (partnerClientId && refs.length < 2) {
     const partnerPhotos = await db.getClientPhotos(partnerClientId);
     const partnerFront = partnerPhotos.find(p => p.photoType === "front");
@@ -191,6 +201,100 @@ async function collectFaceReferenceBase64(clientId: number, partnerClientId?: nu
   }
   
   return refs;
+}
+
+// ─── AI 자동 검수 시스템 (LLM Vision 기반) ───
+async function performAIReview(generationId: number, imageUrl: string, hasFaceRef: boolean): Promise<void> {
+  try {
+    // 이미지를 base64로 변환
+    let imageContent: string = imageUrl;
+    try {
+      const b64 = await imageUrlToBase64(imageUrl);
+      if (b64) {
+        imageContent = `data:${b64.mimeType};base64,${b64.b64Json}`;
+      }
+    } catch {
+      // URL 그대로 사용
+    }
+
+    const systemPrompt = `You are an expert photo quality inspector for a professional wedding/portrait photography studio.
+You must analyze the generated AI image and provide quality scores and feedback.
+
+Evaluate these aspects:
+1. COLOR & LIGHTING (colorScore 0-100): Color balance, white balance, exposure, contrast, skin tone naturalness
+2. COMPOSITION (compositionScore 0-100): Framing, rule of thirds, subject placement, background
+3. HANDS & FINGERS (handScore 0-100): Check for deformed/extra/missing fingers, unnatural hand poses, merged fingers
+4. FACE QUALITY (faceScore 0-100): Facial feature clarity, symmetry, natural expression, skin texture${hasFaceRef ? ', consistency with reference' : ''}
+
+Respond in JSON format ONLY:
+{
+  "colorScore": number,
+  "compositionScore": number,
+  "handScore": number,
+  "faceScore": number,
+  "overallFeedback": "string in Korean",
+  "issues": ["issue1 in Korean", ...],
+  "suggestions": ["suggestion1 in Korean", ...]
+}`;
+
+    const result = await invokeLLM({
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url" as const,
+              image_url: { url: imageContent, detail: "high" as const },
+            },
+            {
+              type: "text" as const,
+              text: "Analyze this AI-generated portrait/wedding photo. Provide detailed quality scores and feedback. Respond in JSON only.",
+            },
+          ],
+        },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "ai_review",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              colorScore: { type: "integer", description: "Color/lighting score 0-100" },
+              compositionScore: { type: "integer", description: "Composition score 0-100" },
+              handScore: { type: "integer", description: "Hand/finger quality score 0-100" },
+              faceScore: { type: "integer", description: "Face quality score 0-100" },
+              overallFeedback: { type: "string", description: "Overall feedback in Korean" },
+              issues: { type: "array", items: { type: "string" }, description: "Issues found in Korean" },
+              suggestions: { type: "array", items: { type: "string" }, description: "Improvement suggestions in Korean" },
+            },
+            required: ["colorScore", "compositionScore", "handScore", "faceScore", "overallFeedback", "issues", "suggestions"],
+            additionalProperties: false,
+          },
+        },
+      },
+    });
+
+    const content = result.choices[0]?.message?.content;
+    if (!content) return;
+
+    const review = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
+    const overallScore = Math.round(
+      (review.colorScore * 0.25) + (review.compositionScore * 0.25) + (review.handScore * 0.25) + (review.faceScore * 0.25)
+    );
+
+    await db.updateGeneration(generationId, {
+      aiReviewScore: overallScore,
+      aiReviewDetails: review,
+      faceConsistencyScore: review.faceScore,
+    });
+
+    console.log(`[AI Review] Generation #${generationId}: Score ${overallScore}/100`);
+  } catch (error: any) {
+    console.error(`[AI Review] Error for generation #${generationId}:`, error.message);
+  }
 }
 
 export const appRouter = router({
@@ -295,15 +399,30 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return db.getClientPhotos(input.clientId);
       }),
+    // 얼굴 참조 사진만 조회 (최대 25장)
+    faceReferences: protectedProcedure
+      .input(z.object({ clientId: z.number() }))
+      .query(async ({ input }) => {
+        const photos = await db.getClientPhotos(input.clientId);
+        return photos.filter(p => p.photoType === "face_reference");
+      }),
     upload: protectedProcedure
       .input(z.object({
         clientId: z.number(),
-        photoType: z.enum(["front", "side", "additional"]),
+        photoType: z.enum(["front", "side", "additional", "face_reference"]),
         fileName: z.string(),
         mimeType: z.string(),
         base64Data: z.string(),
       }))
       .mutation(async ({ input }) => {
+        // 얼굴 참조 사진 25장 제한 체크
+        if (input.photoType === "face_reference") {
+          const existing = await db.getClientPhotos(input.clientId);
+          const faceRefCount = existing.filter(p => p.photoType === "face_reference").length;
+          if (faceRefCount >= 25) {
+            throw new Error("얼굴 참조 사진은 최대 25장까지 등록할 수 있습니다. 기존 사진을 삭제한 후 다시 시도해주세요.");
+          }
+        }
         const buffer = Buffer.from(input.base64Data, "base64");
         const fileKey = `client-photos/${input.clientId}/${nanoid()}-${input.fileName}`;
         const { url } = await storagePut(fileKey, buffer, input.mimeType);
@@ -316,6 +435,27 @@ export const appRouter = router({
           mimeType: input.mimeType,
           fileSize: buffer.length,
         });
+      }),
+    // 얼굴 참조 사진 변경 (교체)
+    replace: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        fileName: z.string(),
+        mimeType: z.string(),
+        base64Data: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const buffer = Buffer.from(input.base64Data, "base64");
+        const fileKey = `client-photos/replaced/${nanoid()}-${input.fileName}`;
+        const { url } = await storagePut(fileKey, buffer, input.mimeType);
+        await db.updateClientPhoto(input.id, {
+          originalUrl: url,
+          fileKey,
+          fileName: input.fileName,
+          mimeType: input.mimeType,
+          fileSize: buffer.length,
+        });
+        return { success: true, url };
       }),
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
@@ -557,11 +697,16 @@ export const appRouter = router({
 
           await db.updateProject(input.projectId, { status: "review" });
 
+          // 7. AI 자동 검수 (비동기 - 백그라운드에서 실행)
+          performAIReview(gen.id, imageUrl, input.faceFixMode || false).catch(err => {
+            console.error("[AI Review] Failed:", err);
+          });
+
           await db.createNotification({
             userId: ctx.user.id,
             type: "generation_complete",
             title: "AI 이미지 생성 완료",
-            message: `이미지가 생성되었습니다. (${(generationTime / 1000).toFixed(1)}초)`,
+            message: `이미지가 생성되었습니다. (${(generationTime / 1000).toFixed(1)}초) AI 검수가 진행 중입니다.`,
             relatedProjectId: input.projectId,
           });
 
@@ -640,6 +785,23 @@ export const appRouter = router({
       .input(z.object({ projectId: z.number() }))
       .query(async ({ input }) => {
         return db.getReviewQueueByProject(input.projectId);
+      }),
+
+    // 수동 AI 검수 요청
+    requestAIReview: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const gen = await db.getGenerationById(input.id);
+        if (!gen || !gen.resultImageUrl) throw new Error("생성 이미지를 찾을 수 없습니다.");
+        
+        const hasFaceRef = !!(gen.parameters as any)?.faceFixMode;
+        await performAIReview(gen.id, gen.resultImageUrl, hasFaceRef);
+        
+        const updated = await db.getGenerationById(gen.id);
+        return {
+          aiReviewScore: updated?.aiReviewScore,
+          aiReviewDetails: updated?.aiReviewDetails,
+        };
       }),
 
     upscale: protectedProcedure

@@ -43,6 +43,20 @@
       "when": 1771168543546,
       "tag": "0005_eager_synch",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1772602940351,
+      "tag": "0006_thick_white_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1772603349312,
+      "tag": "0007_tearful_snowbird",
+      "breakpoints": true
     }
   ]
 }
