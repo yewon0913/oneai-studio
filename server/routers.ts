@@ -792,6 +792,58 @@ IMPORTANT RULES:
           throw new Error(`이미지 분석 실패: ${error.message}`);
         }
       }),
+
+    // ─── 커플 전용 파이프라인 (v3.9) ───
+    generateCouple: protectedProcedure
+      .input(z.object({
+        projectId: z.number(),
+        promptText: z.string(),
+        brideClientId: z.number(),
+        groomClientId: z.number(),
+        attempts: z.number().default(3),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // 신부 사진
+        const bridePhotos = await db.getClientPhotos(input.brideClientId);
+        const bridePhoto = bridePhotos.find(p => p.photoType === "front");
+        if (!bridePhoto) throw new Error("신부 정면 사진이 없습니다");
+
+        // 신랑 사진
+        const groomPhotos = await db.getClientPhotos(input.groomClientId);
+        const groomPhoto = groomPhotos.find(p => p.photoType === "front");
+        if (!groomPhoto) throw new Error("신랑 정면 사진이 없습니다");
+
+        // 커플 파이프라인 실행 (3장 생성)
+        const { generateCouplePipeline } = await import(
+          './services/couple-pipeline'
+        );
+        const resultUrls = await generateCouplePipeline(
+          input.promptText,
+          bridePhoto.originalUrl,
+          groomPhoto.originalUrl,
+          input.attempts,
+        );
+
+        // 각 결과를 generation으로 저장
+        const saved = [];
+        for (const url of resultUrls) {
+          const gen = await db.createGeneration({
+            projectId: input.projectId,
+            promptText: input.promptText,
+            resultImageUrl: url,
+            status: "completed",
+            stage: "draft",
+            faceConsistencyScore: 75,
+          });
+          saved.push(gen);
+        }
+
+        return {
+          count: saved.length,
+          generations: saved,
+          message: `${saved.length}장 생성됨. 가장 잘 나온 걸 선택하세요.`,
+        };
+      }),
   }),
 
   // ─── Batch Jobs (대량 생성) ───

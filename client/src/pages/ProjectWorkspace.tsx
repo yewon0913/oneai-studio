@@ -109,6 +109,14 @@ export default function ProjectWorkspace() {
     onError: (err) => toast.error(`생성 실패: ${err.message}`),
   });
 
+  const generateCoupleMutation = trpc.generations.generateCouple.useMutation({
+    onSuccess: (data) => {
+      utils.generations.list.invalidate();
+      toast.success(data.message);
+    },
+    onError: (err) => toast.error(`커플 생성 실패: ${err.message}`),
+  });
+
   const upscaleMutation = trpc.generations.upscale.useMutation({
     onSuccess: () => {
       utils.generations.list.invalidate();
@@ -670,6 +678,26 @@ export default function ProjectWorkspace() {
                     <><Wand2 className="h-4 w-4" />이미지 생성</>
                   )}
                 </Button>
+
+                {project?.projectMode === "couple" && (
+                  <Button
+                    onClick={() => generateCoupleMutation.mutate({
+                      projectId: project.id,
+                      promptText: promptText,
+                      brideClientId: project.clientId,
+                      groomClientId: project.partnerClientId!,
+                      attempts: 3,
+                    })}
+                    disabled={generateCoupleMutation.isPending}
+                    className="w-full bg-pink-600 hover:bg-pink-700 gap-2 mt-2"
+                  >
+                    {generateCoupleMutation.isPending ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" />커플 생성 중... (1~2분)</>
+                    ) : (
+                      <><Users className="h-4 w-4" />커플 사진 생성 (3장)</>
+                    )}
+                  </Button>
+                )}
               </CardContent>
             </Card>
           </div>

@@ -117,3 +117,8 @@
 
 ## v3.8 고객 카드 삭제 버튼 UI 개선
 - [x] 고객 카드 삭제 버튼을 항상 보이도록 개선 (호버 시에만 보이는 것에서 변경)
+
+## v3.9 커플 파이프라인 추가 (기존 코드 미수정)
+- [x] server/services/couple-pipeline.ts 신규 파일 생성
+- [x] routers.ts에 generateCouple mutation 추가 (기존 generate 미수정)
+- [x] ProjectWorkspace.tsx에 커플 생성 버튼 추가
