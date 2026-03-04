@@ -5,12 +5,13 @@ import { AI_ENGINES, AI_ENGINE_LIST, buildMultiEngineConsistencyPrompt, getRecom
 
 // ═══ AI Engine Configuration Tests ═══
 describe("AI Engines Configuration", () => {
-  it("should have all 4 AI engines defined", () => {
-    expect(AI_ENGINE_LIST).toHaveLength(4);
+  it("should have all 5 AI engines defined", () => {
+    expect(AI_ENGINE_LIST).toHaveLength(5);
+    expect(AI_ENGINES.flux_lora).toBeDefined();
+    expect(AI_ENGINES.midjourney_omni).toBeDefined();
     expect(AI_ENGINES.flux_pulid).toBeDefined();
-    expect(AI_ENGINES.flux_dev).toBeDefined();
-    expect(AI_ENGINES.sd_ip_adapter).toBeDefined();
     expect(AI_ENGINES.dalle_native).toBeDefined();
+    expect(AI_ENGINES.sd_ip_adapter).toBeDefined();
   });
 
   it("should have Korean names for all engines", () => {
@@ -29,20 +30,35 @@ describe("AI Engines Configuration", () => {
     }
   });
 
-  it("Flux PuLID should have the highest consistency score among available engines", () => {
-    const pulidScore = AI_ENGINES.flux_pulid.faceConsistencyScore;
+  it("Flux LoRA should have the highest consistency score among available engines", () => {
+    const loraScore = AI_ENGINES.flux_lora.faceConsistencyScore;
     for (const engine of AI_ENGINE_LIST.filter(e => e.available)) {
-      expect(pulidScore).toBeGreaterThanOrEqual(engine.faceConsistencyScore);
+      expect(loraScore).toBeGreaterThanOrEqual(engine.faceConsistencyScore);
     }
   });
 
   it("should have recommended engines marked", () => {
-    expect(AI_ENGINES.flux_pulid.recommended).toBe(true);
+    expect(AI_ENGINES.flux_lora.recommended).toBe(true);
+    expect(AI_ENGINES.midjourney_omni.recommended).toBe(true);
+  });
+
+  it("SD IP-Adapter should be unavailable (coming soon)", () => {
+    expect(AI_ENGINES.sd_ip_adapter.available).toBe(false);
   });
 });
 
 // ═══ Multi-Engine Consistency Prompt Tests ═══
 describe("buildMultiEngineConsistencyPrompt", () => {
+  it("should include face identity directive when flux_lora is selected", () => {
+    const prompt = buildMultiEngineConsistencyPrompt({
+      basePrompt: "Wedding photo in garden",
+      engines: ["flux_lora"],
+      gender: "female",
+    });
+    expect(prompt).toContain("facial identity");
+    expect(prompt).toContain("Wedding photo in garden");
+  });
+
   it("should include face identity directive when flux_pulid is selected", () => {
     const prompt = buildMultiEngineConsistencyPrompt({
       basePrompt: "Wedding photo in garden",
@@ -51,6 +67,16 @@ describe("buildMultiEngineConsistencyPrompt", () => {
     });
     expect(prompt).toContain("facial identity");
     expect(prompt).toContain("Wedding photo in garden");
+  });
+
+  it("should include style transfer directive when midjourney_omni is selected", () => {
+    const prompt = buildMultiEngineConsistencyPrompt({
+      basePrompt: "Portrait photo",
+      engines: ["midjourney_omni"],
+      gender: "male",
+    });
+    expect(prompt).toContain("style");
+    expect(prompt).toContain("man");
   });
 
   it("should include reference image directive when dalle_native is selected", () => {
@@ -76,12 +102,12 @@ describe("buildMultiEngineConsistencyPrompt", () => {
   it("should combine multiple engine directives", () => {
     const prompt = buildMultiEngineConsistencyPrompt({
       basePrompt: "Wedding photo",
-      engines: ["flux_pulid", "dalle_native"],
+      engines: ["flux_lora", "midjourney_omni"],
       gender: "female",
       isCouple: true,
     });
     expect(prompt).toContain("facial identity");
-    expect(prompt).toContain("reference image");
+    expect(prompt).toContain("style");
     expect(prompt).toContain("couple");
   });
 
@@ -98,18 +124,25 @@ describe("buildMultiEngineConsistencyPrompt", () => {
 
 // ═══ Recommended Reference Count Tests ═══
 describe("getRecommendedRefCount", () => {
+  it("should return correct ref counts for Flux LoRA", () => {
+    const counts = getRecommendedRefCount("flux_lora");
+    expect(counts.min).toBe(1);
+    expect(counts.max).toBe(5);
+    expect(counts.optimal).toBe(3);
+  });
+
+  it("should return correct ref counts for Midjourney Omni", () => {
+    const counts = getRecommendedRefCount("midjourney_omni");
+    expect(counts.min).toBe(1);
+    expect(counts.max).toBe(5);
+    expect(counts.optimal).toBe(3);
+  });
+
   it("should return correct ref counts for Flux PuLID", () => {
     const counts = getRecommendedRefCount("flux_pulid");
     expect(counts.min).toBe(1);
-    expect(counts.max).toBe(5);
+    expect(counts.max).toBe(1);
     expect(counts.optimal).toBe(1);
-  });
-
-  it("should return zero ref counts for Flux Dev", () => {
-    const counts = getRecommendedRefCount("flux_dev");
-    expect(counts.min).toBe(0);
-    expect(counts.max).toBe(0);
-    expect(counts.optimal).toBe(0);
   });
 
   it("should return correct ref counts for SD IP-Adapter", () => {
@@ -130,7 +163,6 @@ describe("getRecommendedRefCount", () => {
 // ═══ Video Regeneration Router Tests ═══
 describe("videos.regenerate procedure", () => {
   it("should exist in the router", () => {
-    // Verify the procedure exists
     const routerDef = appRouter._def;
     expect(routerDef).toBeDefined();
   });
@@ -139,7 +171,6 @@ describe("videos.regenerate procedure", () => {
 // ═══ Direct Apply Reference Mode Tests ═══
 describe("generations.generate reference modes", () => {
   it("should support direct_apply reference mode in router definition", () => {
-    // Verify the router accepts direct_apply mode
     const routerDef = appRouter._def;
     expect(routerDef).toBeDefined();
   });
@@ -153,9 +184,7 @@ describe("clients.delete procedure", () => {
   });
 
   it("should be defined as a mutation", () => {
-    // Verify the clients.delete procedure is accessible
     const procedures = (appRouter as any)._def.procedures;
-    // The router should have clients.delete defined
     expect(appRouter).toBeDefined();
   });
 });

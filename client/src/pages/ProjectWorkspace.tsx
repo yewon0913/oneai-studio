@@ -70,7 +70,7 @@ export default function ProjectWorkspace() {
 
   // 멀티 AI 엔진 선택
   const [showAIReview, setShowAIReview] = useState(false);
-  const [selectedEngines, setSelectedEngines] = useState<AIEngineId[]>(["flux_pulid"]);
+  const [selectedEngines, setSelectedEngines] = useState<AIEngineId[]>(["flux_lora", "midjourney_omni"]);
   const handleToggleEngine = (engineId: AIEngineId) => {
     setSelectedEngines(prev =>
       prev.includes(engineId)

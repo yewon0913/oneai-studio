@@ -237,3 +237,12 @@
 - [x] 프롬프트와 일치하는 이미지 생성 보장 (flux-pulid가 prompt + reference_image_url 동시 사용)
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 업데이트 및 통과 (150개 전체 통과)
+
+## v5.3 엔진 복원 및 얼굴 일관성 근본 개선
+- [x] Flux LoRA 엔진 복원 (fal-ai/flux-pulid 기반, id_weight: 1.0)
+- [x] Midjourney 옴니레퍼런스 엔진 복원 (fal-ai/flux-pulid 기반, id_weight: 0.9)
+- [x] 얼굴 일관성 파이프라인 개선 - flux-pulid reference_image_url 올바르게 전달
+- [x] runPipeline 함수로 엔진별 분기 처리 (flux_lora/midjourney_omni/flux_pulid → PuLID, dalle_native → 내장, flux_dev → 기본)
+- [x] 참조 이미지가 실제로 파이프라인에 전달되는지 검증 (flux-pulid 테스트 성공)
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 업데이트 및 통과 (154개 전체 통과)

@@ -3,14 +3,20 @@ import { applySeasonTransform, applyColorGrade } from "./services/image-effects"
 import type { Season, ColorGrade } from "./services/image-effects";
 
 // Mock fal.ai client
-vi.mock("@fal-ai/client", () => ({
-  fal: {
-    config: vi.fn(),
-    subscribe: vi.fn().mockResolvedValue({
-      data: { images: [{ url: "https://fal.ai/result/transformed.png" }] },
-    }),
-  },
-}));
+vi.mock("@fal-ai/client", () => {
+  const mockSubscribe = vi.fn().mockResolvedValue({
+    data: { images: [{ url: "https://fal.ai/result/transformed.png" }] },
+  });
+  return {
+    fal: {
+      config: vi.fn(),
+      subscribe: mockSubscribe,
+    },
+    createFalClient: vi.fn(() => ({
+      subscribe: mockSubscribe,
+    })),
+  };
+});
 
 describe("image-effects - module exports", () => {
   it("should export applySeasonTransform function", () => {

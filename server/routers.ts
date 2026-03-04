@@ -10,7 +10,7 @@ import { storagePut } from "./storage";
 import { notifyOwner } from "./_core/notification";
 import { nanoid } from "nanoid";
 import { MERCHANDISE_FORMATS, type MerchandiseFormatKey } from "../drizzle/schema";
-import { runSinglePipeline, runCouplePipeline, upscale4K, generateBaseImage, generateWithFaceId } from "./services/image-pipeline";
+import { runPipeline, upscale4K, generateBaseImage, generateWithFluxLora, generateWithPuLID, type EngineType } from "./services/image-pipeline";
 import { buildMultiEngineConsistencyPrompt, type AIEngineId } from "../shared/aiEngines";
 
 // ─── 핀터레스트/외부 URL에서 실제 이미지를 다운로드하여 base64로 변환 ───
@@ -663,7 +663,7 @@ export const appRouter = router({
           "background_composite", "style_transfer", "face_swap", "direct_apply"
         ]).optional(),
         merchandiseFormat: z.string().optional(),
-        engines: z.array(z.enum(["flux_pulid", "flux_dev", "dalle_native", "sd_ip_adapter"])).optional(),
+        engines: z.array(z.enum(["flux_lora", "midjourney_omni", "flux_pulid", "flux_dev", "dalle_native", "sd_ip_adapter"])).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const startTime = Date.now();
@@ -737,64 +737,63 @@ export const appRouter = router({
           }
 
           // ── 엔진 선택에 따른 실제 모델 분기 ──
-          const usePulid = engines.includes("flux_pulid");
-          const useDalle = engines.includes("dalle_native");
+          // 우선순위: flux_lora > midjourney_omni > flux_pulid > dalle_native > flux_dev
+          const primaryEngine: EngineType = engines.includes("flux_lora") ? "flux_lora"
+            : engines.includes("midjourney_omni") ? "midjourney_omni"
+            : engines.includes("flux_pulid") ? "flux_pulid"
+            : engines.includes("dalle_native") ? "dalle_native"
+            : "flux_dev";
 
-          if (input.faceFixMode && frontPhoto && usePulid) {
-            // ── flux-pulid 엔진: 얼굴 ID 보존 생성 ──
-            const mainFaceUrl = frontPhoto.originalUrl;
+          // 얼굴 참조 이미지 수집
+          const allFaceUrls: string[] = [];
+          const mainFaceUrl = frontPhoto?.originalUrl;
 
-            if (isFamily && project.familyMembers) {
-              const members = project.familyMembers as Array<{ role: string; label: string; clientId?: number }>;
-              let primaryFaceUrl = mainFaceUrl;
-              for (const member of members) {
-                const memberFaceUrls = await collectRoleFaceUrls(member.role, member.clientId);
-                if (memberFaceUrls.length > 0) {
-                  primaryFaceUrl = memberFaceUrls[0];
-                  break;
-                }
-              }
-              const generated = await generateWithFaceId(prompt, primaryFaceUrl, {
-                negativePrompt: neg,
-                idWeight: 0.85,
-              });
-              resultImageUrl = await upscale4K(generated);
-
-            } else if (isCouple && project.partnerClientId) {
+          if (input.faceFixMode && mainFaceUrl) {
+            if (isCouple && project.partnerClientId) {
               const brideFaceUrls = await collectRoleFaceUrls("bride",
                 client?.gender === "female" ? project.clientId : project.partnerClientId
               );
-              const groomFaceUrls = await collectRoleFaceUrls("groom", 
+              const groomFaceUrls = await collectRoleFaceUrls("groom",
                 client?.gender === "male" ? project.clientId : project.partnerClientId
               );
-              const primaryFaceUrl = brideFaceUrls.length > 0 
-                ? brideFaceUrls[0] 
-                : (groomFaceUrls.length > 0 ? groomFaceUrls[0] : mainFaceUrl);
-
-              const generated = await generateWithFaceId(prompt, primaryFaceUrl, {
-                negativePrompt: neg,
-                idWeight: 0.85,
-              });
-              resultImageUrl = await upscale4K(generated);
-
+              allFaceUrls.push(...brideFaceUrls, ...groomFaceUrls);
+              if (allFaceUrls.length === 0) allFaceUrls.push(mainFaceUrl);
+            } else if (isFamily && project.familyMembers) {
+              const members = project.familyMembers as Array<{ role: string; label: string; clientId?: number }>;
+              for (const member of members) {
+                const memberFaceUrls = await collectRoleFaceUrls(member.role, member.clientId);
+                allFaceUrls.push(...memberFaceUrls);
+              }
+              if (allFaceUrls.length === 0) allFaceUrls.push(mainFaceUrl);
             } else {
-              const generated = await generateWithFaceId(prompt, mainFaceUrl, {
-                negativePrompt: neg,
-                idWeight: 0.9,
-              });
-              resultImageUrl = await upscale4K(generated);
+              allFaceUrls.push(mainFaceUrl);
+              // 추가 얼굴 참조 사진도 수집
+              const faceRefs = clientPhotos.filter(p => p.photoType === "face_reference").slice(0, 2);
+              allFaceUrls.push(...faceRefs.map(p => p.originalUrl));
             }
+          }
 
-          } else if (input.faceFixMode && frontPhoto && useDalle) {
-            // ── DALL-E / GPT-Image 엔진: Manus 내장 이미지 생성 ──
+          // 참조 이미지 (스타일/구도 참조용 - 미드저니 옴니레퍼런스에서 사용)
+          const referenceImageUrls = input.referenceImageUrl ? [input.referenceImageUrl] : [];
+
+          if (primaryEngine === "dalle_native" && input.faceFixMode && mainFaceUrl) {
+            // ── DALL-E / GPT-Image 엔진 ──
             const { generateImage } = await import("./_core/imageGeneration");
-            const mainFaceUrl = frontPhoto.originalUrl;
             const imgResult = await generateImage({
               prompt: prompt,
               originalImages: [{ url: mainFaceUrl, mimeType: "image/jpeg" }],
             });
             resultImageUrl = imgResult.url || "";
-
+          } else if (input.faceFixMode && allFaceUrls.length > 0 && primaryEngine !== "flux_dev") {
+            // ── fal.ai 엔진 (flux_lora / midjourney_omni / flux_pulid) ──
+            const generated = await runPipeline({
+              engine: primaryEngine,
+              prompt,
+              faceImageUrls: allFaceUrls,
+              referenceImageUrls,
+              negativePrompt: neg,
+            });
+            resultImageUrl = generated;
           } else {
             // ── flux/dev 기본 생성 (얼굴 참조 없음) ──
             resultImageUrl = await generateBaseImage(prompt, neg);

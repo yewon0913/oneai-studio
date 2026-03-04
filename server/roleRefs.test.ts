@@ -410,19 +410,22 @@ describe("buildMultiEngineConsistencyPrompt", () => {
 describe("AI Engine config", () => {
   it("should have correct engine IDs", async () => {
     const { AI_ENGINE_LIST, AI_ENGINES } = await import("../shared/aiEngines");
-    expect(AI_ENGINE_LIST.length).toBeGreaterThanOrEqual(3);
+    expect(AI_ENGINE_LIST.length).toBeGreaterThanOrEqual(4);
+    expect(AI_ENGINES.flux_lora).toBeDefined();
+    expect(AI_ENGINES.midjourney_omni).toBeDefined();
     expect(AI_ENGINES.flux_pulid).toBeDefined();
-    expect(AI_ENGINES.flux_dev).toBeDefined();
     expect(AI_ENGINES.dalle_native).toBeDefined();
+    expect(AI_ENGINES.flux_lora.available).toBe(true);
+    expect(AI_ENGINES.midjourney_omni.available).toBe(true);
     expect(AI_ENGINES.flux_pulid.available).toBe(true);
-    expect(AI_ENGINES.flux_dev.available).toBe(true);
     expect(AI_ENGINES.dalle_native.available).toBe(true);
     expect(AI_ENGINES.sd_ip_adapter.available).toBe(false);
   });
 
   it("should have falModel for fal.ai engines", async () => {
     const { AI_ENGINES } = await import("../shared/aiEngines");
+    expect(AI_ENGINES.flux_lora.falModel).toBe("fal-ai/flux-pulid");
+    expect(AI_ENGINES.midjourney_omni.falModel).toBe("fal-ai/flux-pulid");
     expect(AI_ENGINES.flux_pulid.falModel).toBe("fal-ai/flux-pulid");
-    expect(AI_ENGINES.flux_dev.falModel).toBe("fal-ai/flux/dev");
   });
 });

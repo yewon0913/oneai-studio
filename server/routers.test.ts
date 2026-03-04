@@ -141,6 +141,10 @@ vi.mock("./services/image-pipeline", () => ({
   removeBackground: vi.fn().mockResolvedValue("https://fal.ai/result/nobg.png"),
   applyFaceEnsemble: vi.fn().mockResolvedValue("https://fal.ai/result/ensemble.png"),
   generateWithFaceId: vi.fn().mockResolvedValue("https://fal.ai/result/face-id.png"),
+  generateWithPuLID: vi.fn().mockResolvedValue("https://fal.ai/result/pulid.png"),
+  generateWithFluxLora: vi.fn().mockResolvedValue("https://fal.ai/result/flux-lora.png"),
+  runPipeline: vi.fn().mockResolvedValue("https://fal.ai/result/pipeline.png"),
+  applyFace: vi.fn().mockResolvedValue("https://fal.ai/result/face.png"),
 }));
 
 // Mock Anthropic SDK
