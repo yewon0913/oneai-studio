@@ -156,3 +156,9 @@
 - [x] couple-pipeline.ts 2단계/3단계 모델을 fal-ai/face-swap으로 교체
 - [x] 파라미터 변환: target_image_url → base_image_url, 응답 경로 data.image.url 확인
 - [x] 테스트 1장 생성하여 실제 작동 확인
+
+## v3.16 couple-pipeline 코드 교체 + generateFromReference 추가
+- [x] fal-ai/face-swap 모델 존재 여부 및 파라미터(face_image_url vs swap_image_url) 검증 - swap_image_url이 올바른 파라미터
+- [x] couple-pipeline.ts를 사용자 제공 코드로 완전 교체 (face_image_url→swap_image_url, face_enhance→face 수정, import 방식 수정)
+- [x] image-pipeline.ts에 generateFromReference 함수 추가 (기존 코드 미수정)
+- [x] 테스트 75개 전체 통과, TypeScript 에러 0개
