@@ -1006,6 +1006,12 @@ IMPORTANT RULES:
 
         return { success: true };
       }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteVideoConversion(input.id);
+        return { success: true };
+      }),
   }),
 
   // ─── Photo Restorations ───

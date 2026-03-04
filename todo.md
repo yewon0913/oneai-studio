@@ -122,3 +122,9 @@
 - [x] server/services/couple-pipeline.ts 신규 파일 생성
 - [x] routers.ts에 generateCouple mutation 추가 (기존 generate 미수정)
 - [x] ProjectWorkspace.tsx에 커플 생성 버튼 추가
+
+## v3.10 얼굴 참조 사진 개선 + 영상 삭제/재생성
+- [x] 얼굴 참조 사진: 고객 사진만 참조하도록 변경 (정면+측면만 카운트, additional 제외)
+- [x] 커플 모드: 신랑/신부 각각 사진 목록 표시 + hover시 삭제 버튼
+- [x] 영상 삭제 기능 추가 (완료/실패/처리중 모든 상태에서 삭제 가능)
+- [x] 영상 프롬프트 입력 재생성 기능 (기존 regenerate mutation 확인됨)

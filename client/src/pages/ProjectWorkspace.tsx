@@ -88,6 +88,15 @@ export default function ProjectWorkspace() {
     { id: project?.clientId || 0 },
     { enabled: !!project?.clientId }
   );
+  // 커플 모드: 파트너 사진 조회
+  const { data: partnerPhotos } = trpc.clientPhotos.list.useQuery(
+    { clientId: project?.partnerClientId || 0 },
+    { enabled: !!project?.partnerClientId && project?.projectMode === "couple" }
+  );
+  const { data: partnerClient } = trpc.clients.getById.useQuery(
+    { id: project?.partnerClientId || 0 },
+    { enabled: !!project?.partnerClientId && project?.projectMode === "couple" }
+  );
   const { data: videos } = trpc.videos.list.useQuery({ projectId }, {
     refetchInterval: (query) => {
       // 처리중인 영상이 있으면 5초마다 자동 새로고침
@@ -159,6 +168,23 @@ export default function ProjectWorkspace() {
     onError: (err) => toast.error(`영상 재생성 실패: ${err.message}`),
   });
 
+  const deleteVideoMutation = trpc.videos.delete.useMutation({
+    onSuccess: () => {
+      utils.videos.list.invalidate();
+      toast.success("영상이 삭제되었습니다.");
+    },
+    onError: (err) => toast.error(`영상 삭제 실패: ${err.message}`),
+  });
+
+  // 커플 모드: 파트너 사진 삭제
+  const deletePartnerPhotoMutation = trpc.clientPhotos.delete.useMutation({
+    onSuccess: () => {
+      utils.clientPhotos.list.invalidate();
+      toast.success("사진이 삭제되었습니다.");
+    },
+    onError: (err) => toast.error(`사진 삭제 실패: ${err.message}`),
+  });
+
   // AI Vision 프롬프트 자동 생성
   const analyzeImagesMutation = trpc.generations.analyzeReferenceImages.useMutation({
     onSuccess: (data) => {
@@ -175,6 +201,10 @@ export default function ProjectWorkspace() {
   const selectedGen = useMemo(() => generations?.find(g => g.id === selectedGenId), [generations, selectedGenId]);
   const frontPhoto = useMemo(() => clientPhotos?.find(p => p.photoType === "front"), [clientPhotos]);
   const hasFaceRef = !!frontPhoto;
+  // 고객 사진만 카운트 (정면 + 측면만, additional 제외)
+  const customerPhotoCount = useMemo(() => clientPhotos?.filter(p => p.photoType === "front" || p.photoType === "side").length || 0, [clientPhotos]);
+  const partnerFrontPhoto = useMemo(() => partnerPhotos?.find(p => p.photoType === "front"), [partnerPhotos]);
+  const partnerPhotoCount = useMemo(() => partnerPhotos?.filter(p => p.photoType === "front" || p.photoType === "side").length || 0, [partnerPhotos]);
 
   const formatCategories = useMemo(() => {
     if (!formats) return {};
@@ -384,32 +414,136 @@ export default function ProjectWorkspace() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: Prompt & Controls */}
           <div className="lg:col-span-1 space-y-4">
-            {/* 얼굴 참조 상태 */}
-            <Card className={`border ${hasFaceRef ? "bg-green-500/5 border-green-500/20" : "bg-amber-500/5 border-amber-500/20"}`}>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  {frontPhoto ? (
-                    <img src={frontPhoto.originalUrl} alt="얼굴 참조" className="w-12 h-12 rounded-lg object-cover border border-border" />
-                  ) : (
-                    <div className="w-12 h-12 rounded-lg bg-secondary flex items-center justify-center border border-border">
-                      <UserCircle className="h-6 w-6 text-muted-foreground" />
+            {/* 얼굴 참조 상태 - 고객 사진만 표시 */}
+            {project?.projectMode === "couple" ? (
+              /* 커플 모드: 신부/신랑 개별 관리 */
+              <Card className="border border-border">
+                <CardContent className="p-4 space-y-3">
+                  {/* 신부 (메인 고객) */}
+                  <div className={`p-3 rounded-lg border ${frontPhoto ? "bg-pink-500/5 border-pink-500/20" : "bg-amber-500/5 border-amber-500/20"}`}>
+                    <div className="flex items-center gap-3">
+                      {frontPhoto ? (
+                        <img src={frontPhoto.originalUrl} alt="신부" className="w-10 h-10 rounded-lg object-cover border border-pink-500/30" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-lg bg-pink-500/10 flex items-center justify-center border border-pink-500/20">
+                          <UserCircle className="h-5 w-5 text-pink-400" />
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-foreground">👰 {client?.name || "신부"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {frontPhoto ? `정면 ${customerPhotoCount}장 등록됨` : "정면 사진 미등록"}
+                        </p>
+                      </div>
+                      {frontPhoto && <Check className="h-4 w-4 text-green-500" />}
+                    </div>
+                    {/* 신부 사진 목록 */}
+                    {clientPhotos && clientPhotos.filter(p => p.photoType === "front" || p.photoType === "side").length > 0 && (
+                      <div className="flex gap-2 mt-2 flex-wrap">
+                        {clientPhotos.filter(p => p.photoType === "front" || p.photoType === "side").map((photo) => (
+                          <div key={photo.id} className="relative w-12 h-12 rounded-md overflow-hidden border border-border group">
+                            <img src={photo.originalUrl} alt="" className="w-full h-full object-cover" />
+                            <button
+                              className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                              onClick={() => { if (confirm("이 사진을 삭제하시겠습니까?")) deletePartnerPhotoMutation.mutate({ id: photo.id }); }}
+                            >
+                              <Trash2 className="h-3 w-3 text-red-400" />
+                            </button>
+                            <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-0.5">
+                              <p className="text-[8px] text-white/80 text-center">{photo.photoType === "front" ? "정면" : "측면"}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {/* 신랑 (파트너) */}
+                  <div className={`p-3 rounded-lg border ${partnerFrontPhoto ? "bg-blue-500/5 border-blue-500/20" : "bg-amber-500/5 border-amber-500/20"}`}>
+                    <div className="flex items-center gap-3">
+                      {partnerFrontPhoto ? (
+                        <img src={partnerFrontPhoto.originalUrl} alt="신랑" className="w-10 h-10 rounded-lg object-cover border border-blue-500/30" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+                          <UserCircle className="h-5 w-5 text-blue-400" />
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-foreground">🤵 {partnerClient?.name || "신랑"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {partnerFrontPhoto ? `정면 ${partnerPhotoCount}장 등록됨` : "정면 사진 미등록"}
+                        </p>
+                      </div>
+                      {partnerFrontPhoto && <Check className="h-4 w-4 text-green-500" />}
+                    </div>
+                    {/* 신랑 사진 목록 */}
+                    {partnerPhotos && partnerPhotos.filter(p => p.photoType === "front" || p.photoType === "side").length > 0 && (
+                      <div className="flex gap-2 mt-2 flex-wrap">
+                        {partnerPhotos.filter(p => p.photoType === "front" || p.photoType === "side").map((photo) => (
+                          <div key={photo.id} className="relative w-12 h-12 rounded-md overflow-hidden border border-border group">
+                            <img src={photo.originalUrl} alt="" className="w-full h-full object-cover" />
+                            <button
+                              className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                              onClick={() => { if (confirm("이 사진을 삭제하시겠습니까?")) deletePartnerPhotoMutation.mutate({ id: photo.id }); }}
+                            >
+                              <Trash2 className="h-3 w-3 text-red-400" />
+                            </button>
+                            <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-0.5">
+                              <p className="text-[8px] text-white/80 text-center">{photo.photoType === "front" ? "정면" : "측면"}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              /* 솔로 모드: 기존 디자인 유지 - 고객 사진만 카운트 */
+              <Card className={`border ${hasFaceRef ? "bg-green-500/5 border-green-500/20" : "bg-amber-500/5 border-amber-500/20"}`}>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    {frontPhoto ? (
+                      <img src={frontPhoto.originalUrl} alt="얼굴 참조" className="w-12 h-12 rounded-lg object-cover border border-border" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-lg bg-secondary flex items-center justify-center border border-border">
+                        <UserCircle className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">
+                        {hasFaceRef ? "얼굴 참조 사진 준비됨" : "얼굴 참조 사진 없음"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {hasFaceRef 
+                          ? `정면 ${customerPhotoCount}장 등록됨`
+                          : "고객 프로필에서 정면 사진을 업로드해주세요"
+                        }
+                      </p>
+                    </div>
+                    {hasFaceRef && <Check className="h-5 w-5 text-green-500" />}
+                  </div>
+                  {/* 솔로 모드 사진 목록 */}
+                  {clientPhotos && clientPhotos.filter(p => p.photoType === "front" || p.photoType === "side").length > 0 && (
+                    <div className="flex gap-2 mt-3 flex-wrap">
+                      {clientPhotos.filter(p => p.photoType === "front" || p.photoType === "side").map((photo) => (
+                        <div key={photo.id} className="relative w-12 h-12 rounded-md overflow-hidden border border-border group">
+                          <img src={photo.originalUrl} alt="" className="w-full h-full object-cover" />
+                          <button
+                            className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                            onClick={() => { if (confirm("이 사진을 삭제하시겠습니까?")) deletePartnerPhotoMutation.mutate({ id: photo.id }); }}
+                          >
+                            <Trash2 className="h-3 w-3 text-red-400" />
+                          </button>
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-0.5">
+                            <p className="text-[8px] text-white/80 text-center">{photo.photoType === "front" ? "정면" : "측면"}</p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">
-                      {hasFaceRef ? "얼굴 참조 사진 준비됨" : "얼굴 참조 사진 없음"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {hasFaceRef 
-                        ? `${clientPhotos?.length || 0}장의 참조 사진이 등록되어 있습니다`
-                        : "고객 프로필에서 정면 사진을 업로드해주세요"
-                      }
-                    </p>
-                  </div>
-                  {hasFaceRef && <Check className="h-5 w-5 text-green-500" />}
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
 
             <Card className="bg-card border-border">
               <CardHeader className="pb-3">
@@ -912,28 +1046,61 @@ export default function ProjectWorkspace() {
                               >
                                 <RefreshCw className="h-3.5 w-3.5" />프롬프트로 재생성
                               </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5 text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/10"
+                                onClick={() => { if (confirm("이 영상을 삭제하시겠습니까?")) deleteVideoMutation.mutate({ id: video.id }); }}
+                                disabled={deleteVideoMutation.isPending}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />삭제
+                              </Button>
                             </div>
                           </div>
                         ) : video.status === "failed" ? (
                           <div className="space-y-2">
                             <p className="text-xs text-destructive">변환에 실패했습니다: {video.errorMessage || "알 수 없는 오류"}</p>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1.5"
-                              onClick={() => {
-                                setRegenVideoId(video.id);
-                                setRegenMotion(video.motionType || "cinematic");
-                                setRegenPrompt("");
-                              }}
-                            >
-                              <RefreshCw className="h-3.5 w-3.5" />다시 시도
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5"
+                                onClick={() => {
+                                  setRegenVideoId(video.id);
+                                  setRegenMotion(video.motionType || "cinematic");
+                                  setRegenPrompt("");
+                                }}
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" />다시 시도
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5 text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/10"
+                                onClick={() => { if (confirm("이 영상을 삭제하시겠습니까?")) deleteVideoMutation.mutate({ id: video.id }); }}
+                                disabled={deleteVideoMutation.isPending}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />삭제
+                              </Button>
+                            </div>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2 py-4 justify-center">
-                            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                            <p className="text-sm text-muted-foreground">영상을 변환하고 있습니다...</p>
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2 py-4 justify-center">
+                              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                              <p className="text-sm text-muted-foreground">영상을 변환하고 있습니다...</p>
+                            </div>
+                            <div className="flex justify-end">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5 text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/10"
+                                onClick={() => { if (confirm("영상 변환을 취소하고 삭제하시겠습니까?")) deleteVideoMutation.mutate({ id: video.id }); }}
+                                disabled={deleteVideoMutation.isPending}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />취소 및 삭제
+                              </Button>
+                            </div>
                           </div>
                         )}
                       </div>

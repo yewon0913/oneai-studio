@@ -337,6 +337,12 @@ export async function updateVideoConversion(id: number, data: Partial<InsertVide
   await db.update(videoConversions).set(data).where(eq(videoConversions.id, id));
 }
 
+export async function deleteVideoConversion(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(videoConversions).where(eq(videoConversions.id, id));
+}
+
 // ─── Photo Restorations ───
 export async function createPhotoRestoration(data: InsertPhotoRestoration) {
   const db = await getDb();
