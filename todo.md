@@ -199,3 +199,13 @@
 - [x] ProjectWorkspace.tsx에 미리보기 링크 복사 버튼 추가
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 업데이트 및 통과 (137개 전체 통과)
+
+## v4.9 AI 이미지 분석 오류 수정 + 미리보기 생성 기능
+- [x] analyzeReferenceImages를 Anthropic 직접 호출 → invokeLLM으로 전환 (크레딧 오류 해결)
+- [x] requestAIReview도 invokeLLM으로 전환
+- [x] invitations.generateText도 invokeLLM으로 전환
+- [x] 프롬프트 작성 방식 개선: 인물은 남성/여성만, 11가지 세부 요소 동일하게
+- [x] previewFromPrompt 프로시저 추가 (프롬프트 미리보기 이미지 생성)
+- [x] 프론트엔드에 미리보기 생성 버튼 및 이미지 표시 UI 추가
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 업데이트 및 통과 (137개 전체 통과)

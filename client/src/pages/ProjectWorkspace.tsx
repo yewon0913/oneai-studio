@@ -59,6 +59,7 @@ export default function ProjectWorkspace() {
   // 참조 이미지 다중 첨부
   const [refImages, setRefImages] = useState<Array<{ url: string; preview: string; file?: File }>>([]);
   const [aiPromptResult, setAiPromptResult] = useState<string>("");
+  const [previewImageUrl, setPreviewImageUrl] = useState<string>("");
   const refFileInputRef = useRef<HTMLInputElement>(null);
 
   // 영상 재생성 다이얼로그
@@ -178,6 +179,15 @@ export default function ProjectWorkspace() {
     onError: (err) => toast.error(`색감 변환 실패: ${err.message}`),
   });
 
+  // 프롬프트 미리보기 이미지 생성
+  const previewMutation = trpc.generations.previewFromPrompt.useMutation({
+    onSuccess: (data) => {
+      setPreviewImageUrl(data.previewUrl);
+      toast.success("미리보기 이미지가 생성되었습니다!");
+    },
+    onError: (err) => toast.error(`미리보기 생성 실패: ${err.message}`),
+  });
+
   // AI Vision 프롬프트 자동 생성
   const analyzeImagesMutation = trpc.generations.analyzeReferenceImages.useMutation({
     onSuccess: (data) => {
@@ -293,7 +303,21 @@ export default function ProjectWorkspace() {
   // AI 프롬프트를 메인 프롬프트에 삽입
   const handleInsertAiPrompt = () => {
     setPromptText(aiPromptResult);
+    setPreviewImageUrl("");
     toast.success("AI 생성 프롬프트가 메인 프롬프트에 삽입되었습니다.");
+  };
+
+  // 프롬프트 미리보기 이미지 생성
+  const handlePreviewFromPrompt = () => {
+    const targetPrompt = aiPromptResult || promptText;
+    if (!targetPrompt.trim()) {
+      toast.error("미리보기를 생성할 프롬프트가 없습니다.");
+      return;
+    }
+    previewMutation.mutate({
+      prompt: targetPrompt,
+      negativePrompt: negativePrompt || undefined,
+    });
   };
 
   const handleGenerate = () => {
@@ -591,14 +615,52 @@ export default function ProjectWorkspace() {
                         <div className="p-2 rounded bg-black/20 border border-border">
                           <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">{aiPromptResult}</p>
                         </div>
-                        <Button
-                          size="sm"
-                          className="w-full gap-1.5 bg-purple-600 hover:bg-purple-700 text-xs"
-                          onClick={handleInsertAiPrompt}
-                        >
-                          <ArrowRight className="h-3 w-3" />
-                          메인 프롬프트에 삽입
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            className="flex-1 gap-1.5 bg-purple-600 hover:bg-purple-700 text-xs"
+                            onClick={handleInsertAiPrompt}
+                          >
+                            <ArrowRight className="h-3 w-3" />
+                            메인 프롬프트에 삽입
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 gap-1.5 border-cyan-500/30 hover:bg-cyan-500/10 text-xs"
+                            onClick={handlePreviewFromPrompt}
+                            disabled={previewMutation.isPending}
+                          >
+                            {previewMutation.isPending ? (
+                              <><Loader2 className="h-3 w-3 animate-spin" />미리보기 생성 중...</>
+                            ) : (
+                              <><Eye className="h-3 w-3" />프롬프트 미리보기</>
+                            )}
+                          </Button>
+                        </div>
+
+                        {/* 미리보기 이미지 표시 */}
+                        {previewImageUrl && (
+                          <div className="mt-2 space-y-1.5">
+                            <Label className="text-xs text-cyan-400 flex items-center gap-1">
+                              <Eye className="h-3 w-3" />
+                              프롬프트 미리보기 결과
+                            </Label>
+                            <div className="relative rounded-lg overflow-hidden border border-cyan-500/30">
+                              <img
+                                src={previewImageUrl}
+                                alt="프롬프트 미리보기"
+                                className="w-full h-auto max-h-[300px] object-contain bg-black/30"
+                              />
+                              <div className="absolute top-2 left-2 bg-black/60 text-cyan-400 text-[9px] px-2 py-0.5 rounded">
+                                미리보기 (얼굴 합성 전)
+                              </div>
+                            </div>
+                            <p className="text-[9px] text-muted-foreground">
+                              이 미리보기는 프롬프트만으로 생성된 결과입니다. 실제 생성 시 고객 얼굴이 합성됩니다.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

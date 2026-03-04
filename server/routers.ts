@@ -11,7 +11,6 @@ import { notifyOwner } from "./_core/notification";
 import { nanoid } from "nanoid";
 import { MERCHANDISE_FORMATS, type MerchandiseFormatKey } from "../drizzle/schema";
 import { runSinglePipeline, runCouplePipeline, upscale4K, generateBaseImage, applyFaceEnsemble } from "./services/image-pipeline";
-import Anthropic from "@anthropic-ai/sdk";
 
 // ─── 핀터레스트/외부 URL에서 실제 이미지를 다운로드하여 base64로 변환 ───
 async function resolveImageToBase64(url: string): Promise<{ b64Json: string; mimeType: string } | null> {
@@ -751,7 +750,7 @@ export const appRouter = router({
         return { success: true, url: upscaledUrl, upscaledImageUrl: upscaledUrl };
       }),
 
-    // ── 참조 이미지 AI 분석 (Claude Vision) ──
+    // ── 참조 이미지 AI 분석 (invokeLLM - Vision) ──
     analyzeReferenceImages: protectedProcedure
       .input(z.object({
         imageUrls: z.array(z.string()).min(1).max(10),
@@ -760,44 +759,52 @@ export const appRouter = router({
         isCouple: z.boolean().optional(),
       }))
       .mutation(async ({ input }) => {
-        const anthropic = new Anthropic({
-          apiKey: process.env.ANTHROPIC_API_KEY,
-        });
-
         const imageContents = input.imageUrls.slice(0, 5).map(url => ({
-          type: "image" as const,
-          source: { type: "url" as const, url },
+          type: "image_url" as const,
+          image_url: { url, detail: "high" as const },
         }));
 
         const subject = input.isCouple
-          ? "Korean wedding couple"
-          : input.gender === "male" ? "Korean groom" : "Korean bride";
+          ? "a male and a female"
+          : input.gender === "male" ? "a male" : "a female";
 
-        const response = await anthropic.messages.create({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 800,
+        const response = await invokeLLM({
           messages: [{
             role: "user",
             content: [
               ...imageContents,
               {
                 type: "text",
-                text: `Analyze this wedding photo and create an image generation prompt.
+                text: `You are a professional wedding photography prompt engineer.
+Analyze this reference image in extreme detail and create an image generation prompt.
 
-STRICT RULES:
-- NEVER describe faces, skin, eyes, nose, or any facial features
-- ONLY describe: background, location, lighting, pose/composition, mood, camera angle, style
-- Subject: ${subject}
+CRITICAL RULES:
+- The subject must be described ONLY as "${subject}" - NEVER describe specific facial features, skin color, ethnicity, or any identifying characteristics
+- The customer photo is used as a reference only - the generated image will have the customer's face composited separately
+- You MUST describe ALL of the following elements with 100% consistency to the reference image:
 
-Reply in this exact format:
-PROMPT: [English prompt, max 120 words, no face description]
-NEGATIVE: [English negative prompt]`,
+1. POSE & BODY POSITION: exact body angle, arm placement, hand position, leg stance, head tilt, shoulder orientation
+2. MOOD & ATMOSPHERE: emotional tone, romantic/dramatic/serene/playful, overall feeling
+3. BACKGROUND & LOCATION: exact setting (indoor/outdoor), architecture, nature elements, props, decorations, depth of field
+4. SKIN TEXTURE & QUALITY: skin smoothness, glow, matte/dewy finish (do NOT describe skin color)
+5. CAMERA TYPE & SETTINGS: camera model style (DSLR/mirrorless/medium format), lens focal length, aperture/bokeh, ISO grain
+6. CAMERA ANGLE: exact angle (eye-level/low-angle/high-angle/dutch), distance (close-up/medium/full-body), perspective
+7. FACIAL EXPRESSION: smile type, eye direction, mouth position, emotional expression
+8. ACCESSORIES: jewelry, hair accessories, veil, bouquet, rings, watches, headpieces
+9. CLOTHING & OUTFIT: exact dress/suit style, fabric texture, color, fit, details (lace/embroidery/buttons)
+10. LIGHTING & ILLUMINATION: light direction, quality (soft/hard), color temperature, golden hour/studio/natural, shadows, rim light, backlight
+11. COLOR GRADING: overall color palette, warm/cool tones, saturation level, contrast
+
+Reply in this EXACT format:
+PROMPT: [Detailed English prompt, 150-200 words, covering ALL 11 elements above]
+NEGATIVE: [English negative prompt for unwanted elements]`,
               },
             ],
           }],
         });
 
-        const text = (response.content[0] as any).text as string;
+        const rawContent = response.choices?.[0]?.message?.content;
+        const text = (typeof rawContent === "string" ? rawContent : "") as string;
         const promptMatch = text.match(/PROMPT:\s*([\s\S]+?)(?=NEGATIVE:|$)/);
         const negMatch = text.match(/NEGATIVE:\s*([\s\S]+?)$/);
 
@@ -808,48 +815,49 @@ NEGATIVE: [English negative prompt]`,
         };
       }),
 
-    // ── AI 검수 (Claude Vision) ──
+    // ── AI 검수 (invokeLLM - Vision) ──
     requestAIReview: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         const gen = await db.getGenerationById(input.id);
         if (!gen?.resultImageUrl) throw new Error("이미지를 찾을 수 없습니다");
 
-        const anthropic = new Anthropic({
-          apiKey: process.env.ANTHROPIC_API_KEY,
-        });
-
-        const response = await anthropic.messages.create({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 600,
+        const response = await invokeLLM({
           messages: [{
             role: "user",
             content: [
-              { type: "image", source: { type: "url", url: gen.resultImageUrl } },
+              { type: "image_url", image_url: { url: gen.resultImageUrl, detail: "high" } },
               {
                 type: "text",
                 text: `Review this AI-generated Korean wedding photo professionally.
 Score each 0-100 and reply with ONLY valid JSON:
 {
-  "colorScore": ,
-  "compositionScore": ,
-  "handScore": ,
-  "faceScore": ,
-  "overallFeedback": "",
-  "issues": [""],
-  "suggestions": [""]
+  "colorScore": <number>,
+  "compositionScore": <number>,
+  "handScore": <number>,
+  "faceScore": <number>,
+  "overallFeedback": "<string>",
+  "issues": ["<string>"],
+  "suggestions": ["<string>"]
 }`,
               },
             ],
           }],
         });
 
-        const text = (response.content[0] as any).text as string;
+        const rawReviewContent = response.choices?.[0]?.message?.content;
+        const text = (typeof rawReviewContent === "string" ? rawReviewContent : "") as string;
         const jsonMatch = text.match(/\{[\s\S]*\}/);
-        const details = jsonMatch
-          ? JSON.parse(jsonMatch[0])
-          : { colorScore: 75, compositionScore: 75, handScore: 70, faceScore: 80,
+        let details;
+        try {
+          details = jsonMatch
+            ? JSON.parse(jsonMatch[0])
+            : { colorScore: 75, compositionScore: 75, handScore: 70, faceScore: 80,
+                overallFeedback: "검수 완료", issues: [], suggestions: [] };
+        } catch {
+          details = { colorScore: 75, compositionScore: 75, handScore: 70, faceScore: 80,
               overallFeedback: "검수 완료", issues: [], suggestions: [] };
+        }
 
         const score = Math.round(
           (details.colorScore + details.compositionScore +
@@ -942,6 +950,20 @@ Score each 0-100 and reply with ONLY valid JSON:
         ...(val as any),
       }));
     }),
+
+    // ── 프롬프트 미리보기 이미지 생성 ──
+    previewFromPrompt: protectedProcedure
+      .input(z.object({
+        prompt: z.string().min(1),
+        negativePrompt: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const previewUrl = await generateBaseImage(
+          input.prompt,
+          input.negativePrompt || "(deformed, distorted, disfigured:1.3), poorly drawn, bad anatomy, wrong anatomy, extra limb, missing limb, floating limbs, (mutated hands and fingers:1.4), disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation, plastic skin, cartoon, anime",
+        );
+        return { previewUrl };
+      }),
   }),
 
   // ─── Batch Jobs (대량 생성) ───
@@ -1255,24 +1277,29 @@ Score each 0-100 and reply with ONLY valid JSON:
         style: z.string(),
       }))
       .mutation(async ({ input }) => {
-        const anthropic = new Anthropic({
-          apiKey: process.env.ANTHROPIC_API_KEY,
-        });
-        const response = await anthropic.messages.create({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 600,
+        const response = await invokeLLM({
           messages: [{
             role: "user",
             content: `${input.groomName}과 ${input.brideName}의 ${input.weddingDate} ${input.venue} 웨딩 청첩 문구를 ${input.style} 스타일로 3가지 만들어줘.\n각각 50자 내외, 한국어, 감성적으로.\nJSON 배열로만 답해: ["문구1", "문구2", "문구3"]`,
           }],
         });
-        const text = (response.content[0] as any).text;
+        const rawText = response.choices?.[0]?.message?.content;
+        const text = (typeof rawText === "string" ? rawText : "") as string;
         const match = text.match(/\[[\s\S]*\]/);
-        const texts = match ? JSON.parse(match[0]) : [
-          "두 사람이 하나가 되는 날, 함께해 주세요.",
-          "사랑이 완성되는 순간에 초대합니다.",
-          "설레는 마음으로 기다리겠습니다.",
-        ];
+        let texts;
+        try {
+          texts = match ? JSON.parse(match[0]) : [
+            "두 사람이 하나가 되는 날, 함께해 주세요.",
+            "사랑이 완성되는 순간에 초대합니다.",
+            "설레는 마음으로 기다리겠습니다.",
+          ];
+        } catch {
+          texts = [
+            "두 사람이 하나가 되는 날, 함께해 주세요.",
+            "사랑이 완성되는 순간에 초대합니다.",
+            "설레는 마음으로 기다리겠습니다.",
+          ];
+        }
         return { texts };
       }),
   }),

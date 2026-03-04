@@ -100,8 +100,31 @@ vi.mock("./_core/imageGeneration", () => ({
 }));
 
 vi.mock("./_core/llm", () => ({
-  invokeLLM: vi.fn().mockResolvedValue({
-    choices: [{ message: { content: "optimized prompt" } }],
+  invokeLLM: vi.fn().mockImplementation((params: any) => {
+    const content = params?.messages?.[0]?.content;
+    // 이미지 분석 요청 (content가 배열이고 image_url 포함)
+    if (Array.isArray(content) && content.some((c: any) => c.type === "image_url")) {
+      const textPart = content.find((c: any) => c.type === "text");
+      // AI 검수 요청 (JSON 응답)
+      if (textPart?.text?.includes("Score each")) {
+        return Promise.resolve({
+          choices: [{ message: { content: '{"colorScore": 85, "compositionScore": 90, "handScore": 80, "faceScore": 88, "overallFeedback": "우수한 품질", "issues": [], "suggestions": ["조명 미세 조정 권장"]}' } }],
+        });
+      }
+      // 참조 이미지 분석 요청
+      return Promise.resolve({
+        choices: [{ message: { content: "PROMPT: A beautiful wedding scene with a female standing in a sunlit European garden, wearing an elegant white lace wedding dress, soft golden hour lighting, medium format camera with 85mm lens, shallow depth of field, gentle smile expression, pearl earrings and delicate veil, romantic atmosphere, warm color grading with soft contrast\nNEGATIVE: deformed, distorted, ugly, blurry, bad anatomy" } }],
+      });
+    }
+    // 청첩장 문구 생성 등 일반 텍스트 요청
+    if (typeof content === "string" && content.includes("청첩")) {
+      return Promise.resolve({
+        choices: [{ message: { content: '["\ub450 \uc0ac\ub78c\uc774 \ud558\ub098\uac00 \ub418\ub294 \ub0a0", "\uc0ac\ub791\uc774 \uc644\uc131\ub418\ub294 \uc21c\uac04", "\uc124\ub808\ub294 \ub9c8\uc74c\uc73c\ub85c"]' } }],
+      });
+    }
+    return Promise.resolve({
+      choices: [{ message: { content: "optimized prompt" } }],
+    });
   }),
 }));
 
