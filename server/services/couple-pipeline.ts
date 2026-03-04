@@ -29,21 +29,21 @@ export async function generateCouplePipeline(
       const baseUrl = (baseResult as any).data.images[0].url;
       console.log(`커플 ${i+1}회 - 1단계 배경 생성 완료:`, baseUrl);
 
-      // 2단계: face-swap으로 신부 얼굴 교체 (배경 이미지 위에)
-      const brideResult = await fal.subscribe("half-moon-ai/ai-face-swap/faceswapimage" as any, {
+      // 2단계: fal-ai/face-swap으로 신부 얼굴 교체
+      const brideResult = await fal.subscribe("fal-ai/face-swap" as any, {
         input: {
-          target_image_url: baseUrl,        // 1단계 배경 이미지
-          swap_image_url: bridePhotoUrl,    // 신부 얼굴 사진
+          base_image_url: baseUrl,           // 1단계 배경 이미지
+          swap_image_url: bridePhotoUrl,     // 신부 얼굴 사진
         } as any,
       });
       const brideUrl = (brideResult as any).data.image.url;
       console.log(`커플 ${i+1}회 - 2단계 신부 얼굴 교체 완료:`, brideUrl);
 
-      // 3단계: face-swap으로 신랑 얼굴 교체 (2단계 결과 위에)
-      const groomResult = await fal.subscribe("half-moon-ai/ai-face-swap/faceswapimage" as any, {
+      // 3단계: fal-ai/face-swap으로 신랑 얼굴 교체
+      const groomResult = await fal.subscribe("fal-ai/face-swap" as any, {
         input: {
-          target_image_url: brideUrl,       // 2단계 결과 이미지
-          swap_image_url: groomPhotoUrl,    // 신랑 얼굴 사진
+          base_image_url: brideUrl,          // 2단계 결과 이미지
+          swap_image_url: groomPhotoUrl,     // 신랑 얼굴 사진
         } as any,
       });
       const groomUrl = (groomResult as any).data.image.url;

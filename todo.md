@@ -151,3 +151,8 @@
 
 ## v3.14 couple-pipeline.ts 2단계/3단계 수정
 - [x] couple-pipeline.ts를 face-swap 방식으로 완전 교체 (flux-pulid → half-moon-ai/ai-face-swap)
+
+## v3.15 face-swap 모델 교체 (half-moon-ai → fal-ai/face-swap)
+- [x] couple-pipeline.ts 2단계/3단계 모델을 fal-ai/face-swap으로 교체
+- [x] 파라미터 변환: target_image_url → base_image_url, 응답 경로 data.image.url 확인
+- [x] 테스트 1장 생성하여 실제 작동 확인
