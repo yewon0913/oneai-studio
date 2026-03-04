@@ -132,3 +132,9 @@
 - [x] Vitest 테스트 업데이트 (83개 테스트 전체 통과)
 - [ ] Inpainting 손/손가락 자동 수정 시스템 (추후 구현)
 - [ ] 웨딩 특화 색감 그레이딩 자동 적용 (추후 구현)
+
+## v4.1 fal.ai + Anthropic SDK 통합 준비
+- [x] @fal-ai/client 패키지 설치
+- [x] @anthropic-ai/sdk 패키지 설치
+- [x] FAL_KEY 환경변수 설정
+- [x] ANTHROPIC_API_KEY 환경변수 설정
