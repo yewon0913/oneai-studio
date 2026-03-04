@@ -148,3 +148,6 @@
 - [x] pages/Invitation.tsx 신규 생성 (5단계 스텝 위자드)
 - [x] App.tsx에 /invitation/:projectId 라우트 추가
 - [x] ProjectWorkspace.tsx 헤더에 "청첩장 만들기" 버튼 추가
+
+## v3.14 couple-pipeline.ts 2단계/3단계 수정
+- [x] couple-pipeline.ts를 face-swap 방식으로 완전 교체 (flux-pulid → half-moon-ai/ai-face-swap)

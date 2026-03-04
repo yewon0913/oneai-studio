@@ -11,7 +11,7 @@ export async function generateCouplePipeline(
 
   for (let i = 0; i < attempts; i++) {
     try {
-      // 1단계: 커플 배경 생성
+      // 1단계: flux/dev로 커플 배경+구도 생성 (얼굴 참조 없이)
       const baseResult = await fal.subscribe("fal-ai/flux/dev", {
         input: {
           prompt: `RAW photo, photorealistic, 
@@ -27,32 +27,27 @@ export async function generateCouplePipeline(
         },
       });
       const baseUrl = (baseResult as any).data.images[0].url;
+      console.log(`커플 ${i+1}회 - 1단계 배경 생성 완료:`, baseUrl);
 
-      // 2단계: 신부 얼굴 합성 (PuLID: reference_image_url = 얼굴 사진)
-      const brideResult = await fal.subscribe("fal-ai/flux-pulid", {
+      // 2단계: face-swap으로 신부 얼굴 교체 (배경 이미지 위에)
+      const brideResult = await fal.subscribe("half-moon-ai/ai-face-swap/faceswapimage" as any, {
         input: {
-          prompt: `same scene, same composition, same lighting, Korean bride face`,
-          reference_image_url: bridePhotoUrl,
-          num_inference_steps: 20,
-          start_step: 4,
-          guidance_scale: 4.0,
-          id_weight: 0.95,
-        },
+          target_image_url: baseUrl,        // 1단계 배경 이미지
+          swap_image_url: bridePhotoUrl,    // 신부 얼굴 사진
+        } as any,
       });
-      const brideUrl = (brideResult as any).data.images[0].url;
+      const brideUrl = (brideResult as any).data.image.url;
+      console.log(`커플 ${i+1}회 - 2단계 신부 얼굴 교체 완료:`, brideUrl);
 
-      // 3단계: 신랑 얼굴 합성
-      const groomResult = await fal.subscribe("fal-ai/flux-pulid", {
+      // 3단계: face-swap으로 신랑 얼굴 교체 (2단계 결과 위에)
+      const groomResult = await fal.subscribe("half-moon-ai/ai-face-swap/faceswapimage" as any, {
         input: {
-          prompt: `same scene, same composition, same lighting, Korean groom face`,
-          reference_image_url: groomPhotoUrl,
-          num_inference_steps: 20,
-          start_step: 4,
-          guidance_scale: 4.0,
-          id_weight: 0.85,
-        },
+          target_image_url: brideUrl,       // 2단계 결과 이미지
+          swap_image_url: groomPhotoUrl,    // 신랑 얼굴 사진
+        } as any,
       });
-      const groomUrl = (groomResult as any).data.images[0].url;
+      const groomUrl = (groomResult as any).data.image.url;
+      console.log(`커플 ${i+1}회 - 3단계 신랑 얼굴 교체 완료:`, groomUrl);
 
       // 4단계: 4K 업스케일
       const upscaleResult = await fal.subscribe("fal-ai/esrgan", {
@@ -63,6 +58,7 @@ export async function generateCouplePipeline(
         },
       });
       const finalUrl = (upscaleResult as any).data.image.url;
+      console.log(`커플 ${i+1}회 - 4단계 업스케일 완료:`, finalUrl);
       results.push(finalUrl);
 
     } catch (err) {
