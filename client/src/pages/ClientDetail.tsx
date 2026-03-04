@@ -38,7 +38,7 @@ export default function ClientDetailPage() {
   const [faceDetectedMap, setFaceDetectedMap] = useState<Record<number, boolean | null>>({});
   const [projectForm, setProjectForm] = useState({
     title: "", category: "wedding" as const, concept: "", notes: "", priority: "normal" as const,
-    projectMode: "single" as "single" | "couple",
+    projectMode: "single" as "single" | "couple" | "family",
   });
 
   const utils = trpc.useUtils();
@@ -304,6 +304,7 @@ export default function ClientDetailPage() {
                           <SelectItem value="couple" disabled={!client.partnerId}>
                             커플 합성 {!client.partnerId && "(파트너 연결 필요)"}
                           </SelectItem>
+                          <SelectItem value="family">가족 촬영</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -330,7 +331,15 @@ export default function ClientDetailPage() {
                     <div className="p-3 rounded-lg bg-pink-500/10 border border-pink-500/20">
                       <div className="flex items-center gap-2 text-sm text-pink-400">
                         <Users className="h-4 w-4" />
-                        <span>커플 모드: 파트너의 얼굴도 함께 합성됩니다</span>
+                        <span>커플 모드: 신부/신랑 각각의 얼굴 참조 사진을 별도로 업로드할 수 있습니다</span>
+                      </div>
+                    </div>
+                  )}
+                  {projectForm.projectMode === "family" && (
+                    <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                      <div className="flex items-center gap-2 text-sm text-orange-400">
+                        <Users className="h-4 w-4" />
+                        <span>가족 모드: 프로젝트 생성 후 가족 구성원을 추가하고 각각의 얼굴 사진을 업로드할 수 있습니다</span>
                       </div>
                     </div>
                   )}
@@ -628,6 +637,9 @@ export default function ClientDetailPage() {
                         <div className="flex items-center gap-1.5">
                           {project.projectMode === "couple" && (
                             <Badge variant="outline" className="text-xs bg-pink-500/20 text-pink-400 border-pink-500/30">커플</Badge>
+                          )}
+                          {project.projectMode === "family" && (
+                            <Badge variant="outline" className="text-xs bg-orange-500/20 text-orange-400 border-orange-500/30">가족</Badge>
                           )}
                           <Badge variant="outline" className="text-xs">{project.status}</Badge>
                         </div>

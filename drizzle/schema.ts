@@ -70,7 +70,11 @@ export const projects = mysqlTable("projects", {
   // 커플 프로젝트 - 파트너 고객 ID
   partnerClientId: int("partnerClientId"),
   // 프로젝트 모드
-  projectMode: mysqlEnum("projectMode", ["single", "couple"]).default("single").notNull(),
+  projectMode: mysqlEnum("projectMode", ["single", "couple", "family"]).default("single").notNull(),
+  // 역할별 참조 이미지 (커플: groom/bride, 가족: father/mother/child1 등)
+  roleReferenceImages: json("roleReferenceImages").$type<Record<string, string[]>>(),
+  // 가족 구성원 목록 (family 모드에서 사용)
+  familyMembers: json("familyMembers").$type<Array<{ role: string; label: string; clientId?: number }>>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import AIEngineSelector from "@/components/AIEngineSelector";
 import type { AIEngineId } from "../../../shared/aiEngines";
+import RoleReferenceSection from "@/components/RoleReferenceSection";
 
 const statusLabels: Record<string, string> = {
   draft: "초안", generating: "생성중", review: "검수중", revision: "수정중",
@@ -413,6 +414,11 @@ export default function ProjectWorkspace() {
                   <Users className="h-3 w-3" />커플
                 </Badge>
               )}
+              {project.projectMode === "family" && (
+                <Badge variant="outline" className="bg-orange-500/20 text-orange-400 border-orange-500/30 gap-1">
+                  <Users className="h-3 w-3" />가족
+                </Badge>
+              )}
               {project.concept && <span className="text-sm text-muted-foreground">{project.concept}</span>}
             </div>
           </div>
@@ -498,6 +504,16 @@ export default function ProjectWorkspace() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* ═══ 역할별 참조 이미지 (커플/가족 모드) ═══ */}
+            {(project.projectMode === "couple" || project.projectMode === "family") && (
+              <RoleReferenceSection
+                projectId={projectId}
+                projectMode={project.projectMode}
+                roleReferenceImages={(project.roleReferenceImages as Record<string, string[]>) || {}}
+                familyMembers={(project.familyMembers as Array<{ role: string; label: string; clientId?: number }>) || []}
+              />
+            )}
 
             <Card className="bg-card border-border">
               <CardHeader className="pb-3">

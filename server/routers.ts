@@ -486,8 +486,13 @@ export const appRouter = router({
         concept: z.string().optional(),
         notes: z.string().optional(),
         priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
-        projectMode: z.enum(["single", "couple"]).optional(),
+        projectMode: z.enum(["single", "couple", "family"]).optional(),
         partnerClientId: z.number().optional(),
+        familyMembers: z.array(z.object({
+          role: z.string(),
+          label: z.string(),
+          clientId: z.number().optional(),
+        })).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         return db.createProject({ ...input, userId: ctx.user.id, status: "draft" });
@@ -500,10 +505,79 @@ export const appRouter = router({
         concept: z.string().optional(),
         notes: z.string().optional(),
         priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
+        projectMode: z.enum(["single", "couple", "family"]).optional(),
+        familyMembers: z.array(z.object({
+          role: z.string(),
+          label: z.string(),
+          clientId: z.number().optional(),
+        })).optional(),
+        roleReferenceImages: z.record(z.string(), z.array(z.string())).optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
         await db.updateProject(id, data);
+        return { success: true };
+      }),
+    // 역할별 참조 이미지 업로드 (S3 업로드 후 URL 저장)
+    uploadRoleRefImage: protectedProcedure
+      .input(z.object({
+        projectId: z.number(),
+        role: z.string(),
+        fileName: z.string(),
+        mimeType: z.string(),
+        base64Data: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const buffer = Buffer.from(input.base64Data, "base64");
+        const fileKey = `role-refs/${input.projectId}/${input.role}/${nanoid()}-${input.fileName}`;
+        const { url } = await storagePut(fileKey, buffer, input.mimeType);
+        
+        // 프로젝트의 roleReferenceImages 업데이트
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new Error("프로젝트를 찾을 수 없습니다.");
+        
+        const existing = (project.roleReferenceImages as Record<string, string[]>) || {};
+        const roleImages = existing[input.role] || [];
+        if (roleImages.length >= 5) {
+          throw new Error("역할당 참조 이미지는 최대 5장까지 등록할 수 있습니다.");
+        }
+        roleImages.push(url);
+        existing[input.role] = roleImages;
+        
+        await db.updateProject(input.projectId, { roleReferenceImages: existing });
+        return { success: true, url, roleReferenceImages: existing };
+      }),
+    // 역할별 참조 이미지 삭제
+    removeRoleRefImage: protectedProcedure
+      .input(z.object({
+        projectId: z.number(),
+        role: z.string(),
+        imageUrl: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const project = await db.getProjectById(input.projectId);
+        if (!project) throw new Error("프로젝트를 찾을 수 없습니다.");
+        
+        const existing = (project.roleReferenceImages as Record<string, string[]>) || {};
+        const roleImages = existing[input.role] || [];
+        existing[input.role] = roleImages.filter(url => url !== input.imageUrl);
+        if (existing[input.role].length === 0) delete existing[input.role];
+        
+        await db.updateProject(input.projectId, { roleReferenceImages: existing });
+        return { success: true, roleReferenceImages: existing };
+      }),
+    // 가족 구성원 업데이트
+    updateFamilyMembers: protectedProcedure
+      .input(z.object({
+        projectId: z.number(),
+        familyMembers: z.array(z.object({
+          role: z.string(),
+          label: z.string(),
+          clientId: z.number().optional(),
+        })),
+      }))
+      .mutation(async ({ input }) => {
+        await db.updateProject(input.projectId, { familyMembers: input.familyMembers });
         return { success: true };
       }),
     delete: protectedProcedure
@@ -630,57 +704,77 @@ export const appRouter = router({
         try {
           let resultImageUrl = "";
           const isCouple = project.projectMode === "couple" && !!project.partnerClientId;
+          const isFamily = project.projectMode === "family";
           const prompt = input.promptText || "romantic Korean wedding photo, golden hour";
           const neg = input.negativePrompt;
+          const roleRefImages = (project.roleReferenceImages as Record<string, string[]>) || {};
+
+          // 역할별 참조 이미지 수집 헬퍼
+          const collectRoleFaceUrls = async (role: string, clientIdForRole?: number): Promise<string[]> => {
+            // 1순위: roleReferenceImages에서 해당 역할의 이미지
+            if (roleRefImages[role]?.length) return roleRefImages[role];
+            // 2순위: 해당 역할의 clientId로 고객 사진 수집
+            if (clientIdForRole) {
+              const photos = await db.getClientPhotos(clientIdForRole);
+              const front = photos.find(p => p.photoType === "front");
+              const faceRefs = photos.filter(p => p.photoType === "face_reference").slice(0, 2);
+              if (front) return [front.originalUrl, ...faceRefs.map(p => p.originalUrl)];
+            }
+            return [];
+          }
 
           if (input.faceFixMode && frontPhoto) {
-            // 얼굴 참조 사진들 수집 (정면 + face_reference 최대 2장)
+            // 기본 고객 얼굴 참조 수집
             const faceRefPhotos = clientPhotos
               .filter(p => p.photoType === "face_reference")
               .slice(0, 2);
-            const allFaceUrls = [
+            const mainFaceUrls = [
               frontPhoto.originalUrl,
               ...faceRefPhotos.map(p => p.originalUrl),
             ];
 
-            if (isCouple && project.partnerClientId) {
-              // 커플 파이프라인
-              const partnerPhotos = await db.getClientPhotos(project.partnerClientId);
-              const partnerFront = partnerPhotos.find(p => p.photoType === "front");
-
-              if (partnerFront) {
-                const partnerFaceRefs = partnerPhotos
-                  .filter(p => p.photoType === "face_reference")
-                  .slice(0, 2);
-                const partnerFaceUrls = [
-                  partnerFront.originalUrl,
-                  ...partnerFaceRefs.map(p => p.originalUrl),
-                ];
-
-                // 성별에 따라 신랑/신부 결정
-                const isBride = client?.gender === "female";
-                const baseUrl = await generateBaseImage(prompt, neg);
-                // 신부 얼굴 앙상블 먼저 적용
-                const withBride = await applyFaceEnsemble(
-                  baseUrl,
-                  isBride ? allFaceUrls : partnerFaceUrls
-                );
-                // 신랑 얼굴 앙상블 적용
-                const withCouple = await applyFaceEnsemble(
-                  withBride,
-                  isBride ? partnerFaceUrls : allFaceUrls
-                );
-                resultImageUrl = await upscale4K(withCouple);
-              } else {
-                // 파트너 정면 사진 없으면 개인 앙상블로 대체
-                const baseUrl = await generateBaseImage(prompt, neg);
-                const withFace = await applyFaceEnsemble(baseUrl, allFaceUrls);
-                resultImageUrl = await upscale4K(withFace);
-              }
-            } else {
-              // 개인 파이프라인 - 앙상블 적용
+            if (isFamily && project.familyMembers) {
+              // ── 가족 모드: 각 구성원별 얼굴 앙상블 순차 적용 ──
               const baseUrl = await generateBaseImage(prompt, neg);
-              const withFace = await applyFaceEnsemble(baseUrl, allFaceUrls);
+              let currentImage = baseUrl;
+
+              for (const member of (project.familyMembers as Array<{ role: string; label: string; clientId?: number }>)) {
+                const memberFaceUrls = await collectRoleFaceUrls(member.role, member.clientId);
+                if (memberFaceUrls.length > 0) {
+                  currentImage = await applyFaceEnsemble(currentImage, memberFaceUrls);
+                }
+              }
+              resultImageUrl = await upscale4K(currentImage);
+
+            } else if (isCouple && project.partnerClientId) {
+              // ── 커플 모드: 신랑/신부 각각 역할별 참조 이미지 사용 ──
+              const groomFaceUrls = await collectRoleFaceUrls("groom", 
+                client?.gender === "male" ? project.clientId : project.partnerClientId
+              );
+              const brideFaceUrls = await collectRoleFaceUrls("bride",
+                client?.gender === "female" ? project.clientId : project.partnerClientId
+              );
+
+              // fallback: roleReferenceImages가 없으면 기존 방식
+              const finalGroomUrls = groomFaceUrls.length > 0 ? groomFaceUrls : 
+                (client?.gender === "male" ? mainFaceUrls : []);
+              const finalBrideUrls = brideFaceUrls.length > 0 ? brideFaceUrls :
+                (client?.gender === "female" ? mainFaceUrls : []);
+
+              const baseUrl = await generateBaseImage(prompt, neg);
+              let currentImage = baseUrl;
+              if (finalBrideUrls.length > 0) {
+                currentImage = await applyFaceEnsemble(currentImage, finalBrideUrls);
+              }
+              if (finalGroomUrls.length > 0) {
+                currentImage = await applyFaceEnsemble(currentImage, finalGroomUrls);
+              }
+              resultImageUrl = await upscale4K(currentImage);
+
+            } else {
+              // ── 개인 모드: 기존 앙상블 적용 ──
+              const baseUrl = await generateBaseImage(prompt, neg);
+              const withFace = await applyFaceEnsemble(baseUrl, mainFaceUrls);
               resultImageUrl = await upscale4K(withFace);
             }
           } else {

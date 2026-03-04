@@ -98,6 +98,11 @@ export default function ProjectsPage() {
                               <Users className="h-2.5 w-2.5" />커플
                             </Badge>
                           )}
+                          {project.projectMode === "family" && (
+                            <Badge variant="outline" className="text-xs bg-orange-500/20 text-orange-400 border-orange-500/30 gap-0.5">
+                              <Users className="h-2.5 w-2.5" />가족
+                            </Badge>
+                          )}
                         </div>
                       </div>
                     </div>
