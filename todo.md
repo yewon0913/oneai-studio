@@ -246,3 +246,16 @@
 - [x] 참조 이미지가 실제로 파이프라인에 전달되는지 검증 (flux-pulid 테스트 성공)
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 업데이트 및 통과 (154개 전체 통과)
+
+## v5.4 이미지 품질 복원 - 3단계 파이프라인
+- [x] flux-pulid 직접 생성 방식을 3단계로 전환 (generateBase → faceSwap → upscale)
+- [x] 1단계: flux/dev로 고품질 배경+장면+포즈 이미지 생성 (얼굴 참조 없이)
+- [x] 2단계: half-moon-ai/ai-face-swap으로 얼굴만 교체 (전체 이미지 품질 유지)
+- [x] 커플용 다중 face swap API 도입 (faceswapimagemulti - 신부+신랑 동시)
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 업데이트 및 통과 (163개 전체 통과)
+
+## v5.4 긴급 수정
+- [x] analyzeReferenceImages 프롬프트 교체 (얼굴/의상 묘사 제거, 배경/조명/포즈/분위기/카메라/스타일만, 80단어 이하)
+- [x] generate mutation 순서 수정: generateBaseImage → faceSwap(half-moon-ai) → upscale4K
+- [x] face swap API 도입 (half-moon-ai/ai-face-swap/faceswapimage + faceswapimagemulti)

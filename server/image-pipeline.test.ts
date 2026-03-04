@@ -7,6 +7,11 @@ import {
   runSinglePipeline,
   runCouplePipeline,
   applyFaceEnsemble,
+  faceSwapSingle,
+  faceSwapMulti,
+  generateWithPuLID,
+  generateWithFluxLora,
+  runPipeline,
 } from "./services/image-pipeline";
 
 describe("image-pipeline - module exports", () => {
@@ -36,6 +41,26 @@ describe("image-pipeline - module exports", () => {
 
   it("should export applyFaceEnsemble function", () => {
     expect(typeof applyFaceEnsemble).toBe("function");
+  });
+
+  it("should export faceSwapSingle function", () => {
+    expect(typeof faceSwapSingle).toBe("function");
+  });
+
+  it("should export faceSwapMulti function", () => {
+    expect(typeof faceSwapMulti).toBe("function");
+  });
+
+  it("should export generateWithPuLID function", () => {
+    expect(typeof generateWithPuLID).toBe("function");
+  });
+
+  it("should export generateWithFluxLora function", () => {
+    expect(typeof generateWithFluxLora).toBe("function");
+  });
+
+  it("should export runPipeline function", () => {
+    expect(typeof runPipeline).toBe("function");
   });
 });
 
@@ -72,15 +97,28 @@ describe("image-pipeline - function signatures", () => {
 
 describe("image-pipeline - applyFaceEnsemble logic", () => {
   it("should return baseImageUrl when faceImageUrls is empty", async () => {
-    // Mock fal.subscribe to avoid actual API calls
-    const { fal } = await import("@fal-ai/client");
-    const originalSubscribe = fal.subscribe;
-    
-    try {
-      const result = await applyFaceEnsemble("https://example.com/base.jpg", []);
-      expect(result).toBe("https://example.com/base.jpg");
-    } finally {
-      fal.subscribe = originalSubscribe;
-    }
+    const result = await applyFaceEnsemble("https://example.com/base.jpg", []);
+    expect(result).toBe("https://example.com/base.jpg");
+  });
+});
+
+describe("image-pipeline - 3-step pipeline architecture", () => {
+  it("faceSwapSingle accepts targetImageUrl and sourceFaceUrl", () => {
+    expect(faceSwapSingle.length).toBe(2);
+  });
+
+  it("faceSwapMulti accepts targetImageUrl, face1Url, face1Gender, and optional face2", () => {
+    expect(faceSwapMulti.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("runPipeline accepts single opts object", () => {
+    expect(runPipeline.length).toBe(1);
+  });
+
+  it("pipeline architecture: generateBase → faceSwap → upscale functions all exist", () => {
+    expect(typeof generateBaseImage).toBe("function");
+    expect(typeof faceSwapSingle).toBe("function");
+    expect(typeof faceSwapMulti).toBe("function");
+    expect(typeof upscale4K).toBe("function");
   });
 });

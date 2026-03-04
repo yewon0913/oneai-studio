@@ -10,7 +10,7 @@ import { storagePut } from "./storage";
 import { notifyOwner } from "./_core/notification";
 import { nanoid } from "nanoid";
 import { MERCHANDISE_FORMATS, type MerchandiseFormatKey } from "../drizzle/schema";
-import { runPipeline, upscale4K, generateBaseImage, generateWithFluxLora, generateWithPuLID, type EngineType } from "./services/image-pipeline";
+import { runPipeline, upscale4K, generateBaseImage, generateWithFluxLora, generateWithPuLID, faceSwapSingle, faceSwapMulti, type EngineType } from "./services/image-pipeline";
 import { buildMultiEngineConsistencyPrompt, type AIEngineId } from "../shared/aiEngines";
 
 // ─── 핀터레스트/외부 URL에서 실제 이미지를 다운로드하여 base64로 변환 ───
@@ -792,6 +792,9 @@ export const appRouter = router({
               faceImageUrls: allFaceUrls,
               referenceImageUrls,
               negativePrompt: neg,
+              isCouple: isCouple || isFamily,
+              brideGender: "female",
+              groomGender: "male",
             });
             resultImageUrl = generated;
           } else {
@@ -893,29 +896,26 @@ export const appRouter = router({
               ...imageContents,
               {
                 type: "text",
-                text: `You are a professional wedding photography prompt engineer.
-Analyze this reference image in extreme detail and create an image generation prompt.
+                text: `Analyze this wedding photo for image generation.
 
-CRITICAL RULES:
-- The subject must be described ONLY as "${subject}" - NEVER describe specific facial features, skin color, ethnicity, or any identifying characteristics
-- The customer photo is used as a reference only - the generated image will have the customer's face composited separately
-- You MUST describe ALL of the following elements with 100% consistency to the reference image:
+OUTPUT FORMAT - reply ONLY in this exact structure:
+BACKGROUND: [describe location, scenery, environment only]
+LIGHTING: [describe light direction, quality, color temperature only]
+POSE: [describe body position, angle, composition only]
+MOOD: [describe atmosphere and feeling only]
+CAMERA: [describe angle and framing only]
+STYLE: [describe photo style only]
 
-1. POSE & BODY POSITION: exact body angle, arm placement, hand position, leg stance, head tilt, shoulder orientation
-2. MOOD & ATMOSPHERE: emotional tone, romantic/dramatic/serene/playful, overall feeling
-3. BACKGROUND & LOCATION: exact setting (indoor/outdoor), architecture, nature elements, props, decorations, depth of field
-4. SKIN TEXTURE & QUALITY: skin smoothness, glow, matte/dewy finish (do NOT describe skin color)
-5. CAMERA TYPE & SETTINGS: camera model style (DSLR/mirrorless/medium format), lens focal length, aperture/bokeh, ISO grain
-6. CAMERA ANGLE: exact angle (eye-level/low-angle/high-angle/dutch), distance (close-up/medium/full-body), perspective
-7. FACIAL EXPRESSION: smile type, eye direction, mouth position, emotional expression
-8. ACCESSORIES: jewelry, hair accessories, veil, bouquet, rings, watches, headpieces
-9. CLOTHING & OUTFIT: exact dress/suit style, fabric texture, color, fit, details (lace/embroidery/buttons)
-10. LIGHTING & ILLUMINATION: light direction, quality (soft/hard), color temperature, golden hour/studio/natural, shadows, rim light, backlight
-11. COLOR GRADING: overall color palette, warm/cool tones, saturation level, contrast
+STRICT RULES - NEVER include:
+- Any description of face, eyes, nose, lips, skin
+- Any description of hair color or texture
+- Any description of clothing details
+- Any person's physical appearance
 
-Reply in this EXACT format:
-PROMPT: [Detailed English prompt, 150-200 words, covering ALL 11 elements above]
-NEGATIVE: [English negative prompt for unwanted elements]`,
+Combine all sections into one English prompt under 80 words.
+Reply format:
+PROMPT: [combined prompt here]
+NEGATIVE: unwanted quality, low quality, blurry, artificial`,
               },
             ],
           }],

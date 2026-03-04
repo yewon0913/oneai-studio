@@ -16,9 +16,111 @@ const DEFAULT_NEGATIVE =
 type ImageSize = "square_hd" | "square" | "portrait_4_3" | "portrait_16_9" | "landscape_4_3" | "landscape_16_9";
 
 // ═══════════════════════════════════════════════════════════════
-// 1. Flux PuLID - 얼굴 ID 보존 생성 (검증 완료)
-//    reference_image_url (단일 URL)로 얼굴 참조
-//    실제 테스트에서 얼굴 일관성 확인됨
+// STEP 1: 기본 이미지 생성 (배경 + 장면 + 포즈)
+// Flux/dev로 얼굴 참조 없이 프롬프트만으로 생성
+// ═══════════════════════════════════════════════════════════════
+
+export async function generateBaseImage(
+  prompt: string,
+  negativePrompt?: string,
+  imageSize?: ImageSize
+): Promise<string> {
+  const result = await fal.subscribe("fal-ai/flux/dev", {
+    input: {
+      prompt: `${BASE_PROMPT_PREFIX} ${prompt}`,
+      num_inference_steps: 28,
+      guidance_scale: 3.5,
+      num_images: 1,
+      enable_safety_checker: false,
+      image_size: imageSize || "portrait_4_3",
+    },
+  });
+  const data = (result as any).data || result;
+  return data.images[0].url;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STEP 2a: 단일 얼굴 합성 (Face Swap)
+// 생성된 이미지에 고객 얼굴을 합성
+// ═══════════════════════════════════════════════════════════════
+
+export async function faceSwapSingle(
+  targetImageUrl: string,
+  sourceFaceUrl: string,
+): Promise<string> {
+  const result = await fal.subscribe("half-moon-ai/ai-face-swap/faceswapimage", {
+    input: {
+      source_face_url: sourceFaceUrl,
+      target_image_url: targetImageUrl,
+      enable_occlusion_prevention: false,
+    },
+  });
+  const data = (result as any).data || result;
+  return data.image.url;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STEP 2b: 다중 얼굴 합성 (커플/가족용 Face Swap)
+// 생성된 이미지에 신부/신랑 얼굴을 동시에 합성
+// ═══════════════════════════════════════════════════════════════
+
+export async function faceSwapMulti(
+  targetImageUrl: string,
+  face1Url: string,
+  face1Gender: "female" | "male",
+  face2Url?: string,
+  face2Gender?: "female" | "male",
+): Promise<string> {
+  const input: Record<string, any> = {
+    source_face_url_1: face1Url,
+    source_gender_1: face1Gender,
+    target_image_url: targetImageUrl,
+    enable_occlusion_prevention: false,
+  };
+
+  if (face2Url && face2Gender) {
+    input.source_face_url_2 = face2Url;
+    input.source_gender_2 = face2Gender;
+  }
+
+  const result = await fal.subscribe("half-moon-ai/ai-face-swap/faceswapimagemulti", {
+    input,
+  });
+  const data = (result as any).data || result;
+  return data.image.url;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STEP 3: 4K 업스케일
+// ═══════════════════════════════════════════════════════════════
+
+export async function upscale4K(imageUrl: string): Promise<string> {
+  const result = await fal.subscribe("fal-ai/esrgan", {
+    input: {
+      image_url: imageUrl,
+      scale: 4,
+      face: true,
+    },
+  });
+  const data = (result as any).data || result;
+  return data.image.url;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STEP 배경 제거 (선택적)
+// ═══════════════════════════════════════════════════════════════
+
+export async function removeBackground(imageUrl: string): Promise<string> {
+  const result = await fal.subscribe("fal-ai/imageutils/rembg", {
+    input: { image_url: imageUrl },
+  });
+  const data = (result as any).data || result;
+  return data.image.url;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PuLID 직접 생성 (레거시 호환 + 대안 엔진)
+// 프롬프트 + 얼굴 참조를 동시에 사용하여 이미지 생성
 // ═══════════════════════════════════════════════════════════════
 
 export async function generateWithPuLID(
@@ -49,9 +151,7 @@ export async function generateWithPuLID(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 2. Flux LoRA - 고품질 이미지 생성 (LoRA 스타일)
-//    주의: face_id_images 파라미터 미지원!
-//    얼굴 보존이 필요하면 2단계로 PuLID 적용 필요
+// Flux LoRA 생성 (레거시 호환)
 // ═══════════════════════════════════════════════════════════════
 
 export async function generateWithFluxLora(
@@ -82,64 +182,16 @@ export async function generateWithFluxLora(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 3. Flux/dev - 기본 고품질 이미지 생성
-// ═══════════════════════════════════════════════════════════════
-
-export async function generateBaseImage(
-  prompt: string,
-  negativePrompt?: string,
-  imageSize?: ImageSize
-): Promise<string> {
-  const result = await fal.subscribe("fal-ai/flux/dev", {
-    input: {
-      prompt: `${BASE_PROMPT_PREFIX} ${prompt}`,
-      num_inference_steps: 28,
-      guidance_scale: 3.5,
-      num_images: 1,
-      enable_safety_checker: false,
-      image_size: imageSize || "portrait_4_3",
-    },
-  });
-  const data = (result as any).data || result;
-  return data.images[0].url;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// 4. 4K 업스케일
-// ═══════════════════════════════════════════════════════════════
-
-export async function upscale4K(imageUrl: string): Promise<string> {
-  const result = await fal.subscribe("fal-ai/esrgan", {
-    input: {
-      image_url: imageUrl,
-      scale: 4,
-      face: true,
-    },
-  });
-  const data = (result as any).data || result;
-  return data.image.url;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// 5. 배경 제거
-// ═══════════════════════════════════════════════════════════════
-
-export async function removeBackground(imageUrl: string): Promise<string> {
-  const result = await fal.subscribe("fal-ai/imageutils/rembg", {
-    input: { image_url: imageUrl },
-  });
-  const data = (result as any).data || result;
-  return data.image.url;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// 6. 통합 파이프라인 - 엔진별 분기
+// 통합 파이프라인 - 올바른 3단계 순서
 //
-// 핵심 전략:
-// - flux_lora: 2단계 (flux-lora 생성 → PuLID로 얼굴 적용)
-// - midjourney_omni: 2단계 (flux-lora 생성 → PuLID로 얼굴 적용)
-// - flux_pulid: 1단계 (PuLID 직접 생성 - 가장 안정적)
-// - flux_dev: 기본 생성 (얼굴 참조 없음)
+// 핵심 전략 (모든 엔진 공통):
+// 1. generateBaseImage → 배경/장면/포즈 생성 (얼굴 참조 없음)
+// 2. faceSwap → 생성된 이미지에 고객 얼굴 합성
+// 3. (선택) upscale4K → 최종 업스케일
+//
+// 엔진별 차이:
+// - flux_pulid: PuLID 직접 생성 (프롬프트+얼굴 동시, 레거시)
+// - flux_lora/midjourney_omni/flux_dev: 3단계 파이프라인
 // - dalle_native: 호출자가 직접 generateImage 사용
 // ═══════════════════════════════════════════════════════════════
 
@@ -152,66 +204,64 @@ export async function runPipeline(opts: {
   referenceImageUrls?: string[];
   negativePrompt?: string;
   imageSize?: ImageSize;
+  isCouple?: boolean;
+  brideGender?: "female" | "male";
+  groomGender?: "female" | "male";
 }): Promise<string> {
-  const { engine, prompt, faceImageUrls, referenceImageUrls, negativePrompt, imageSize } = opts;
-  const primaryFaceUrl = faceImageUrls[0]; // 메인 얼굴 참조
+  const { engine, prompt, faceImageUrls, negativePrompt, imageSize, isCouple } = opts;
+  const primaryFaceUrl = faceImageUrls[0];
 
-  switch (engine) {
-    case "flux_lora": {
-      // ── 2단계 파이프라인: flux-lora 생성 → PuLID 얼굴 적용 ──
-      if (primaryFaceUrl) {
-        // PuLID로 직접 생성 (얼굴 참조 + 프롬프트 동시)
-        // flux-lora는 face_id_images 미지원이므로 PuLID가 더 정확
-        return generateWithPuLID(prompt, primaryFaceUrl, {
-          negativePrompt,
-          idWeight: 1.0,
-          imageSize,
-        });
-      }
-      // 얼굴 참조 없으면 flux-lora로 기본 생성
-      return generateWithFluxLora(prompt, { negativePrompt, imageSize });
-    }
-
-    case "midjourney_omni": {
-      // ── 2단계 파이프라인: flux-lora 스타일 생성 → PuLID 얼굴 적용 ──
-      if (primaryFaceUrl) {
-        // PuLID로 직접 생성 (얼굴 참조 + 프롬프트 동시)
-        return generateWithPuLID(prompt, primaryFaceUrl, {
-          negativePrompt,
-          idWeight: 0.9, // 스타일 반영 여지를 위해 약간 낮춤
-          imageSize,
-        });
-      }
-      return generateWithFluxLora(prompt, { negativePrompt, imageSize });
-    }
-
-    case "flux_pulid": {
-      // ── 1단계: PuLID 직접 생성 (가장 안정적) ──
-      if (primaryFaceUrl) {
-        return generateWithPuLID(prompt, primaryFaceUrl, {
-          negativePrompt,
-          idWeight: 1.0,
-          imageSize,
-        });
-      }
-      return generateBaseImage(prompt, negativePrompt, imageSize);
-    }
-
-    case "flux_dev": {
-      // ── 기본 생성 (얼굴 참조 없음) ──
-      return generateBaseImage(prompt, negativePrompt, imageSize);
-    }
-
-    default: {
-      // dalle_native는 호출자가 직접 generateImage 사용
-      return generateBaseImage(prompt, negativePrompt, imageSize);
-    }
+  // ── flux_pulid 엔진: PuLID 직접 생성 (레거시 방식) ──
+  if (engine === "flux_pulid" && primaryFaceUrl) {
+    return generateWithPuLID(prompt, primaryFaceUrl, {
+      negativePrompt,
+      idWeight: 1.0,
+      imageSize,
+    });
   }
+
+  // ══════════════════════════════════════════════════════
+  // 3단계 파이프라인: generateBaseImage → faceSwap → return
+  // ══════════════════════════════════════════════════════
+
+  // STEP 1: 배경 + 장면 + 포즈 이미지 생성 (얼굴 참조 없이)
+  console.log("[Pipeline] STEP 1: Generating base image (no face reference)...");
+  const baseImageUrl = await generateBaseImage(prompt, negativePrompt, imageSize);
+  console.log("[Pipeline] STEP 1 complete:", baseImageUrl);
+
+  // 얼굴 참조가 없으면 기본 이미지 그대로 반환
+  if (!primaryFaceUrl) {
+    return baseImageUrl;
+  }
+
+  // STEP 2: 생성된 이미지에 고객 얼굴 합성
+  console.log("[Pipeline] STEP 2: Applying face swap...");
+  let faceSwappedUrl: string;
+
+  if (isCouple && faceImageUrls.length >= 2) {
+    // 커플 모드: 다중 Face Swap (신부 + 신랑)
+    const brideUrl = faceImageUrls[0];
+    const groomUrl = faceImageUrls[1];
+    const brideGender = opts.brideGender || "female";
+    const groomGender = opts.groomGender || "male";
+    faceSwappedUrl = await faceSwapMulti(
+      baseImageUrl,
+      brideUrl,
+      brideGender,
+      groomUrl,
+      groomGender,
+    );
+  } else {
+    // 개인 모드: 단일 Face Swap
+    faceSwappedUrl = await faceSwapSingle(baseImageUrl, primaryFaceUrl);
+  }
+  console.log("[Pipeline] STEP 2 complete:", faceSwappedUrl);
+
+  return faceSwappedUrl;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 7. 커플 파이프라인 - 2인 이미지 생성
-//    PuLID는 단일 참조만 지원하므로 메인 인물 기준으로 생성
+// 커플 파이프라인 (레거시 호환)
 // ═══════════════════════════════════════════════════════════════
 
 export async function runCouplePipeline(
@@ -221,17 +271,19 @@ export async function runCouplePipeline(
   negativePrompt?: string,
   imageSize?: ImageSize
 ): Promise<string> {
-  // PuLID는 단일 참조만 지원 → 메인 인물(신부) 기준으로 생성
-  // 커플 프롬프트에 두 인물 모두 묘사하여 자연스러운 결과 유도
-  const faceUrl = brideFaceUrl || groomFaceUrl;
-  if (faceUrl) {
-    return generateWithPuLID(prompt, faceUrl, {
-      negativePrompt,
-      idWeight: 0.85, // 커플 사진은 약간 낮춰서 자연스러운 구도 유지
-      imageSize,
-    });
+  // STEP 1: 기본 이미지 생성
+  const baseImageUrl = await generateBaseImage(prompt, negativePrompt, imageSize);
+
+  // STEP 2: 다중 Face Swap
+  if (brideFaceUrl && groomFaceUrl) {
+    return faceSwapMulti(baseImageUrl, brideFaceUrl, "female", groomFaceUrl, "male");
+  } else if (brideFaceUrl) {
+    return faceSwapSingle(baseImageUrl, brideFaceUrl);
+  } else if (groomFaceUrl) {
+    return faceSwapSingle(baseImageUrl, groomFaceUrl);
   }
-  return generateBaseImage(prompt, negativePrompt, imageSize);
+
+  return baseImageUrl;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -261,7 +313,9 @@ export async function runSinglePipeline(
   faceImageUrl: string,
   negativePrompt?: string
 ): Promise<string> {
-  return generateWithPuLID(prompt, faceImageUrl, { negativePrompt });
+  // 3단계 파이프라인으로 변경
+  const baseImageUrl = await generateBaseImage(prompt, negativePrompt);
+  return faceSwapSingle(baseImageUrl, faceImageUrl);
 }
 
 export async function applyFaceEnsemble(
@@ -269,7 +323,8 @@ export async function applyFaceEnsemble(
   faceImageUrls: string[]
 ): Promise<string> {
   if (faceImageUrls.length === 0) return baseImageUrl;
-  return faceImageUrls[0];
+  // 첫 번째 얼굴로 face swap
+  return faceSwapSingle(baseImageUrl, faceImageUrls[0]);
 }
 
 export async function applyFace(
@@ -277,9 +332,6 @@ export async function applyFace(
   faceImageUrl: string,
   weight = 1.0
 ): Promise<string> {
-  return generateWithPuLID(
-    "Preserve the exact scene composition, lighting, and pose from the original image",
-    faceImageUrl,
-    { idWeight: weight }
-  );
+  // 이제 실제 face swap API 사용
+  return faceSwapSingle(baseImageUrl, faceImageUrl);
 }
