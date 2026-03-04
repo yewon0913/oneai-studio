@@ -1080,28 +1080,34 @@ async function processVideoAsync(
     await db.updateVideoConversion(videoId, { status: "processing" });
     
     const motionPrompts: Record<string, string> = {
-      zoom_in: "Smooth cinematic zoom-in on this image",
-      zoom_out: "Smooth cinematic zoom-out revealing full scene",
-      pan_left: "Smooth horizontal pan from right to left",
-      pan_right: "Smooth horizontal pan from left to right",
-      slow_zoom: "Very slow gentle zoom with parallax for dreamy feel",
-      cinematic: "Cinematic motion with subtle camera movement and depth shifts",
+      cinematic: "cinematic wedding video, smooth gentle motion, romantic atmosphere, soft camera drift",
+      zoom_in: "slow cinematic zoom in, romantic wedding, dreamy",
+      zoom_out: "slow cinematic zoom out, ethereal wedding moment",
+      pan_left: "smooth pan left, elegant wedding photography",
+      pan_right: "smooth pan right, cinematic wedding",
+      slow_zoom: "very slow gentle zoom with parallax for dreamy feel, romantic",
     };
 
     const motionType = input.motionType || "cinematic";
-    // 커스텀 프롬프트가 있으면 사용, 없으면 모션 프롬프트 사용
-    const prompt = input.customPrompt 
-      ? `${input.customPrompt}. ${input.duration || 5}s, maintain facial features, smooth 30fps.`
-      : `${motionPrompts[motionType] || motionPrompts.cinematic}. ${input.duration || 5}s, maintain facial features, smooth 30fps.`;
+    const prompt = input.customPrompt || motionPrompts[motionType] || motionPrompts.cinematic;
 
-    const origBase64 = await imageUrlToBase64(input.sourceImageUrl);
-    const result = await generateImage({
-      prompt,
-      originalImages: origBase64 ? [{ b64Json: origBase64.b64Json, mimeType: origBase64.mimeType }] : [{ url: input.sourceImageUrl, mimeType: "image/png" }],
-    });
+    const { fal } = await import("@fal-ai/client");
+    fal.config({ credentials: process.env.FAL_KEY || "" });
 
-    if (result.url) {
-      await db.updateVideoConversion(videoId, { videoUrl: result.url, status: "completed" });
+    const result = await fal.subscribe(
+      "fal-ai/kling-video/v1.6/standard/image-to-video",
+      {
+        input: {
+          image_url: input.sourceImageUrl,
+          prompt,
+          duration: (input.duration || 5) <= 5 ? "5" : "10",
+        },
+      }
+    );
+
+    const videoUrl = (result as any).data?.video?.url;
+    if (videoUrl) {
+      await db.updateVideoConversion(videoId, { videoUrl, status: "completed" });
       await db.createNotification({ userId, type: "generation_complete", title: "영상 변환 완료", message: "이미지가 영상으로 변환되었습니다." });
     } else {
       throw new Error("영상 생성 결과가 없습니다.");

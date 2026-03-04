@@ -128,3 +128,11 @@
 - [x] 커플 모드: 신랑/신부 각각 사진 목록 표시 + hover시 삭제 버튼
 - [x] 영상 삭제 기능 추가 (완료/실패/처리중 모든 상태에서 삭제 가능)
 - [x] 영상 프롬프트 입력 재생성 기능 (기존 regenerate mutation 확인됨)
+
+## v3.11 영상 변환 기능 점검 및 개선
+- [x] videos 라우터에서 fal-ai/kling-video/v1.6 실제 호출 확인/수정 (processVideoAsync에서 generateImage → fal.subscribe kling-video 교체)
+- [x] videos create mutation에 kling-video API 실제 호출 구현 (processVideoAsync 경유)
+- [x] videos regenerate mutation에 kling-video API 실제 호출 구현 (processVideoAsync 경유)
+- [x] ProjectWorkspace.tsx 영상 변환 다이얼로그 (모션 타입 선택 - 이미 구현됨)
+- [x] 영상 상태 자동 폴링 로직 (refetchInterval 5초 - 이미 구현됨)
+- [x] 완료 시 video 태그로 미리보기 (이미 구현됨)
