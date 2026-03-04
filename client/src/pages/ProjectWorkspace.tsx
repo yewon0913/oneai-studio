@@ -837,23 +837,36 @@ export default function ProjectWorkspace() {
                 </Button>
 
                 {project?.projectMode === "couple" && (
-                  <Button
-                    onClick={() => generateCoupleMutation.mutate({
-                      projectId: project.id,
-                      promptText: promptText,
-                      brideClientId: project.clientId,
-                      groomClientId: project.partnerClientId!,
-                      attempts: 3,
-                    })}
-                    disabled={generateCoupleMutation.isPending}
-                    className="w-full bg-pink-600 hover:bg-pink-700 gap-2 mt-2"
-                  >
-                    {generateCoupleMutation.isPending ? (
-                      <><Loader2 className="h-4 w-4 animate-spin" />커플 생성 중... (1~2분)</>
-                    ) : (
-                      <><Users className="h-4 w-4" />커플 사진 생성 (3장)</>
-                    )}
-                  </Button>
+                  <>
+                    <div className={`flex items-center gap-2 text-sm mt-2 px-1 ${
+                      project.partnerClientId
+                        ? "text-green-400"
+                        : "text-yellow-400"
+                    }`}>
+                      {project.partnerClientId ? (
+                        <>✅ 신랑/신부 모두 연결됨</>
+                      ) : (
+                        <>⚠️ 신랑 고객이 연결되지 않았습니다</>
+                      )}
+                    </div>
+                    <Button
+                      onClick={() => generateCoupleMutation.mutate({
+                        projectId: project.id,
+                        promptText: promptText,
+                        brideClientId: project.clientId,
+                        groomClientId: project.partnerClientId ?? null,
+                        attempts: 3,
+                      })}
+                      disabled={generateCoupleMutation.isPending || !project.partnerClientId}
+                      className="w-full bg-pink-600 hover:bg-pink-700 gap-2 mt-2"
+                    >
+                      {generateCoupleMutation.isPending ? (
+                        <><Loader2 className="h-4 w-4 animate-spin" />커플 생성 중... (1~2분)</>
+                      ) : (
+                        <><Users className="h-4 w-4" />커플 사진 생성 (3장)</>
+                      )}
+                    </Button>
+                  </>
                 )}
               </CardContent>
             </Card>

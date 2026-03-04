@@ -800,19 +800,24 @@ IMPORTANT RULES:
         projectId: z.number(),
         promptText: z.string(),
         brideClientId: z.number(),
-        groomClientId: z.number(),
+        groomClientId: z.number().nullable(),
         attempts: z.number().default(3),
       }))
       .mutation(async ({ ctx, input }) => {
-        // 신부 사진
-        const bridePhotos = await db.getClientPhotos(input.brideClientId);
-        const bridePhoto = bridePhotos.find(p => p.photoType === "front");
-        if (!bridePhoto) throw new Error("신부 정면 사진이 없습니다");
+        // 신랑 고객 연결 확인
+        if (!input.groomClientId) {
+          throw new Error("신랑 고객을 먼저 연결해주세요");
+        }
 
-        // 신랑 사진
+        // 신부 사진 (front 우선, 없으면 첫 번째 사진)
+        const bridePhotos = await db.getClientPhotos(input.brideClientId);
+        const bridePhoto = bridePhotos.find(p => p.photoType === "front") || bridePhotos[0];
+        if (!bridePhoto) throw new Error("신부 사진이 없습니다. 사진을 먼저 업로드해주세요.");
+
+        // 신랑 사진 (front 우선, 없으면 첫 번째 사진)
         const groomPhotos = await db.getClientPhotos(input.groomClientId);
-        const groomPhoto = groomPhotos.find(p => p.photoType === "front");
-        if (!groomPhoto) throw new Error("신랑 정면 사진이 없습니다");
+        const groomPhoto = groomPhotos.find(p => p.photoType === "front") || groomPhotos[0];
+        if (!groomPhoto) throw new Error("신랑 사진이 없습니다. 사진을 먼저 업로드해주세요.");
 
         // 커플 파이프라인 실행 (3장 생성)
         const { generateCouplePipeline } = await import(

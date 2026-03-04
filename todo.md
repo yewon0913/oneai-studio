@@ -162,3 +162,8 @@
 - [x] couple-pipeline.ts를 사용자 제공 코드로 완전 교체 (face_image_url→swap_image_url, face_enhance→face 수정, import 방식 수정)
 - [x] image-pipeline.ts에 generateFromReference 함수 추가 (기존 코드 미수정)
 - [x] 테스트 75개 전체 통과, TypeScript 에러 0개
+
+## v3.17 generateCouple mutation 안정성 개선
+- [x] groomClientId를 z.number().nullable()로 변경 + null 시 에러 메시지
+- [x] 신부/신랑 사진 조회 시 front 없으면 첫 번째 사진 폴백
+- [x] ProjectWorkspace.tsx 커플 버튼 위에 partnerClientId 상태 표시 (✅/⚠️)
