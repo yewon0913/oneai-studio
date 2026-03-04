@@ -100,65 +100,14 @@ vi.mock("./_core/imageGeneration", () => ({
 }));
 
 vi.mock("./_core/llm", () => ({
-  invokeLLM: vi.fn().mockImplementation((params: any) => {
-    const content = params?.messages?.[0]?.content;
-    // 이미지 분석 요청 (content가 배열이고 image_url 포함)
-    if (Array.isArray(content) && content.some((c: any) => c.type === "image_url")) {
-      const textPart = content.find((c: any) => c.type === "text");
-      // AI 검수 요청 (JSON 응답)
-      if (textPart?.text?.includes("Score each")) {
-        return Promise.resolve({
-          choices: [{ message: { content: '{"colorScore": 85, "compositionScore": 90, "handScore": 80, "faceScore": 88, "overallFeedback": "우수한 품질", "issues": [], "suggestions": ["조명 미세 조정 권장"]}' } }],
-        });
-      }
-      // 참조 이미지 분석 요청
-      return Promise.resolve({
-        choices: [{ message: { content: "PROMPT: A beautiful wedding scene with a female standing in a sunlit European garden, wearing an elegant white lace wedding dress, soft golden hour lighting, medium format camera with 85mm lens, shallow depth of field, gentle smile expression, pearl earrings and delicate veil, romantic atmosphere, warm color grading with soft contrast\nNEGATIVE: deformed, distorted, ugly, blurry, bad anatomy" } }],
-      });
-    }
-    // 청첩장 문구 생성 등 일반 텍스트 요청
-    if (typeof content === "string" && content.includes("청첩")) {
-      return Promise.resolve({
-        choices: [{ message: { content: '["\ub450 \uc0ac\ub78c\uc774 \ud558\ub098\uac00 \ub418\ub294 \ub0a0", "\uc0ac\ub791\uc774 \uc644\uc131\ub418\ub294 \uc21c\uac04", "\uc124\ub808\ub294 \ub9c8\uc74c\uc73c\ub85c"]' } }],
-      });
-    }
-    return Promise.resolve({
-      choices: [{ message: { content: "optimized prompt" } }],
-    });
+  invokeLLM: vi.fn().mockResolvedValue({
+    choices: [{ message: { content: "optimized prompt" } }],
   }),
 }));
 
 vi.mock("./_core/notification", () => ({
   notifyOwner: vi.fn().mockResolvedValue(true),
 }));
-
-// Mock fal.ai image pipeline
-vi.mock("./services/image-pipeline", () => ({
-  runSinglePipeline: vi.fn().mockResolvedValue("https://fal.ai/result/single.png"),
-  runCouplePipeline: vi.fn().mockResolvedValue("https://fal.ai/result/couple.png"),
-  upscale4K: vi.fn().mockResolvedValue("https://fal.ai/result/upscaled.png"),
-  generateBaseImage: vi.fn().mockResolvedValue("https://fal.ai/result/base.png"),
-  removeBackground: vi.fn().mockResolvedValue("https://fal.ai/result/nobg.png"),
-  applyFaceEnsemble: vi.fn().mockResolvedValue("https://fal.ai/result/ensemble.png"),
-  generateWithFaceId: vi.fn().mockResolvedValue("https://fal.ai/result/face-id.png"),
-  generateWithPuLID: vi.fn().mockResolvedValue("https://fal.ai/result/pulid.png"),
-  generateWithFluxLora: vi.fn().mockResolvedValue("https://fal.ai/result/flux-lora.png"),
-  runPipeline: vi.fn().mockResolvedValue("https://fal.ai/result/pipeline.png"),
-  applyFace: vi.fn().mockResolvedValue("https://fal.ai/result/face.png"),
-}));
-
-// Mock Anthropic SDK
-vi.mock("@anthropic-ai/sdk", () => {
-  return {
-    default: vi.fn().mockImplementation(() => ({
-      messages: {
-        create: vi.fn().mockResolvedValue({
-          content: [{ type: "text", text: "PROMPT: A beautiful Korean wedding couple standing in a sunlit European garden with golden hour lighting, soft bokeh background, romantic atmosphere, cinematic color grading\nNEGATIVE: deformed, distorted, ugly, blurry" }],
-        }),
-      },
-    })),
-  };
-});
 
 // Mock global fetch for image download and Pinterest scraping
 const mockFetch = vi.fn().mockImplementation((url: string) => {
@@ -355,7 +304,7 @@ describe("AI Generation - Face Consistency Engine v3.2", () => {
     expect(result).toHaveProperty("id");
     expect(result).toHaveProperty("imageUrl");
     expect(result).toHaveProperty("generationTimeMs");
-    expect(result).toHaveProperty("faceConsistencyScore", 92);
+    expect(result).toHaveProperty("faceConsistencyScore", 95);
   });
 
   it("generates image with face fix mode (couple)", async () => {
@@ -368,7 +317,7 @@ describe("AI Generation - Face Consistency Engine v3.2", () => {
       faceFixMode: true,
     });
     expect(result).toHaveProperty("imageUrl");
-    expect(result).toHaveProperty("faceConsistencyScore", 92);
+    expect(result).toHaveProperty("faceConsistencyScore", 95);
   });
 
   it("generates image without face fix mode", async () => {
@@ -397,7 +346,7 @@ describe("AI Generation - Face Consistency Engine v3.2", () => {
     });
     expect(result).toHaveProperty("id");
     expect(result).toHaveProperty("imageUrl");
-    expect(result).toHaveProperty("faceConsistencyScore", 92);
+    expect(result).toHaveProperty("faceConsistencyScore", 95);
   });
 
   it("generates image with reference image URL (style transfer)", async () => {
@@ -572,8 +521,6 @@ describe("Upscale", () => {
     const caller = appRouter.createCaller(ctx);
     const result = await caller.generations.upscale({ id: 1 });
     expect(result).toHaveProperty("url");
-    expect(result).toHaveProperty("success", true);
-    expect(result).toHaveProperty("upscaledImageUrl");
   });
 });
 

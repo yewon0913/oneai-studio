@@ -41,7 +41,7 @@ export type InsertClient = typeof clients.$inferInsert;
 export const clientPhotos = mysqlTable("client_photos", {
   id: int("id").autoincrement().primaryKey(),
   clientId: int("clientId").notNull(),
-  photoType: mysqlEnum("photoType", ["front", "side", "additional", "face_reference"]).notNull(),
+  photoType: mysqlEnum("photoType", ["front", "side", "additional"]).notNull(),
   originalUrl: text("originalUrl").notNull(),
   fileKey: varchar("fileKey", { length: 512 }).notNull(),
   fileName: varchar("fileName", { length: 255 }),
@@ -70,11 +70,7 @@ export const projects = mysqlTable("projects", {
   // 커플 프로젝트 - 파트너 고객 ID
   partnerClientId: int("partnerClientId"),
   // 프로젝트 모드
-  projectMode: mysqlEnum("projectMode", ["single", "couple", "family"]).default("single").notNull(),
-  // 역할별 참조 이미지 (커플: groom/bride, 가족: father/mother/child1 등)
-  roleReferenceImages: json("roleReferenceImages").$type<Record<string, string[]>>(),
-  // 가족 구성원 목록 (family 모드에서 사용)
-  familyMembers: json("familyMembers").$type<Array<{ role: string; label: string; clientId?: number }>>(),
+  projectMode: mysqlEnum("projectMode", ["single", "couple"]).default("single").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -125,17 +121,6 @@ export const generations = mysqlTable("generations", {
   merchandiseFormat: varchar("merchandiseFormat", { length: 100 }),
   outputWidth: int("outputWidth"),
   outputHeight: int("outputHeight"),
-  // AI 자동 검수 결과
-  aiReviewScore: int("aiReviewScore"), // 0-100 종합 품질 점수
-  aiReviewDetails: json("aiReviewDetails").$type<{
-    colorScore: number; // 색감/조명 점수 (0-100)
-    compositionScore: number; // 구도 점수 (0-100)
-    handScore: number; // 손/손가락 점수 (0-100)
-    faceScore: number; // 얼굴 일관성 점수 (0-100)
-    overallFeedback: string; // 종합 피드백
-    issues: string[]; // 발견된 문제점
-    suggestions: string[]; // 개선 제안
-  }>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

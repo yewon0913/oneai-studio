@@ -5,13 +5,12 @@ import { AI_ENGINES, AI_ENGINE_LIST, buildMultiEngineConsistencyPrompt, getRecom
 
 // ═══ AI Engine Configuration Tests ═══
 describe("AI Engines Configuration", () => {
-  it("should have all 5 AI engines defined", () => {
-    expect(AI_ENGINE_LIST).toHaveLength(5);
+  it("should have all 4 AI engines defined", () => {
+    expect(AI_ENGINE_LIST).toHaveLength(4);
     expect(AI_ENGINES.flux_lora).toBeDefined();
-    expect(AI_ENGINES.midjourney_omni).toBeDefined();
-    expect(AI_ENGINES.flux_pulid).toBeDefined();
-    expect(AI_ENGINES.dalle_native).toBeDefined();
+    expect(AI_ENGINES.midjourney_omniref).toBeDefined();
     expect(AI_ENGINES.sd_ip_adapter).toBeDefined();
+    expect(AI_ENGINES.dalle_native).toBeDefined();
   });
 
   it("should have Korean names for all engines", () => {
@@ -30,84 +29,62 @@ describe("AI Engines Configuration", () => {
     }
   });
 
-  it("Flux LoRA should have the highest consistency score among available engines", () => {
-    const loraScore = AI_ENGINES.flux_lora.faceConsistencyScore;
-    for (const engine of AI_ENGINE_LIST.filter(e => e.available)) {
-      expect(loraScore).toBeGreaterThanOrEqual(engine.faceConsistencyScore);
+  it("Flux LoRA should have the highest consistency score", () => {
+    const fluxScore = AI_ENGINES.flux_lora.faceConsistencyScore;
+    for (const engine of AI_ENGINE_LIST) {
+      expect(fluxScore).toBeGreaterThanOrEqual(engine.faceConsistencyScore);
     }
   });
 
   it("should have recommended engines marked", () => {
     expect(AI_ENGINES.flux_lora.recommended).toBe(true);
-    expect(AI_ENGINES.midjourney_omni.recommended).toBe(true);
-  });
-
-  it("SD IP-Adapter should be unavailable (coming soon)", () => {
-    expect(AI_ENGINES.sd_ip_adapter.available).toBe(false);
+    expect(AI_ENGINES.midjourney_omniref.recommended).toBe(true);
   });
 });
 
 // ═══ Multi-Engine Consistency Prompt Tests ═══
 describe("buildMultiEngineConsistencyPrompt", () => {
-  it("should include face identity directive when flux_lora is selected", () => {
+  it("should include LoRA directive when flux_lora is selected", () => {
     const prompt = buildMultiEngineConsistencyPrompt({
       basePrompt: "Wedding photo in garden",
       engines: ["flux_lora"],
       gender: "female",
     });
+    expect(prompt).toContain("LoRA");
     expect(prompt).toContain("facial identity");
     expect(prompt).toContain("Wedding photo in garden");
   });
 
-  it("should include face identity directive when flux_pulid is selected", () => {
-    const prompt = buildMultiEngineConsistencyPrompt({
-      basePrompt: "Wedding photo in garden",
-      engines: ["flux_pulid"],
-      gender: "female",
-    });
-    expect(prompt).toContain("facial identity");
-    expect(prompt).toContain("Wedding photo in garden");
-  });
-
-  it("should include style transfer directive when midjourney_omni is selected", () => {
+  it("should include Midjourney directive when midjourney_omniref is selected", () => {
     const prompt = buildMultiEngineConsistencyPrompt({
       basePrompt: "Portrait photo",
-      engines: ["midjourney_omni"],
+      engines: ["midjourney_omniref"],
       gender: "male",
     });
-    expect(prompt).toContain("style");
-    expect(prompt).toContain("man");
+    expect(prompt).toContain("character reference");
+    expect(prompt).toContain("bone structure");
   });
 
-  it("should include reference image directive when dalle_native is selected", () => {
-    const prompt = buildMultiEngineConsistencyPrompt({
-      basePrompt: "Portrait photo",
-      engines: ["dalle_native"],
-      gender: "male",
-    });
-    expect(prompt).toContain("reference image");
-    expect(prompt).toContain("man");
-  });
-
-  it("should not add face directives for flux_dev engine", () => {
+  it("should include IP-Adapter directive when sd_ip_adapter is selected", () => {
     const prompt = buildMultiEngineConsistencyPrompt({
       basePrompt: "Studio portrait",
-      engines: ["flux_dev"],
+      engines: ["sd_ip_adapter"],
       gender: "female",
     });
-    expect(prompt).not.toContain("facial identity");
-    expect(prompt).toContain("Studio portrait");
+    expect(prompt).toContain("IP-Adapter");
+    expect(prompt).toContain("InstantID");
   });
 
   it("should combine multiple engine directives", () => {
     const prompt = buildMultiEngineConsistencyPrompt({
       basePrompt: "Wedding photo",
-      engines: ["flux_lora", "midjourney_omni"],
+      engines: ["flux_lora", "midjourney_omniref", "sd_ip_adapter"],
       gender: "female",
       isCouple: true,
     });
-    expect(prompt).toContain("facial identity");
-    expect(prompt).toContain("style");
+    expect(prompt).toContain("LoRA");
+    expect(prompt).toContain("character reference");
+    expect(prompt).toContain("IP-Adapter");
     expect(prompt).toContain("couple");
   });
 
@@ -117,8 +94,8 @@ describe("buildMultiEngineConsistencyPrompt", () => {
       engines: [],
       gender: "female",
     });
+    expect(prompt).toContain("facial identity");
     expect(prompt).toContain("Simple portrait");
-    expect(prompt).toContain("Photorealistic");
   });
 });
 
@@ -126,22 +103,15 @@ describe("buildMultiEngineConsistencyPrompt", () => {
 describe("getRecommendedRefCount", () => {
   it("should return correct ref counts for Flux LoRA", () => {
     const counts = getRecommendedRefCount("flux_lora");
-    expect(counts.min).toBe(1);
-    expect(counts.max).toBe(5);
-    expect(counts.optimal).toBe(3);
+    expect(counts.min).toBe(3);
+    expect(counts.max).toBe(10);
+    expect(counts.optimal).toBe(5);
   });
 
-  it("should return correct ref counts for Midjourney Omni", () => {
-    const counts = getRecommendedRefCount("midjourney_omni");
+  it("should return correct ref counts for Midjourney OmniRef", () => {
+    const counts = getRecommendedRefCount("midjourney_omniref");
     expect(counts.min).toBe(1);
-    expect(counts.max).toBe(5);
-    expect(counts.optimal).toBe(3);
-  });
-
-  it("should return correct ref counts for Flux PuLID", () => {
-    const counts = getRecommendedRefCount("flux_pulid");
-    expect(counts.min).toBe(1);
-    expect(counts.max).toBe(1);
+    expect(counts.max).toBe(3);
     expect(counts.optimal).toBe(1);
   });
 
@@ -163,6 +133,7 @@ describe("getRecommendedRefCount", () => {
 // ═══ Video Regeneration Router Tests ═══
 describe("videos.regenerate procedure", () => {
   it("should exist in the router", () => {
+    // Verify the procedure exists
     const routerDef = appRouter._def;
     expect(routerDef).toBeDefined();
   });
@@ -171,6 +142,7 @@ describe("videos.regenerate procedure", () => {
 // ═══ Direct Apply Reference Mode Tests ═══
 describe("generations.generate reference modes", () => {
   it("should support direct_apply reference mode in router definition", () => {
+    // Verify the router accepts direct_apply mode
     const routerDef = appRouter._def;
     expect(routerDef).toBeDefined();
   });
@@ -184,7 +156,9 @@ describe("clients.delete procedure", () => {
   });
 
   it("should be defined as a mutation", () => {
+    // Verify the clients.delete procedure is accessible
     const procedures = (appRouter as any)._def.procedures;
+    // The router should have clients.delete defined
     expect(appRouter).toBeDefined();
   });
 });

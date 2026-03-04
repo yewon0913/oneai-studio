@@ -1,1 +1,0 @@
-ALTER TABLE `client_photos` MODIFY COLUMN `photoType` enum('front','side','additional','face_reference') NOT NULL;

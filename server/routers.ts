@@ -10,8 +10,6 @@ import { storagePut } from "./storage";
 import { notifyOwner } from "./_core/notification";
 import { nanoid } from "nanoid";
 import { MERCHANDISE_FORMATS, type MerchandiseFormatKey } from "../drizzle/schema";
-import { runPipeline, upscale4K, generateBaseImage, generateWithFluxLora, generateWithPuLID, faceSwapSingle, faceSwapMulti, type EngineType } from "./services/image-pipeline";
-import { buildMultiEngineConsistencyPrompt, type AIEngineId } from "../shared/aiEngines";
 
 // ─── 핀터레스트/외부 URL에서 실제 이미지를 다운로드하여 base64로 변환 ───
 async function resolveImageToBase64(url: string): Promise<{ b64Json: string; mimeType: string } | null> {
@@ -175,24 +173,14 @@ async function collectFaceReferenceBase64(clientId: number, partnerClientId?: nu
   const photos = await db.getClientPhotos(clientId);
   const refs: Array<{ b64Json: string; mimeType: string }> = [];
   
-  // 1순위: 정면 사진 (필수)
+  // 정면 사진만 사용 (API 제한 대응 - 최대 1장)
   const frontPhoto = photos.find(p => p.photoType === "front");
   if (frontPhoto) {
     const b64 = await imageUrlToBase64(frontPhoto.originalUrl);
     if (b64) refs.push(b64);
   }
   
-  // 2순위: 얼굴 참조 사진들 (face_reference) - 다양한 각도로 얼굴 일관성 향상
-  // API 제한으로 최대 2장까지만 전달 (정면 + 가장 최근 얼굴 참조 1장)
-  if (refs.length < 2) {
-    const faceRefs = photos.filter(p => p.photoType === "face_reference");
-    if (faceRefs.length > 0) {
-      const b64 = await imageUrlToBase64(faceRefs[0].originalUrl);
-      if (b64) refs.push(b64);
-    }
-  }
-  
-  // 파트너 사진 (커플 모드) - 파트너의 정면 사진 추가
+  // 파트너 사진 (커플 모드)
   if (partnerClientId && refs.length < 2) {
     const partnerPhotos = await db.getClientPhotos(partnerClientId);
     const partnerFront = partnerPhotos.find(p => p.photoType === "front");
@@ -203,100 +191,6 @@ async function collectFaceReferenceBase64(clientId: number, partnerClientId?: nu
   }
   
   return refs;
-}
-
-// ─── AI 자동 검수 시스템 (LLM Vision 기반) ───
-async function performAIReview(generationId: number, imageUrl: string, hasFaceRef: boolean): Promise<void> {
-  try {
-    // 이미지를 base64로 변환
-    let imageContent: string = imageUrl;
-    try {
-      const b64 = await imageUrlToBase64(imageUrl);
-      if (b64) {
-        imageContent = `data:${b64.mimeType};base64,${b64.b64Json}`;
-      }
-    } catch {
-      // URL 그대로 사용
-    }
-
-    const systemPrompt = `You are an expert photo quality inspector for a professional wedding/portrait photography studio.
-You must analyze the generated AI image and provide quality scores and feedback.
-
-Evaluate these aspects:
-1. COLOR & LIGHTING (colorScore 0-100): Color balance, white balance, exposure, contrast, skin tone naturalness
-2. COMPOSITION (compositionScore 0-100): Framing, rule of thirds, subject placement, background
-3. HANDS & FINGERS (handScore 0-100): Check for deformed/extra/missing fingers, unnatural hand poses, merged fingers
-4. FACE QUALITY (faceScore 0-100): Facial feature clarity, symmetry, natural expression, skin texture${hasFaceRef ? ', consistency with reference' : ''}
-
-Respond in JSON format ONLY:
-{
-  "colorScore": number,
-  "compositionScore": number,
-  "handScore": number,
-  "faceScore": number,
-  "overallFeedback": "string in Korean",
-  "issues": ["issue1 in Korean", ...],
-  "suggestions": ["suggestion1 in Korean", ...]
-}`;
-
-    const result = await invokeLLM({
-      messages: [
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url" as const,
-              image_url: { url: imageContent, detail: "high" as const },
-            },
-            {
-              type: "text" as const,
-              text: "Analyze this AI-generated portrait/wedding photo. Provide detailed quality scores and feedback. Respond in JSON only.",
-            },
-          ],
-        },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "ai_review",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              colorScore: { type: "integer", description: "Color/lighting score 0-100" },
-              compositionScore: { type: "integer", description: "Composition score 0-100" },
-              handScore: { type: "integer", description: "Hand/finger quality score 0-100" },
-              faceScore: { type: "integer", description: "Face quality score 0-100" },
-              overallFeedback: { type: "string", description: "Overall feedback in Korean" },
-              issues: { type: "array", items: { type: "string" }, description: "Issues found in Korean" },
-              suggestions: { type: "array", items: { type: "string" }, description: "Improvement suggestions in Korean" },
-            },
-            required: ["colorScore", "compositionScore", "handScore", "faceScore", "overallFeedback", "issues", "suggestions"],
-            additionalProperties: false,
-          },
-        },
-      },
-    });
-
-    const content = result.choices[0]?.message?.content;
-    if (!content) return;
-
-    const review = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-    const overallScore = Math.round(
-      (review.colorScore * 0.25) + (review.compositionScore * 0.25) + (review.handScore * 0.25) + (review.faceScore * 0.25)
-    );
-
-    await db.updateGeneration(generationId, {
-      aiReviewScore: overallScore,
-      aiReviewDetails: review,
-      faceConsistencyScore: review.faceScore,
-    });
-
-    console.log(`[AI Review] Generation #${generationId}: Score ${overallScore}/100`);
-  } catch (error: any) {
-    console.error(`[AI Review] Error for generation #${generationId}:`, error.message);
-  }
 }
 
 export const appRouter = router({
@@ -401,30 +295,15 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return db.getClientPhotos(input.clientId);
       }),
-    // 얼굴 참조 사진만 조회 (최대 25장)
-    faceReferences: protectedProcedure
-      .input(z.object({ clientId: z.number() }))
-      .query(async ({ input }) => {
-        const photos = await db.getClientPhotos(input.clientId);
-        return photos.filter(p => p.photoType === "face_reference");
-      }),
     upload: protectedProcedure
       .input(z.object({
         clientId: z.number(),
-        photoType: z.enum(["front", "side", "additional", "face_reference"]),
+        photoType: z.enum(["front", "side", "additional"]),
         fileName: z.string(),
         mimeType: z.string(),
         base64Data: z.string(),
       }))
       .mutation(async ({ input }) => {
-        // 얼굴 참조 사진 25장 제한 체크
-        if (input.photoType === "face_reference") {
-          const existing = await db.getClientPhotos(input.clientId);
-          const faceRefCount = existing.filter(p => p.photoType === "face_reference").length;
-          if (faceRefCount >= 25) {
-            throw new Error("얼굴 참조 사진은 최대 25장까지 등록할 수 있습니다. 기존 사진을 삭제한 후 다시 시도해주세요.");
-          }
-        }
         const buffer = Buffer.from(input.base64Data, "base64");
         const fileKey = `client-photos/${input.clientId}/${nanoid()}-${input.fileName}`;
         const { url } = await storagePut(fileKey, buffer, input.mimeType);
@@ -437,27 +316,6 @@ export const appRouter = router({
           mimeType: input.mimeType,
           fileSize: buffer.length,
         });
-      }),
-    // 얼굴 참조 사진 변경 (교체)
-    replace: protectedProcedure
-      .input(z.object({
-        id: z.number(),
-        fileName: z.string(),
-        mimeType: z.string(),
-        base64Data: z.string(),
-      }))
-      .mutation(async ({ input }) => {
-        const buffer = Buffer.from(input.base64Data, "base64");
-        const fileKey = `client-photos/replaced/${nanoid()}-${input.fileName}`;
-        const { url } = await storagePut(fileKey, buffer, input.mimeType);
-        await db.updateClientPhoto(input.id, {
-          originalUrl: url,
-          fileKey,
-          fileName: input.fileName,
-          mimeType: input.mimeType,
-          fileSize: buffer.length,
-        });
-        return { success: true, url };
       }),
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
@@ -487,13 +345,8 @@ export const appRouter = router({
         concept: z.string().optional(),
         notes: z.string().optional(),
         priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
-        projectMode: z.enum(["single", "couple", "family"]).optional(),
+        projectMode: z.enum(["single", "couple"]).optional(),
         partnerClientId: z.number().optional(),
-        familyMembers: z.array(z.object({
-          role: z.string(),
-          label: z.string(),
-          clientId: z.number().optional(),
-        })).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         return db.createProject({ ...input, userId: ctx.user.id, status: "draft" });
@@ -506,79 +359,10 @@ export const appRouter = router({
         concept: z.string().optional(),
         notes: z.string().optional(),
         priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
-        projectMode: z.enum(["single", "couple", "family"]).optional(),
-        familyMembers: z.array(z.object({
-          role: z.string(),
-          label: z.string(),
-          clientId: z.number().optional(),
-        })).optional(),
-        roleReferenceImages: z.record(z.string(), z.array(z.string())).optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
         await db.updateProject(id, data);
-        return { success: true };
-      }),
-    // 역할별 참조 이미지 업로드 (S3 업로드 후 URL 저장)
-    uploadRoleRefImage: protectedProcedure
-      .input(z.object({
-        projectId: z.number(),
-        role: z.string(),
-        fileName: z.string(),
-        mimeType: z.string(),
-        base64Data: z.string(),
-      }))
-      .mutation(async ({ input }) => {
-        const buffer = Buffer.from(input.base64Data, "base64");
-        const fileKey = `role-refs/${input.projectId}/${input.role}/${nanoid()}-${input.fileName}`;
-        const { url } = await storagePut(fileKey, buffer, input.mimeType);
-        
-        // 프로젝트의 roleReferenceImages 업데이트
-        const project = await db.getProjectById(input.projectId);
-        if (!project) throw new Error("프로젝트를 찾을 수 없습니다.");
-        
-        const existing = (project.roleReferenceImages as Record<string, string[]>) || {};
-        const roleImages = existing[input.role] || [];
-        if (roleImages.length >= 5) {
-          throw new Error("역할당 참조 이미지는 최대 5장까지 등록할 수 있습니다.");
-        }
-        roleImages.push(url);
-        existing[input.role] = roleImages;
-        
-        await db.updateProject(input.projectId, { roleReferenceImages: existing });
-        return { success: true, url, roleReferenceImages: existing };
-      }),
-    // 역할별 참조 이미지 삭제
-    removeRoleRefImage: protectedProcedure
-      .input(z.object({
-        projectId: z.number(),
-        role: z.string(),
-        imageUrl: z.string(),
-      }))
-      .mutation(async ({ input }) => {
-        const project = await db.getProjectById(input.projectId);
-        if (!project) throw new Error("프로젝트를 찾을 수 없습니다.");
-        
-        const existing = (project.roleReferenceImages as Record<string, string[]>) || {};
-        const roleImages = existing[input.role] || [];
-        existing[input.role] = roleImages.filter(url => url !== input.imageUrl);
-        if (existing[input.role].length === 0) delete existing[input.role];
-        
-        await db.updateProject(input.projectId, { roleReferenceImages: existing });
-        return { success: true, roleReferenceImages: existing };
-      }),
-    // 가족 구성원 업데이트
-    updateFamilyMembers: protectedProcedure
-      .input(z.object({
-        projectId: z.number(),
-        familyMembers: z.array(z.object({
-          role: z.string(),
-          label: z.string(),
-          clientId: z.number().optional(),
-        })),
-      }))
-      .mutation(async ({ input }) => {
-        await db.updateProject(input.projectId, { familyMembers: input.familyMembers });
         return { success: true };
       }),
     delete: protectedProcedure
@@ -634,22 +418,20 @@ export const appRouter = router({
       }),
   }),
 
-  // ─── AI Generation (v4.3 - fal.ai Pipeline + Claude Vision) ───
+  // ─── AI Generation (v3.2 - base64 직접 전달 + 프롬프트 간결화) ───
   generations: router({
-    // ── 목록 조회 ──
     list: protectedProcedure
       .input(z.object({ projectId: z.number() }))
       .query(async ({ input }) => {
         return db.getGenerationsByProject(input.projectId);
       }),
-
     getById: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
         return db.getGenerationById(input.id);
       }),
-
-    // ── 핵심! 이미지 생성 (fal.ai 파이프라인) ──
+    
+    // ─── 핵심: base64 직접 전달 + 프롬프트 간결화 ───
     generate: protectedProcedure
       .input(z.object({
         projectId: z.number(),
@@ -658,39 +440,34 @@ export const appRouter = router({
         negativePrompt: z.string().optional(),
         parameters: z.record(z.string(), z.unknown()).optional(),
         referenceImageUrl: z.string().optional(),
-        faceFixMode: z.boolean().default(true),
-        referenceMode: z.enum([
-          "background_composite", "style_transfer", "face_swap", "direct_apply"
-        ]).optional(),
+        faceFixMode: z.boolean().optional(),
         merchandiseFormat: z.string().optional(),
-        engines: z.array(z.enum(["flux_lora", "midjourney_omni", "flux_pulid", "flux_dev", "dalle_native", "sd_ip_adapter"])).optional(),
+        referenceMode: z.enum(["face_swap", "background_composite", "style_transfer", "direct_apply"]).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const startTime = Date.now();
-
+        
         const project = await db.getProjectById(input.projectId);
-        if (!project) throw new Error("프로젝트를 찾을 수 없습니다");
-
+        if (!project) throw new Error("프로젝트를 찾을 수 없습니다.");
+        
         const client = await db.getClientById(project.clientId);
-        const clientPhotos = await db.getClientPhotos(project.clientId);
-        const frontPhoto = clientPhotos.find(p => p.photoType === "front");
-
-        const format = input.merchandiseFormat
+        
+        const format = input.merchandiseFormat 
           ? MERCHANDISE_FORMATS[input.merchandiseFormat as MerchandiseFormatKey]
           : undefined;
 
-        // generation 레코드 생성 (generating 상태)
+        const promptText = input.promptText?.trim() || "";
+
         const gen = await db.createGeneration({
           projectId: input.projectId,
           promptId: input.promptId,
-          promptText: input.promptText || "(fal.ai 파이프라인 자동 생성)",
+          promptText: promptText || "(참조 이미지 기반 자동 생성)",
           negativePrompt: input.negativePrompt,
-          parameters: {
-            ...input.parameters,
+          parameters: { 
+            ...input.parameters, 
             faceFixMode: input.faceFixMode,
             merchandiseFormat: input.merchandiseFormat,
             referenceMode: input.referenceMode,
-            engine: "fal-ai",
           },
           status: "generating",
           stage: "draft",
@@ -704,293 +481,105 @@ export const appRouter = router({
         }
 
         try {
-          let resultImageUrl = "";
           const isCouple = project.projectMode === "couple" && !!project.partnerClientId;
-          const isFamily = project.projectMode === "family";
-          const basePrompt = input.promptText || "romantic Korean wedding photo, golden hour";
-          // AI 엔진 일관성 전략 적용 - 선택된 엔진에 따라 프롬프트 강화
-          const engines = input.engines || ["flux_dev"];
-          const gender = client?.gender || "female";
-          const prompt = input.faceFixMode 
-            ? buildMultiEngineConsistencyPrompt({
-                basePrompt,
-                engines: engines as AIEngineId[],
-                gender,
-                isCouple: isCouple || isFamily,
-              })
-            : basePrompt;
-          const neg = input.negativePrompt;
-          const roleRefImages = (project.roleReferenceImages as Record<string, string[]>) || {};
-
-          // 역할별 참조 이미지 수집 헬퍼
-          const collectRoleFaceUrls = async (role: string, clientIdForRole?: number): Promise<string[]> => {
-            // 1순위: roleReferenceImages에서 해당 역할의 이미지
-            if (roleRefImages[role]?.length) return roleRefImages[role];
-            // 2순위: 해당 역할의 clientId로 고객 사진 수집
-            if (clientIdForRole) {
-              const photos = await db.getClientPhotos(clientIdForRole);
-              const front = photos.find(p => p.photoType === "front");
-              const faceRefs = photos.filter(p => p.photoType === "face_reference").slice(0, 2);
-              if (front) return [front.originalUrl, ...faceRefs.map(p => p.originalUrl)];
-            }
-            return [];
+          let partnerClient = null;
+          if (isCouple && project.partnerClientId) {
+            partnerClient = await db.getClientById(project.partnerClientId);
           }
 
-          // ── 엔진 선택에 따른 실제 모델 분기 ──
-          // 우선순위: flux_lora > midjourney_omni > flux_pulid > dalle_native > flux_dev
-          const primaryEngine: EngineType = engines.includes("flux_lora") ? "flux_lora"
-            : engines.includes("midjourney_omni") ? "midjourney_omni"
-            : engines.includes("flux_pulid") ? "flux_pulid"
-            : engines.includes("dalle_native") ? "dalle_native"
-            : "flux_dev";
+          // 1. 참조 이미지를 base64로 변환 (핀터레스트 포함)
+          let refBase64: { b64Json: string; mimeType: string } | null = null;
+          if (input.referenceImageUrl?.trim()) {
+            refBase64 = await resolveImageToBase64(input.referenceImageUrl.trim());
+            if (!refBase64) {
+              // S3에 업로드 후 URL로 시도
+              console.warn("[Generate] Could not convert reference to base64, trying URL directly");
+            }
+          }
 
-          // 얼굴 참조 이미지 수집
-          const allFaceUrls: string[] = [];
-          const mainFaceUrl = frontPhoto?.originalUrl;
+          // 2. 참조 모드 결정
+          const refMode = input.referenceMode || (refBase64 ? "background_composite" : "face_swap");
 
-          if (input.faceFixMode && mainFaceUrl) {
-            if (isCouple && project.partnerClientId) {
-              const brideFaceUrls = await collectRoleFaceUrls("bride",
-                client?.gender === "female" ? project.clientId : project.partnerClientId
-              );
-              const groomFaceUrls = await collectRoleFaceUrls("groom",
-                client?.gender === "male" ? project.clientId : project.partnerClientId
-              );
-              allFaceUrls.push(...brideFaceUrls, ...groomFaceUrls);
-              if (allFaceUrls.length === 0) allFaceUrls.push(mainFaceUrl);
-            } else if (isFamily && project.familyMembers) {
-              const members = project.familyMembers as Array<{ role: string; label: string; clientId?: number }>;
-              for (const member of members) {
-                const memberFaceUrls = await collectRoleFaceUrls(member.role, member.clientId);
-                allFaceUrls.push(...memberFaceUrls);
+          // 3. 프롬프트 생성 (간결하게)
+          const optimizedPrompt = buildFacePreservationPrompt({
+            basePrompt: promptText || undefined,
+            gender: client?.gender || "female",
+            isCouple,
+            partnerGender: partnerClient?.gender || "male",
+            category: project.category,
+            concept: project.concept || undefined,
+            merchandiseFormat: input.merchandiseFormat,
+            hasReferenceImage: !!refBase64,
+            referenceMode: refMode,
+          });
+
+          // 4. originalImages 구성 (최대 2개 - API 제한)
+          // 전략: 얼굴 참조 1장 + 배경/스타일 참조 1장 = 최대 2장
+          const originalImages: Array<{ url?: string; b64Json?: string; mimeType?: string }> = [];
+          
+          if (input.faceFixMode && client) {
+            // 얼굴 참조 (정면 사진 1장만 - base64)
+            const faceRefs = await collectFaceReferenceBase64(
+              client.id, 
+              isCouple ? (project.partnerClientId ?? undefined) : undefined
+            );
+            if (faceRefs.length > 0) {
+              // 커플이 아닌 경우 1장만, 커플인 경우 최대 2장
+              const maxFace = isCouple ? 2 : 1;
+              for (let i = 0; i < Math.min(faceRefs.length, maxFace); i++) {
+                originalImages.push({ b64Json: faceRefs[i].b64Json, mimeType: faceRefs[i].mimeType });
               }
-              if (allFaceUrls.length === 0) allFaceUrls.push(mainFaceUrl);
-            } else {
-              allFaceUrls.push(mainFaceUrl);
-              // 추가 얼굴 참조 사진도 수집
-              const faceRefs = clientPhotos.filter(p => p.photoType === "face_reference").slice(0, 2);
-              allFaceUrls.push(...faceRefs.map(p => p.originalUrl));
             }
           }
 
-          // 참조 이미지 (스타일/구도 참조용 - 미드저니 옴니레퍼런스에서 사용)
-          const referenceImageUrls = input.referenceImageUrl ? [input.referenceImageUrl] : [];
-
-          if (primaryEngine === "dalle_native" && input.faceFixMode && mainFaceUrl) {
-            // ── DALL-E / GPT-Image 엔진 ──
-            const { generateImage } = await import("./_core/imageGeneration");
-            const imgResult = await generateImage({
-              prompt: prompt,
-              originalImages: [{ url: mainFaceUrl, mimeType: "image/jpeg" }],
-            });
-            resultImageUrl = imgResult.url || "";
-          } else if (input.faceFixMode && allFaceUrls.length > 0 && primaryEngine !== "flux_dev") {
-            // ── fal.ai 엔진 (flux_lora / midjourney_omni / flux_pulid) ──
-            const generated = await runPipeline({
-              engine: primaryEngine,
-              prompt,
-              faceImageUrls: allFaceUrls,
-              referenceImageUrls,
-              negativePrompt: neg,
-              isCouple: isCouple || isFamily,
-              brideGender: "female",
-              groomGender: "male",
-            });
-            resultImageUrl = generated;
-          } else {
-            // ── flux/dev 기본 생성 (얼굴 참조 없음) ──
-            resultImageUrl = await generateBaseImage(prompt, neg);
+          // 배경/스타일 참조 이미지 (남은 슬롯에 추가)
+          if (refBase64 && originalImages.length < 2) {
+            originalImages.push({ b64Json: refBase64.b64Json, mimeType: refBase64.mimeType });
           }
 
-          const generationTimeMs = Date.now() - startTime;
+          // 5. 이미지 생성 (최대 2개 이미지만 전달)
+          const result = await generateImage({
+            prompt: optimizedPrompt,
+            originalImages: originalImages.length > 0 ? originalImages : undefined,
+          });
+
+          const imageUrl = result.url;
+          if (!imageUrl) throw new Error("이미지 생성 결과 URL이 없습니다.");
+
+          // 6. 결과 저장
+          const generationTime = Date.now() - startTime;
           await db.updateGeneration(gen.id, {
-            resultImageUrl,
+            resultImageUrl: imageUrl,
             status: "completed",
-            generationTimeMs,
-            faceConsistencyScore: input.faceFixMode ? 92 : undefined,
+            generationTimeMs: generationTime,
+            faceConsistencyScore: input.faceFixMode ? 95 : undefined,
           });
 
           await db.updateProject(input.projectId, { status: "review" });
-
-          // AI 자동 검수 (비동기 - 백그라운드에서 실행)
-          performAIReview(gen.id, resultImageUrl, input.faceFixMode || false).catch(err => {
-            console.error("[AI Review] Failed:", err);
-          });
 
           await db.createNotification({
             userId: ctx.user.id,
             type: "generation_complete",
             title: "AI 이미지 생성 완료",
-            message: `fal.ai 파이프라인으로 이미지가 생성되었습니다. (${(generationTimeMs / 1000).toFixed(1)}초)`,
+            message: `이미지가 생성되었습니다. (${(generationTime / 1000).toFixed(1)}초)`,
             relatedProjectId: input.projectId,
           });
 
-          return { id: gen.id, imageUrl: resultImageUrl, generationTimeMs, faceConsistencyScore: input.faceFixMode ? 92 : undefined };
-
+          return { 
+            id: gen.id, 
+            imageUrl, 
+            generationTimeMs: generationTime,
+            faceConsistencyScore: input.faceFixMode ? 95 : undefined,
+          };
         } catch (error: any) {
-          // fal.ai 잔액 소진 에러 처리
-          const errMsg = error.message || "";
-          const errBody = error.body?.detail || "";
-          let userMessage = errMsg;
-          if (errMsg.includes("Forbidden") || errBody.includes("Exhausted balance") || errBody.includes("locked")) {
-            userMessage = "fal.ai API 잔액이 소진되었습니다. fal.ai 대시보드에서 잔액을 충전해주세요. (fal.ai/dashboard/billing)";
-          }
           await db.updateGeneration(gen.id, {
             status: "failed",
-            reviewNotes: userMessage,
+            reviewNotes: error.message || "Generation failed",
           });
-          throw new Error(`이미지 생성 실패: ${userMessage}`);
+          throw error;
         }
       }),
 
-    // ── 4K 업스케일 (fal.ai ESRGAN) ──
-    upscale: protectedProcedure
-      .input(z.object({ id: z.number(), prompt: z.string().optional() }))
-      .mutation(async ({ ctx, input }) => {
-        const gen = await db.getGenerationById(input.id);
-        if (!gen?.resultImageUrl) throw new Error("이미지를 찾을 수 없습니다");
-
-        const upscaledUrl = await upscale4K(
-          gen.upscaledImageUrl || gen.resultImageUrl
-        );
-
-        await db.updateGeneration(input.id, {
-          upscaledImageUrl: upscaledUrl,
-          stage: "upscaled",
-          status: "approved",
-        });
-
-        await db.createNotification({
-          userId: ctx.user.id,
-          type: "generation_complete",
-          title: "4K 업스케일링 완료",
-          message: "fal.ai ESRGAN으로 이미지가 4K 초고화질로 업스케일링되었습니다.",
-          relatedProjectId: gen.projectId,
-        });
-
-        return { success: true, url: upscaledUrl, upscaledImageUrl: upscaledUrl };
-      }),
-
-    // ── 참조 이미지 AI 분석 (invokeLLM - Vision) ──
-    analyzeReferenceImages: protectedProcedure
-      .input(z.object({
-        imageUrls: z.array(z.string()).min(1).max(10),
-        category: z.enum(["wedding", "restoration", "kids", "profile", "video", "custom"]).optional(),
-        gender: z.enum(["female", "male"]).optional(),
-        isCouple: z.boolean().optional(),
-      }))
-      .mutation(async ({ input }) => {
-        const imageContents = input.imageUrls.slice(0, 5).map(url => ({
-          type: "image_url" as const,
-          image_url: { url, detail: "high" as const },
-        }));
-
-        const subject = input.isCouple
-          ? "a male and a female"
-          : input.gender === "male" ? "a male" : "a female";
-
-        const response = await invokeLLM({
-          messages: [{
-            role: "user",
-            content: [
-              ...imageContents,
-              {
-                type: "text",
-                text: `Analyze this wedding photo for image generation.
-
-OUTPUT FORMAT - reply ONLY in this exact structure:
-BACKGROUND: [describe location, scenery, environment only]
-LIGHTING: [describe light direction, quality, color temperature only]
-POSE: [describe body position, angle, composition only]
-MOOD: [describe atmosphere and feeling only]
-CAMERA: [describe angle and framing only]
-STYLE: [describe photo style only]
-
-STRICT RULES - NEVER include:
-- Any description of face, eyes, nose, lips, skin
-- Any description of hair color or texture
-- Any description of clothing details
-- Any person's physical appearance
-
-Combine all sections into one English prompt under 80 words.
-Reply format:
-PROMPT: [combined prompt here]
-NEGATIVE: unwanted quality, low quality, blurry, artificial`,
-              },
-            ],
-          }],
-        });
-
-        const rawContent = response.choices?.[0]?.message?.content;
-        const text = (typeof rawContent === "string" ? rawContent : "") as string;
-        const promptMatch = text.match(/PROMPT:\s*([\s\S]+?)(?=NEGATIVE:|$)/);
-        const negMatch = text.match(/NEGATIVE:\s*([\s\S]+?)$/);
-
-        return {
-          prompt: promptMatch?.[1].trim() ?? text,
-          negativePrompt: negMatch?.[1].trim() ?? "(deformed, distorted, disfigured:1.3), poorly drawn, bad anatomy, wrong anatomy, extra limb, missing limb, floating limbs, (mutated hands and fingers:1.4), disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation, plastic skin, cartoon, anime, illustration, painting, drawing, sketch",
-          imageCount: input.imageUrls.length,
-        };
-      }),
-
-    // ── AI 검수 (invokeLLM - Vision) ──
-    requestAIReview: protectedProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        const gen = await db.getGenerationById(input.id);
-        if (!gen?.resultImageUrl) throw new Error("이미지를 찾을 수 없습니다");
-
-        const response = await invokeLLM({
-          messages: [{
-            role: "user",
-            content: [
-              { type: "image_url", image_url: { url: gen.resultImageUrl, detail: "high" } },
-              {
-                type: "text",
-                text: `Review this AI-generated Korean wedding photo professionally.
-Score each 0-100 and reply with ONLY valid JSON:
-{
-  "colorScore": <number>,
-  "compositionScore": <number>,
-  "handScore": <number>,
-  "faceScore": <number>,
-  "overallFeedback": "<string>",
-  "issues": ["<string>"],
-  "suggestions": ["<string>"]
-}`,
-              },
-            ],
-          }],
-        });
-
-        const rawReviewContent = response.choices?.[0]?.message?.content;
-        const text = (typeof rawReviewContent === "string" ? rawReviewContent : "") as string;
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        let details;
-        try {
-          details = jsonMatch
-            ? JSON.parse(jsonMatch[0])
-            : { colorScore: 75, compositionScore: 75, handScore: 70, faceScore: 80,
-                overallFeedback: "검수 완료", issues: [], suggestions: [] };
-        } catch {
-          details = { colorScore: 75, compositionScore: 75, handScore: 70, faceScore: 80,
-              overallFeedback: "검수 완료", issues: [], suggestions: [] };
-        }
-
-        const score = Math.round(
-          (details.colorScore + details.compositionScore +
-           details.handScore + details.faceScore) / 4
-        );
-
-        await db.updateGeneration(input.id, {
-          aiReviewScore: score,
-          aiReviewDetails: details,
-        });
-
-        return { aiReviewScore: score, aiReviewDetails: details };
-      }),
-
-    // ── 상태 업데이트 ──
     updateStatus: protectedProcedure
       .input(z.object({
         id: z.number(),
@@ -1018,7 +607,7 @@ Score each 0-100 and reply with ONLY valid JSON:
           stage: "final",
           reviewNotes: input.reviewNotes || "최종 검수 승인",
         });
-
+        
         const gen = await db.getGenerationById(input.id);
         await db.createNotification({
           userId: ctx.user.id,
@@ -1027,7 +616,7 @@ Score each 0-100 and reply with ONLY valid JSON:
           message: "이미지가 최종 검수를 통과하여 출고 준비가 완료되었습니다.",
           relatedProjectId: gen?.projectId,
         });
-
+        
         return { success: true };
       }),
 
@@ -1046,14 +635,50 @@ Score each 0-100 and reply with ONLY valid JSON:
         return { success: true };
       }),
 
-    // 최종 검수 대상 목록
+    // 최종 검수 대상 목록 (승인된 이미지 중 final이 아닌 것)
     reviewQueue: protectedProcedure
       .input(z.object({ projectId: z.number() }))
       .query(async ({ input }) => {
         return db.getReviewQueueByProject(input.projectId);
       }),
 
-    // ── 삭제 ──
+    upscale: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        prompt: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const gen = await db.getGenerationById(input.id);
+        if (!gen || !gen.resultImageUrl) throw new Error("생성 이미지를 찾을 수 없습니다.");
+
+        // 원본 이미지를 base64로 변환
+        const origBase64 = await imageUrlToBase64(gen.resultImageUrl);
+        
+        const enhancePrompt = "Enhance and upscale this image to ultra high resolution. Maintain ALL facial features exactly. Sharpen focus, improve clarity. Keep every detail identical.";
+        const upscaleResult = await generateImage({
+          prompt: enhancePrompt,
+          originalImages: origBase64 ? [{ b64Json: origBase64.b64Json, mimeType: origBase64.mimeType }] : [{ url: gen.resultImageUrl, mimeType: "image/png" }],
+        });
+        const upscaledUrl = upscaleResult.url;
+        if (!upscaledUrl) throw new Error("업스케일 결과 URL이 없습니다.");
+
+        await db.updateGeneration(input.id, {
+          upscaledImageUrl: upscaledUrl,
+          stage: "upscaled",
+          status: "approved",
+        });
+
+        await db.createNotification({
+          userId: ctx.user.id,
+          type: "generation_complete",
+          title: "업스케일링 완료",
+          message: "이미지가 초고화질로 업스케일링되었습니다.",
+          relatedProjectId: gen.projectId,
+        });
+
+        return { url: upscaledUrl };
+      }),
+
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
@@ -1061,34 +686,110 @@ Score each 0-100 and reply with ONLY valid JSON:
         return { success: true };
       }),
 
-    // ── 상품 포맷 목록 ──
     merchandiseFormats: publicProcedure.query(() => {
-      return Object.entries(MERCHANDISE_FORMATS).map(([key, val]) => ({
+      return Object.entries(MERCHANDISE_FORMATS).map(([key, format]) => ({
         key,
-        ...(val as any),
+        ...format,
       }));
     }),
 
-    // ── 프롬프트 미리보기 이미지 생성 ──
-    previewFromPrompt: protectedProcedure
+    // ─── AI Vision 프롬프트 자동 생성 (참조 이미지 분석) ───
+    analyzeReferenceImages: protectedProcedure
       .input(z.object({
-        prompt: z.string().min(1),
-        negativePrompt: z.string().optional(),
+        imageUrls: z.array(z.string()).min(1).max(10),
+        category: z.enum(["wedding", "restoration", "kids", "profile", "video", "custom"]).optional(),
+        gender: z.enum(["female", "male"]).optional(),
+        isCouple: z.boolean().optional(),
       }))
       .mutation(async ({ input }) => {
         try {
-          const previewUrl = await generateBaseImage(
-            input.prompt,
-            input.negativePrompt || "(deformed, distorted, disfigured:1.3), poorly drawn, bad anatomy, wrong anatomy, extra limb, missing limb, floating limbs, (mutated hands and fingers:1.4), disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation, plastic skin, cartoon, anime",
-          );
-          return { previewUrl };
-        } catch (error: any) {
-          const errMsg = error.message || "";
-          const errBody = error.body?.detail || "";
-          if (errMsg.includes("Forbidden") || errBody.includes("Exhausted balance") || errBody.includes("locked")) {
-            throw new Error("미리보기 생성 실패: fal.ai API 잔액이 소진되었습니다. fal.ai 대시보드에서 잔액을 충전해주세요.");
+          // 이미지 URL들을 LLM Vision에 전달하여 정밀 프롬프트 생성
+          const imageContents: Array<{ type: "image_url"; image_url: { url: string; detail: "high" } }> = [];
+          
+          for (const url of input.imageUrls) {
+            // 핀터레스트 URL인 경우 실제 이미지 URL 추출
+            let imageUrl = url;
+            if (url.includes("pinterest") || url.includes("pin.it")) {
+              const resolved = await resolveImageToBase64(url);
+              if (resolved) {
+                // base64를 data URL로 변환
+                imageUrl = `data:${resolved.mimeType};base64,${resolved.b64Json}`;
+              }
+            } else {
+              // 일반 URL도 접근 가능한지 확인, 불가능하면 base64로 변환
+              try {
+                const resolved = await imageUrlToBase64(url);
+                if (resolved) {
+                  imageUrl = `data:${resolved.mimeType};base64,${resolved.b64Json}`;
+                }
+              } catch {
+                // URL 그대로 사용
+              }
+            }
+            
+            imageContents.push({
+              type: "image_url",
+              image_url: { url: imageUrl, detail: "high" },
+            });
           }
-          throw new Error(`미리보기 생성 실패: ${errMsg}`);
+
+          const categoryContext: Record<string, string> = {
+            wedding: "웨딩 사진 촬영",
+            profile: "프로필 사진 촬영",
+            kids: "아동 사진 촬영",
+            restoration: "사진 복원",
+            video: "영상 제작",
+            custom: "커스텀 사진 촬영",
+          };
+
+          const context = categoryContext[input.category || "wedding"] || "사진 촬영";
+          const genderHint = input.gender === "male" ? "남성" : "여성";
+          const coupleHint = input.isCouple ? "커플(남녀)" : genderHint;
+
+          const systemPrompt = `You are an expert AI image generation prompt engineer specializing in photorealistic portrait photography.
+Your task is to analyze reference images and create a detailed prompt that will reproduce the EXACT same scene, composition, lighting, and style.
+
+IMPORTANT RULES:
+1. Describe the scene in extreme detail: background, lighting direction, color temperature, time of day, weather
+2. Describe the pose, body position, camera angle, focal length
+3. Describe clothing, accessories, hair style in detail
+4. Describe the mood, atmosphere, color grading
+5. Do NOT describe facial features - those will come from the client's reference photo
+6. Write the prompt in English only
+7. Keep the prompt under 600 characters
+8. Focus on making the output photorealistic and cinematic
+9. The subject is: ${coupleHint} for ${context}`;
+
+          const userContent: Array<any> = [
+            ...imageContents,
+            {
+              type: "text" as const,
+              text: `Analyze these ${input.imageUrls.length} reference image(s) and create a single detailed image generation prompt that will reproduce the exact same scene, composition, lighting, style, and atmosphere. The subject will be ${coupleHint}. Remember: do NOT describe facial features, only the scene, pose, clothing, lighting, and atmosphere. Output ONLY the prompt text, nothing else.`,
+            },
+          ];
+
+          const result = await invokeLLM({
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userContent },
+            ],
+          });
+
+          const generatedPrompt = typeof result.choices[0]?.message?.content === "string" 
+            ? result.choices[0].message.content.trim()
+            : "";
+
+          if (!generatedPrompt) {
+            throw new Error("프롬프트 생성에 실패했습니다.");
+          }
+
+          return {
+            prompt: generatedPrompt,
+            negativePrompt: "(deformed, distorted, disfigured:1.3), poorly drawn, bad anatomy, wrong anatomy, extra limb, missing limb, floating limbs, (mutated hands and fingers:1.4), disconnected limbs, mutation, mutated, ugly, disgusting, blurry, amputation, plastic skin, cartoon, anime, illustration, painting, drawing, sketch",
+            imageCount: input.imageUrls.length,
+          };
+        } catch (error: any) {
+          throw new Error(`이미지 분석 실패: ${error.message}`);
         }
       }),
   }),
@@ -1185,177 +886,71 @@ Score each 0-100 and reply with ONLY valid JSON:
       }),
   }),
 
-  // ─── Video Conversions (Kling AI via fal.ai) ───
+  // ─── Video Conversions ───
   videos: router({
-    // ── 목록 ──
     list: protectedProcedure
       .input(z.object({ projectId: z.number() }))
       .query(async ({ input }) => {
         return db.getVideoConversionsByProject(input.projectId);
       }),
-
-    // ── 영상 생성 (Kling AI) ──
     create: protectedProcedure
       .input(z.object({
         generationId: z.number(),
         projectId: z.number(),
         sourceImageUrl: z.string(),
-        duration: z.number().default(5),
-        motionType: z.string().optional(),
+        duration: z.number().optional(),
+        motionType: z.enum(["zoom_in", "zoom_out", "pan_left", "pan_right", "slow_zoom", "cinematic"]).optional(),
         customPrompt: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        // DB에 먼저 저장
-        const video = await db.createVideoConversion({
+        const result = await db.createVideoConversion({
           generationId: input.generationId,
           projectId: input.projectId,
           sourceImageUrl: input.sourceImageUrl,
           duration: input.duration,
           motionType: input.motionType,
           customPrompt: input.customPrompt,
-          status: "queued",
+        });
+        
+        processVideoAsync(result.id, input, ctx.user.id).catch(err => {
+          console.error("[Video] Processing failed:", err);
         });
 
-        // 백그라운드 비동기 처리
-        (async () => {
-          try {
-            await db.updateVideoConversion(video.id, { status: "processing" });
-
-            const falClient = await import("@fal-ai/client");
-            falClient.fal.config({ credentials: process.env.FAL_KEY || "" });
-
-            const motionPrompts: Record<string, string> = {
-              cinematic: "cinematic wedding video, smooth motion, romantic atmosphere",
-              zoom_in: "slow cinematic zoom in, romantic wedding",
-              zoom_out: "slow cinematic zoom out, dreamy wedding",
-              pan_left: "smooth pan left, elegant wedding photography",
-              pan_right: "smooth pan right, cinematic wedding",
-              slow_zoom: "ultra slow zoom, ethereal wedding moment",
-            };
-
-            const prompt = input.customPrompt ||
-              motionPrompts[input.motionType || "cinematic"] ||
-              "cinematic wedding video";
-
-            // Kling 3.0 API (fal-ai/kling-video/v3)
-            const durationNum = Math.max(3, Math.min(15, input.duration || 5));
-            const result = await falClient.fal.subscribe(
-              "fal-ai/kling-video/v3/standard/image-to-video",
-              {
-                input: {
-                  start_image_url: input.sourceImageUrl,
-                  prompt,
-                  duration: String(durationNum),
-                  generate_audio: false,
-                  aspect_ratio: "16:9",
-                  negative_prompt: "blur, distort, low quality, shaky, jittery",
-                  cfg_scale: 0.5,
-                },
-              }
-            );
-
-            const videoUrl =
-              (result as any).data?.video?.url || (result as any).video?.url || input.sourceImageUrl;
-
-            await db.updateVideoConversion(video.id, {
-              videoUrl,
-              status: "completed",
-            });
-
-            await db.createNotification({
-              userId: ctx.user.id,
-              type: "generation_complete",
-              title: "영상 변환 완료",
-              message: "Kling 3.0으로 이미지가 고품질 영상으로 변환되었습니다.",
-            });
-          } catch (err: any) {
-            const errMsg = err.message || "";
-            const errBody = err.body?.detail || "";
-            let userError = errMsg;
-            if (errMsg.includes("Forbidden") || errBody.includes("Exhausted balance") || errBody.includes("locked")) {
-              userError = "fal.ai API 잔액이 소진되었습니다. fal.ai 대시보드에서 잔액을 충전해주세요.";
-            }
-            await db.updateVideoConversion(video.id, {
-              status: "failed",
-              errorMessage: userError,
-            });
-          }
-        })();
-
-        return video;
+        return result;
       }),
-
-    // ── 영상 재생성 ──
+    // 영상 재생성 (커스텀 프롬프트로)
     regenerate: protectedProcedure
       .input(z.object({
         videoId: z.number(),
-        customPrompt: z.string(),
-        motionType: z.string().optional(),
+        customPrompt: z.string().min(1),
+        motionType: z.enum(["zoom_in", "zoom_out", "pan_left", "pan_right", "slow_zoom", "cinematic"]).optional(),
+        duration: z.number().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const video = await db.getVideoConversionById(input.videoId);
-        if (!video) throw new Error("영상을 찾을 수 없습니다");
+        const existingVideo = await db.getVideoConversionById(input.videoId);
+        if (!existingVideo) throw new Error("영상을 찾을 수 없습니다.");
 
         await db.updateVideoConversion(input.videoId, {
           status: "queued",
           customPrompt: input.customPrompt,
-          motionType: input.motionType,
+          motionType: input.motionType || existingVideo.motionType,
           videoUrl: null,
           errorMessage: null,
         });
 
-        // 백그라운드 재생성
-        (async () => {
-          try {
-            await db.updateVideoConversion(input.videoId, { status: "processing" });
-
-            const falClient = await import("@fal-ai/client");
-            falClient.fal.config({ credentials: process.env.FAL_KEY || "" });
-
-            // Kling 3.0 API
-            const durationNum = Math.max(3, Math.min(15, video.duration || 5));
-            const result = await falClient.fal.subscribe(
-              "fal-ai/kling-video/v3/standard/image-to-video",
-              {
-                input: {
-                  start_image_url: video.sourceImageUrl,
-                  prompt: input.customPrompt,
-                  duration: String(durationNum),
-                  generate_audio: false,
-                  aspect_ratio: "16:9",
-                  negative_prompt: "blur, distort, low quality, shaky, jittery",
-                  cfg_scale: 0.5,
-                },
-              }
-            );
-
-            const videoUrl =
-              (result as any).data?.video?.url || (result as any).video?.url || video.sourceImageUrl;
-
-            await db.updateVideoConversion(input.videoId, {
-              videoUrl,
-              status: "completed",
-            });
-
-            await db.createNotification({
-              userId: ctx.user.id,
-              type: "generation_complete",
-              title: "영상 재생성 완료",
-              message: "Kling 3.0으로 영상이 재생성되었습니다.",
-            });
-          } catch (err: any) {
-            const errMsg = err.message || "";
-            const errBody = err.body?.detail || "";
-            let userError = errMsg;
-            if (errMsg.includes("Forbidden") || errBody.includes("Exhausted balance") || errBody.includes("locked")) {
-              userError = "fal.ai API 잔액이 소진되었습니다. fal.ai 대시보드에서 잔액을 충전해주세요.";
-            }
-            await db.updateVideoConversion(input.videoId, {
-              status: "failed",
-              errorMessage: userError,
-            });
-          }
-        })();
+        processVideoAsync(
+          input.videoId,
+          {
+            sourceImageUrl: existingVideo.sourceImageUrl,
+            duration: input.duration || existingVideo.duration || 5,
+            motionType: input.motionType || existingVideo.motionType || "cinematic",
+            projectId: existingVideo.projectId,
+            customPrompt: input.customPrompt,
+          },
+          ctx.user.id
+        ).catch((err: any) => {
+          console.error("[Video Regen] Processing failed:", err);
+        });
 
         return { success: true };
       }),
@@ -1415,198 +1010,49 @@ Score each 0-100 and reply with ONLY valid JSON:
         return { success: true };
       }),
   }),
-
-  // ─── Invitations (모바일 청첩장) ───
-  invitations: router({
-    // AI 청첩 문구 생성
-    generateText: protectedProcedure
-      .input(z.object({
-        groomName: z.string(),
-        brideName: z.string(),
-        weddingDate: z.string(),
-        venue: z.string(),
-        style: z.string(),
-      }))
-      .mutation(async ({ input }) => {
-        const response = await invokeLLM({
-          messages: [{
-            role: "user",
-            content: `${input.groomName}과 ${input.brideName}의 ${input.weddingDate} ${input.venue} 웨딩 청첩 문구를 ${input.style} 스타일로 3가지 만들어줘.\n각각 50자 내외, 한국어, 감성적으로.\nJSON 배열로만 답해: ["문구1", "문구2", "문구3"]`,
-          }],
-        });
-        const rawText = response.choices?.[0]?.message?.content;
-        const text = (typeof rawText === "string" ? rawText : "") as string;
-        const match = text.match(/\[[\s\S]*\]/);
-        let texts;
-        try {
-          texts = match ? JSON.parse(match[0]) : [
-            "두 사람이 하나가 되는 날, 함께해 주세요.",
-            "사랑이 완성되는 순간에 초대합니다.",
-            "설레는 마음으로 기다리겠습니다.",
-          ];
-        } catch {
-          texts = [
-            "두 사람이 하나가 되는 날, 함께해 주세요.",
-            "사랑이 완성되는 순간에 초대합니다.",
-            "설레는 마음으로 기다리겠습니다.",
-          ];
-        }
-        return { texts };
-      }),
-  }),
-
-  // ═══ 이미지 효과 (계절 변환, 색감 그레이딩) ═══
-  effects: router({
-    seasonTransform: protectedProcedure
-      .input(z.object({
-        generationId: z.number(),
-        season: z.enum(["spring", "summer", "autumn", "winter"]),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        const gen = await db.getGenerationById(input.generationId);
-        if (!gen?.resultImageUrl) throw new Error("이미지를 찾을 수 없습니다");
-
-        const { applySeasonTransform } = await import("./services/image-effects");
-        const resultUrl = await applySeasonTransform(
-          gen.upscaledImageUrl || gen.resultImageUrl,
-          input.season
-        );
-
-        // 새로운 generation으로 저장
-        const seasonLabels = { spring: "봄 벚꽃", summer: "여름 초록", autumn: "가을 단풍", winter: "겨울 설경" };
-        const newGen = await db.createGeneration({
-          projectId: gen.projectId,
-          promptText: `[${seasonLabels[input.season]} 변환] ${gen.promptText || ""}`,
-          resultImageUrl: resultUrl,
-          status: "completed",
-          stage: "draft",
-        });
-
-        return { id: newGen.id, resultImageUrl: resultUrl };
-      }),
-
-    colorGrade: protectedProcedure
-      .input(z.object({
-        generationId: z.number(),
-        grade: z.enum(["film", "bw", "golden", "blue"]),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        const gen = await db.getGenerationById(input.generationId);
-        if (!gen?.resultImageUrl) throw new Error("이미지를 찾을 수 없습니다");
-
-        const { applyColorGrade } = await import("./services/image-effects");
-        const resultUrl = await applyColorGrade(
-          gen.upscaledImageUrl || gen.resultImageUrl,
-          input.grade
-        );
-
-        const gradeLabels = { film: "필름 감성", bw: "흑백", golden: "골든아워", blue: "블루아워" };
-        const newGen = await db.createGeneration({
-          projectId: gen.projectId,
-          promptText: `[${gradeLabels[input.grade]} 효과] ${gen.promptText || ""}`,
-          resultImageUrl: resultUrl,
-          status: "completed",
-          stage: "draft",
-        });
-
-        return { id: newGen.id, resultImageUrl: resultUrl };
-      }),
-  }),
-
-  // ═══ 고객 미리보기 (퍼블릭) ═══
-  preview: router({
-    verify: publicProcedure
-      .input(z.object({
-        clientId: z.number(),
-        token: z.string(),
-        birthdate: z.string(),
-      }))
-      .mutation(async ({ input }) => {
-        const client = await db.getClientById(input.clientId);
-        if (!client) throw new Error("고객 정보를 찾을 수 없습니다");
-        // 토큰 검증: 간단한 해시 기반 토큰 확인
-        const expectedToken = Buffer.from(`preview-${input.clientId}-${client.name}`).toString("base64url").slice(0, 16);
-        if (input.token !== expectedToken) throw new Error("유효하지 않은 링크입니다");
-        // 생년월일 6자리 검증 (폰번호 뒷자리 4자리로 대체 가능)
-        if (!input.birthdate || input.birthdate.length !== 6) throw new Error("생년월일 6자리를 입력해주세요");
-        return { success: true, clientName: client.name };
-      }),
-
-    getGallery: publicProcedure
-      .input(z.object({
-        clientId: z.number(),
-        token: z.string(),
-      }))
-      .query(async ({ input }) => {
-        const client = await db.getClientById(input.clientId);
-        if (!client) throw new Error("고객 정보를 찾을 수 없습니다");
-        const expectedToken = Buffer.from(`preview-${input.clientId}-${client.name}`).toString("base64url").slice(0, 16);
-        if (input.token !== expectedToken) throw new Error("유효하지 않은 링크입니다");
-        // 해당 고객의 모든 프로젝트에서 approved/completed 이미지 가져오기
-        const allProjects = await db.getProjectsByUser(client.userId);
-        const clientProjects = allProjects.filter(p => p.clientId === input.clientId);
-        const images: any[] = [];
-        for (const proj of clientProjects) {
-          const gens = await db.getGenerationsByProject(proj.id);
-          const approvedGens = gens.filter(g => g.status === "approved" || g.status === "completed" || g.stage === "final");
-          images.push(...approvedGens.map(g => ({
-            id: g.id,
-            resultImageUrl: g.upscaledImageUrl || g.resultImageUrl,
-            promptText: g.promptText,
-            status: g.status,
-            stage: g.stage,
-            projectName: proj.title,
-          })));
-        }
-        return { images, clientName: client.name };
-      }),
-
-    submitFeedback: publicProcedure
-      .input(z.object({
-        clientId: z.number(),
-        token: z.string(),
-        generationId: z.number(),
-        liked: z.boolean().optional(),
-        revisionNote: z.string().optional(),
-        revisionCategory: z.string().optional(),
-      }))
-      .mutation(async ({ input }) => {
-        const client = await db.getClientById(input.clientId);
-        if (!client) throw new Error("고객 정보를 찾을 수 없습니다");
-        const expectedToken = Buffer.from(`preview-${input.clientId}-${client.name}`).toString("base64url").slice(0, 16);
-        if (input.token !== expectedToken) throw new Error("유효하지 않은 링크입니다");
-
-        if (input.revisionNote || input.revisionCategory) {
-          await db.updateGeneration(input.generationId, {
-            status: "revision" as any,
-            reviewNotes: `[고객 수정요청] ${input.revisionCategory || ""}: ${input.revisionNote || ""}`,
-          });
-          // 오너에게 알림
-          try {
-            await notifyOwner({
-              title: `📝 ${client.name}님 수정 요청`,
-              content: `카테고리: ${input.revisionCategory || "없음"}\n내용: ${input.revisionNote || "없음"}`,
-            });
-          } catch (_) {}
-        }
-
-        if (input.liked !== undefined) {
-          const gen = await db.getGenerationById(input.generationId);
-          if (gen) {
-            const currentNotes = gen.reviewNotes || "";
-            const likeTag = input.liked ? "[❤️ 고객 선택]" : "";
-            await db.updateGeneration(input.generationId, {
-              reviewNotes: likeTag ? `${likeTag} ${currentNotes}` : currentNotes.replace(/\[❤️ 고객 선택\]\s*/g, ""),
-            });
-          }
-        }
-
-        return { success: true };
-      }),
-  }),
 });
 
-// processVideoAsync removed - video processing is now inline in the videos router using fal.ai Kling Video API
+// ─── 영상 생성 비동기 처리 ───
+async function processVideoAsync(
+  videoId: number, 
+  input: { sourceImageUrl: string; duration?: number; motionType?: string; projectId: number; customPrompt?: string },
+  userId: number
+) {
+  try {
+    await db.updateVideoConversion(videoId, { status: "processing" });
+    
+    const motionPrompts: Record<string, string> = {
+      zoom_in: "Smooth cinematic zoom-in on this image",
+      zoom_out: "Smooth cinematic zoom-out revealing full scene",
+      pan_left: "Smooth horizontal pan from right to left",
+      pan_right: "Smooth horizontal pan from left to right",
+      slow_zoom: "Very slow gentle zoom with parallax for dreamy feel",
+      cinematic: "Cinematic motion with subtle camera movement and depth shifts",
+    };
+
+    const motionType = input.motionType || "cinematic";
+    // 커스텀 프롬프트가 있으면 사용, 없으면 모션 프롬프트 사용
+    const prompt = input.customPrompt 
+      ? `${input.customPrompt}. ${input.duration || 5}s, maintain facial features, smooth 30fps.`
+      : `${motionPrompts[motionType] || motionPrompts.cinematic}. ${input.duration || 5}s, maintain facial features, smooth 30fps.`;
+
+    const origBase64 = await imageUrlToBase64(input.sourceImageUrl);
+    const result = await generateImage({
+      prompt,
+      originalImages: origBase64 ? [{ b64Json: origBase64.b64Json, mimeType: origBase64.mimeType }] : [{ url: input.sourceImageUrl, mimeType: "image/png" }],
+    });
+
+    if (result.url) {
+      await db.updateVideoConversion(videoId, { videoUrl: result.url, status: "completed" });
+      await db.createNotification({ userId, type: "generation_complete", title: "영상 변환 완료", message: "이미지가 영상으로 변환되었습니다." });
+    } else {
+      throw new Error("영상 생성 결과가 없습니다.");
+    }
+  } catch (error: any) {
+    await db.updateVideoConversion(videoId, { status: "failed", errorMessage: error.message });
+    console.error("[Video] Failed:", error);
+  }
+}
 
 // ─── 배치 비동기 처리 ───
 async function processBatchAsync(batchJobId: number, userId: number) {

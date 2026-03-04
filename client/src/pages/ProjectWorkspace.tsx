@@ -19,7 +19,6 @@ import {
 import { toast } from "sonner";
 import AIEngineSelector from "@/components/AIEngineSelector";
 import type { AIEngineId } from "../../../shared/aiEngines";
-import RoleReferenceSection from "@/components/RoleReferenceSection";
 
 const statusLabels: Record<string, string> = {
   draft: "초안", generating: "생성중", review: "검수중", revision: "수정중",
@@ -60,7 +59,6 @@ export default function ProjectWorkspace() {
   // 참조 이미지 다중 첨부
   const [refImages, setRefImages] = useState<Array<{ url: string; preview: string; file?: File }>>([]);
   const [aiPromptResult, setAiPromptResult] = useState<string>("");
-  const [previewImageUrl, setPreviewImageUrl] = useState<string>("");
   const refFileInputRef = useRef<HTMLInputElement>(null);
 
   // 영상 재생성 다이얼로그
@@ -69,8 +67,7 @@ export default function ProjectWorkspace() {
   const [regenMotion, setRegenMotion] = useState("cinematic");
 
   // 멀티 AI 엔진 선택
-  const [showAIReview, setShowAIReview] = useState(false);
-  const [selectedEngines, setSelectedEngines] = useState<AIEngineId[]>(["flux_lora", "midjourney_omni"]);
+  const [selectedEngines, setSelectedEngines] = useState<AIEngineId[]>(["flux_lora", "midjourney_omniref"]);
   const handleToggleEngine = (engineId: AIEngineId) => {
     setSelectedEngines(prev =>
       prev.includes(engineId)
@@ -78,15 +75,6 @@ export default function ProjectWorkspace() {
         : [...prev, engineId]
     );
   };
-
-  const aiReviewMutation = trpc.generations.requestAIReview.useMutation({
-    onSuccess: (data) => {
-      utils.generations.list.invalidate();
-      setShowAIReview(true);
-      toast.success(`AI 검수 완료! 종합 점수: ${data.aiReviewScore}/100`);
-    },
-    onError: (err: any) => toast.error(`AI 검수 실패: ${err.message}`),
-  });
 
   const utils = trpc.useUtils();
   const { data: project, isLoading } = trpc.projects.getById.useQuery({ id: projectId });
@@ -163,32 +151,6 @@ export default function ProjectWorkspace() {
     onError: (err) => toast.error(`영상 재생성 실패: ${err.message}`),
   });
 
-  // 계절 변환 / 색감 그레이딩
-  const seasonMutation = trpc.effects.seasonTransform.useMutation({
-    onSuccess: () => {
-      utils.generations.list.invalidate();
-      toast.success("계절 변환 완료! 갤러리에서 확인하세요.");
-    },
-    onError: (err) => toast.error(`계절 변환 실패: ${err.message}`),
-  });
-
-  const colorGradeMutation = trpc.effects.colorGrade.useMutation({
-    onSuccess: () => {
-      utils.generations.list.invalidate();
-      toast.success("색감 그레이딩 완료! 갤러리에서 확인하세요.");
-    },
-    onError: (err) => toast.error(`색감 변환 실패: ${err.message}`),
-  });
-
-  // 프롬프트 미리보기 이미지 생성
-  const previewMutation = trpc.generations.previewFromPrompt.useMutation({
-    onSuccess: (data) => {
-      setPreviewImageUrl(data.previewUrl);
-      toast.success("미리보기 이미지가 생성되었습니다!");
-    },
-    onError: (err) => toast.error(`미리보기 생성 실패: ${err.message}`),
-  });
-
   // AI Vision 프롬프트 자동 생성
   const analyzeImagesMutation = trpc.generations.analyzeReferenceImages.useMutation({
     onSuccess: (data) => {
@@ -204,9 +166,7 @@ export default function ProjectWorkspace() {
 
   const selectedGen = useMemo(() => generations?.find(g => g.id === selectedGenId), [generations, selectedGenId]);
   const frontPhoto = useMemo(() => clientPhotos?.find(p => p.photoType === "front"), [clientPhotos]);
-  const faceRefPhotos = useMemo(() => clientPhotos?.filter(p => p.photoType === "face_reference") || [], [clientPhotos]);
   const hasFaceRef = !!frontPhoto;
-  const totalFacePhotos = (frontPhoto ? 1 : 0) + faceRefPhotos.length;
 
   const formatCategories = useMemo(() => {
     if (!formats) return {};
@@ -304,21 +264,7 @@ export default function ProjectWorkspace() {
   // AI 프롬프트를 메인 프롬프트에 삽입
   const handleInsertAiPrompt = () => {
     setPromptText(aiPromptResult);
-    setPreviewImageUrl("");
     toast.success("AI 생성 프롬프트가 메인 프롬프트에 삽입되었습니다.");
-  };
-
-  // 프롬프트 미리보기 이미지 생성
-  const handlePreviewFromPrompt = () => {
-    const targetPrompt = aiPromptResult || promptText;
-    if (!targetPrompt.trim()) {
-      toast.error("미리보기를 생성할 프롬프트가 없습니다.");
-      return;
-    }
-    previewMutation.mutate({
-      prompt: targetPrompt,
-      negativePrompt: negativePrompt || undefined,
-    });
   };
 
   const handleGenerate = () => {
@@ -345,7 +291,6 @@ export default function ProjectWorkspace() {
       faceFixMode,
       merchandiseFormat: merchandiseFormat && merchandiseFormat !== "none" ? merchandiseFormat : undefined,
       referenceMode: refUrl ? effectiveMode : undefined,
-      engines: selectedEngines.length > 0 ? selectedEngines : undefined,
     });
   };
 
@@ -415,108 +360,48 @@ export default function ProjectWorkspace() {
                   <Users className="h-3 w-3" />커플
                 </Badge>
               )}
-              {project.projectMode === "family" && (
-                <Badge variant="outline" className="bg-orange-500/20 text-orange-400 border-orange-500/30 gap-1">
-                  <Users className="h-3 w-3" />가족
-                </Badge>
-              )}
               {project.concept && <span className="text-sm text-muted-foreground">{project.concept}</span>}
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (!project?.clientId) { toast.error("고객이 연결되지 않은 프로젝트입니다."); return; }
-                const clientName = client?.name || "";
-                const previewToken = btoa(`preview-${project.clientId}-${clientName}`).replace(/[+/=]/g, (c) => c === "+" ? "-" : c === "/" ? "_" : "").slice(0, 16);
-                const previewUrl = `${window.location.origin}/preview/${project.clientId}/${previewToken}`;
-                navigator.clipboard.writeText(previewUrl);
-                toast.success("미리보기 링크가 복사되었습니다!");
-              }}
-              className="gap-1.5"
-            >
-              🔗 미리보기 링크 복사
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setLocation(`/invitation/${projectId}`)}
-              className="gap-1.5"
-            >
-              📩 청첩장 만들기
-            </Button>
-            {client && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${client.gender === "male" ? "bg-blue-500/20" : "bg-pink-500/20"}`}>
-                  <UserCircle className={`h-4 w-4 ${client.gender === "male" ? "text-blue-400" : "text-pink-400"}`} />
-                </div>
-                <span>{client.name}</span>
+          {client && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${client.gender === "male" ? "bg-blue-500/20" : "bg-pink-500/20"}`}>
+                <UserCircle className={`h-4 w-4 ${client.gender === "male" ? "text-blue-400" : "text-pink-400"}`} />
               </div>
-            )}
-          </div>
+              <span>{client.name}</span>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: Prompt & Controls */}
           <div className="lg:col-span-1 space-y-4">
-            {/* 얼굴 참조 상태 - 개인 모드(single)일 때만 표시 */}
-            {project.projectMode === "single" && (
-              <Card className={`border ${hasFaceRef ? "bg-green-500/5 border-green-500/20" : "bg-amber-500/5 border-amber-500/20"}`}>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    {frontPhoto ? (
-                      <div className="relative">
-                        <img src={frontPhoto.originalUrl} alt="얼굴 참조" className="w-12 h-12 rounded-lg object-cover border border-border" />
-                        {faceRefPhotos.length > 0 && (
-                          <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                            <span className="text-[9px] font-bold text-primary-foreground">{totalFacePhotos}</span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="w-12 h-12 rounded-lg bg-secondary flex items-center justify-center border border-border">
-                        <UserCircle className="h-6 w-6 text-muted-foreground" />
-                      </div>
-                    )}
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-foreground">
-                        {hasFaceRef ? "얼굴 참조 사진 준비됨" : "얼굴 참조 사진 없음"}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {hasFaceRef 
-                          ? `정면 1장 + 얼굴참조 ${faceRefPhotos.length}장 = 총 ${totalFacePhotos}장 등록됨`
-                          : "고객 프로필에서 정면 사진을 업로드해주세요"
-                        }
-                      </p>
+            {/* 얼굴 참조 상태 */}
+            <Card className={`border ${hasFaceRef ? "bg-green-500/5 border-green-500/20" : "bg-amber-500/5 border-amber-500/20"}`}>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  {frontPhoto ? (
+                    <img src={frontPhoto.originalUrl} alt="얼굴 참조" className="w-12 h-12 rounded-lg object-cover border border-border" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-lg bg-secondary flex items-center justify-center border border-border">
+                      <UserCircle className="h-6 w-6 text-muted-foreground" />
                     </div>
-                    {hasFaceRef ? (
-                      <div className="flex items-center gap-1">
-                        <Check className="h-5 w-5 text-green-500" />
-                        <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={() => setLocation(`/clients/${project?.clientId}`)}>
-                          관리
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button variant="outline" size="sm" className="text-xs" onClick={() => setLocation(`/clients/${project?.clientId}`)}>
-                        사진 등록
-                      </Button>
-                    )}
+                  )}
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-foreground">
+                      {hasFaceRef ? "얼굴 참조 사진 준비됨" : "얼굴 참조 사진 없음"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {hasFaceRef 
+                        ? `${clientPhotos?.length || 0}장의 참조 사진이 등록되어 있습니다`
+                        : "고객 프로필에서 정면 사진을 업로드해주세요"
+                      }
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* ═══ 역할별 참조 이미지 (커플/가족 모드) ═══ */}
-            {(project.projectMode === "couple" || project.projectMode === "family") && (
-              <RoleReferenceSection
-                projectId={projectId}
-                projectMode={project.projectMode}
-                roleReferenceImages={(project.roleReferenceImages as Record<string, string[]>) || {}}
-                familyMembers={(project.familyMembers as Array<{ role: string; label: string; clientId?: number }>) || []}
-              />
-            )}
+                  {hasFaceRef && <Check className="h-5 w-5 text-green-500" />}
+                </div>
+              </CardContent>
+            </Card>
 
             <Card className="bg-card border-border">
               <CardHeader className="pb-3">
@@ -634,52 +519,14 @@ export default function ProjectWorkspace() {
                         <div className="p-2 rounded bg-black/20 border border-border">
                           <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">{aiPromptResult}</p>
                         </div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            className="flex-1 gap-1.5 bg-purple-600 hover:bg-purple-700 text-xs"
-                            onClick={handleInsertAiPrompt}
-                          >
-                            <ArrowRight className="h-3 w-3" />
-                            메인 프롬프트에 삽입
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="flex-1 gap-1.5 border-cyan-500/30 hover:bg-cyan-500/10 text-xs"
-                            onClick={handlePreviewFromPrompt}
-                            disabled={previewMutation.isPending}
-                          >
-                            {previewMutation.isPending ? (
-                              <><Loader2 className="h-3 w-3 animate-spin" />미리보기 생성 중...</>
-                            ) : (
-                              <><Eye className="h-3 w-3" />프롬프트 미리보기</>
-                            )}
-                          </Button>
-                        </div>
-
-                        {/* 미리보기 이미지 표시 */}
-                        {previewImageUrl && (
-                          <div className="mt-2 space-y-1.5">
-                            <Label className="text-xs text-cyan-400 flex items-center gap-1">
-                              <Eye className="h-3 w-3" />
-                              프롬프트 미리보기 결과
-                            </Label>
-                            <div className="relative rounded-lg overflow-hidden border border-cyan-500/30">
-                              <img
-                                src={previewImageUrl}
-                                alt="프롬프트 미리보기"
-                                className="w-full h-auto max-h-[300px] object-contain bg-black/30"
-                              />
-                              <div className="absolute top-2 left-2 bg-black/60 text-cyan-400 text-[9px] px-2 py-0.5 rounded">
-                                미리보기 (얼굴 합성 전)
-                              </div>
-                            </div>
-                            <p className="text-[9px] text-muted-foreground">
-                              이 미리보기는 프롬프트만으로 생성된 결과입니다. 실제 생성 시 고객 얼굴이 합성됩니다.
-                            </p>
-                          </div>
-                        )}
+                        <Button
+                          size="sm"
+                          className="w-full gap-1.5 bg-purple-600 hover:bg-purple-700 text-xs"
+                          onClick={handleInsertAiPrompt}
+                        >
+                          <ArrowRight className="h-3 w-3" />
+                          메인 프롬프트에 삽입
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -906,71 +753,6 @@ export default function ProjectWorkspace() {
                         </DialogContent>
                       </Dialog>
 
-                      {/* 계절 변환 버튼 */}
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="gap-1.5">
-                            <Sparkles className="h-3.5 w-3.5" />계절 변환
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="bg-card border-border">
-                          <DialogHeader>
-                            <DialogTitle className="text-foreground">계절 & 색감 변환</DialogTitle>
-                          </DialogHeader>
-                          <div className="space-y-4 py-2">
-                            <div className="rounded-lg overflow-hidden border border-border bg-black/20 max-h-40">
-                              <img src={selectedGen.upscaledImageUrl || selectedGen.resultImageUrl} alt="" className="w-full h-auto object-contain max-h-40" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-foreground mb-2">계절 변환</p>
-                              <div className="grid grid-cols-2 gap-2">
-                                {[
-                                  { key: "spring", label: "🌸 봄 벚꽃", desc: "벡꽃 배경, 핑크 톤" },
-                                  { key: "summer", label: "🌿 여름 초록", desc: "생동감 넘치는 초록" },
-                                  { key: "autumn", label: "🍂 가을 단풍", desc: "따뜻한 오렌지 톤" },
-                                  { key: "winter", label: "❄️ 겨울 설경", desc: "순백의 눈 배경" },
-                                ].map(s => (
-                                  <DialogClose asChild key={s.key}>
-                                    <Button
-                                      variant="outline"
-                                      className="h-auto py-3 flex-col items-start gap-0.5"
-                                      onClick={() => seasonMutation.mutate({ generationId: selectedGen.id, season: s.key as any })}
-                                      disabled={seasonMutation.isPending}
-                                    >
-                                      <span className="text-sm">{s.label}</span>
-                                      <span className="text-[10px] text-muted-foreground font-normal">{s.desc}</span>
-                                    </Button>
-                                  </DialogClose>
-                                ))}
-                              </div>
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-foreground mb-2">색감 그레이딩</p>
-                              <div className="grid grid-cols-2 gap-2">
-                                {[
-                                  { key: "film", label: "🎬 필름 감성", desc: "빈티지 그레인 효과" },
-                                  { key: "bw", label: "⚫ 흑백 클래식", desc: "드라마틱 모노크롬" },
-                                  { key: "golden", label: "🌟 골든아워", desc: "따뜻한 오렌지 톤" },
-                                  { key: "blue", label: "🌙 블루아워", desc: "차분한 블루 톤" },
-                                ].map(g => (
-                                  <DialogClose asChild key={g.key}>
-                                    <Button
-                                      variant="outline"
-                                      className="h-auto py-3 flex-col items-start gap-0.5"
-                                      onClick={() => colorGradeMutation.mutate({ generationId: selectedGen.id, grade: g.key as any })}
-                                      disabled={colorGradeMutation.isPending}
-                                    >
-                                      <span className="text-sm">{g.label}</span>
-                                      <span className="text-[10px] text-muted-foreground font-normal">{g.desc}</span>
-                                    </Button>
-                                  </DialogClose>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-
                       <a href={selectedGen.upscaledImageUrl || selectedGen.resultImageUrl} target="_blank" rel="noopener noreferrer">
                         <Button variant="outline" size="sm" className="gap-1.5"><Download className="h-3.5 w-3.5" />다운로드</Button>
                       </a>
@@ -985,75 +767,6 @@ export default function ProjectWorkspace() {
                       className="w-full h-auto max-h-[600px] object-contain"
                     />
                   </div>
-                  {/* AI 검수 결과 패널 */}
-                  {(selectedGen as any).aiReviewScore != null && (
-                    <div className="mt-3 p-3 rounded-lg bg-gradient-to-br from-violet-500/5 to-blue-500/5 border border-violet-500/20">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Brain className="h-4 w-4 text-violet-400" />
-                          <span className="text-sm font-medium text-foreground">AI 검수 결과</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-lg font-bold ${
-                            (selectedGen as any).aiReviewScore >= 80 ? "text-green-400" :
-                            (selectedGen as any).aiReviewScore >= 60 ? "text-yellow-400" : "text-red-400"
-                          }`}>{(selectedGen as any).aiReviewScore}/100</span>
-                          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" onClick={() => setShowAIReview(!showAIReview)}>
-                            {showAIReview ? "접기" : "상세"}
-                          </Button>
-                        </div>
-                      </div>
-                      
-                      {/* 점수 바 */}
-                      <div className="grid grid-cols-4 gap-2 mb-2">
-                        {[
-                          { label: "색감", score: (selectedGen as any).aiReviewDetails?.colorScore, color: "bg-blue-500" },
-                          { label: "구도", score: (selectedGen as any).aiReviewDetails?.compositionScore, color: "bg-purple-500" },
-                          { label: "손/손가락", score: (selectedGen as any).aiReviewDetails?.handScore, color: "bg-orange-500" },
-                          { label: "얼굴", score: (selectedGen as any).aiReviewDetails?.faceScore, color: "bg-pink-500" },
-                        ].map(item => (
-                          <div key={item.label} className="text-center">
-                            <div className="text-[10px] text-muted-foreground mb-1">{item.label}</div>
-                            <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
-                              <div className={`h-full ${item.color} rounded-full transition-all`} style={{ width: `${item.score || 0}%` }} />
-                            </div>
-                            <div className="text-[10px] font-medium text-foreground mt-0.5">{item.score || 0}</div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {showAIReview && (selectedGen as any).aiReviewDetails && (
-                        <div className="space-y-2 mt-3 pt-3 border-t border-border/50">
-                          <p className="text-xs text-foreground/90">{(selectedGen as any).aiReviewDetails.overallFeedback}</p>
-                          {(selectedGen as any).aiReviewDetails.issues?.length > 0 && (
-                            <div>
-                              <p className="text-[10px] font-medium text-red-400 mb-1">발견된 문제점:</p>
-                              <ul className="space-y-0.5">
-                                {(selectedGen as any).aiReviewDetails.issues.map((issue: string, i: number) => (
-                                  <li key={i} className="text-[10px] text-muted-foreground flex items-start gap-1">
-                                    <span className="text-red-400 mt-0.5">•</span>{issue}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {(selectedGen as any).aiReviewDetails.suggestions?.length > 0 && (
-                            <div>
-                              <p className="text-[10px] font-medium text-blue-400 mb-1">개선 제안:</p>
-                              <ul className="space-y-0.5">
-                                {(selectedGen as any).aiReviewDetails.suggestions.map((sug: string, i: number) => (
-                                  <li key={i} className="text-[10px] text-muted-foreground flex items-start gap-1">
-                                    <span className="text-blue-400 mt-0.5">•</span>{sug}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
                   <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground flex-wrap">
                     {selectedGen.generationTimeMs && <span>생성시간: {(selectedGen.generationTimeMs / 1000).toFixed(1)}초</span>}
                     {selectedGen.merchandiseFormat && <Badge variant="secondary" className="text-xs">{selectedGen.merchandiseFormat}</Badge>}
@@ -1068,12 +781,6 @@ export default function ProjectWorkspace() {
                     <Button size="sm" variant="destructive" className="gap-1.5"
                       onClick={() => updateStatus.mutate({ id: selectedGen.id, status: "rejected" })}>
                       <X className="h-3.5 w-3.5" />반려
-                    </Button>
-                    <Button size="sm" variant="outline" className="gap-1.5 border-violet-500/30 hover:bg-violet-500/10"
-                      onClick={() => aiReviewMutation.mutate({ id: selectedGen.id })}
-                      disabled={aiReviewMutation.isPending}>
-                      {aiReviewMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />}
-                      AI 검수
                     </Button>
                     <Button size="sm" variant="outline" className="gap-1.5"
                       onClick={() => { setPromptText(selectedGen.promptText); toast.info("프롬프트를 재사용합니다."); }}>

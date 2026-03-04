@@ -113,12 +113,6 @@ export async function getClientPhotos(clientId: number) {
   return db.select().from(clientPhotos).where(eq(clientPhotos.clientId, clientId)).orderBy(desc(clientPhotos.createdAt));
 }
 
-export async function updateClientPhoto(id: number, data: Partial<Pick<InsertClientPhoto, 'originalUrl' | 'fileKey' | 'fileName' | 'mimeType' | 'fileSize'>>) {
-  const db = await getDb();
-  if (!db) throw new Error("DB not available");
-  await db.update(clientPhotos).set(data).where(eq(clientPhotos.id, id));
-}
-
 export async function deleteClientPhoto(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

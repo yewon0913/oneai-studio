@@ -290,7 +290,6 @@ export default function Home() {
         </div>
 
         {/* Stats Grid */}
-        <h2 className="text-xl font-bold text-foreground mt-6">대시보드 통계</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {statCards.map((stat) => (
             <Card
@@ -317,7 +316,7 @@ export default function Home() {
 
         {/* Quick Actions */}
         <div>
-          <h2 className="text-xl font-bold text-foreground mb-4">빠른 작업 - AI 웨딩 이미지 생성 시작</h2>
+          <h2 className="text-lg font-semibold mb-4 text-foreground">빠른 작업</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {quickActions.map((action) => (
               <Card
@@ -350,12 +349,12 @@ export default function Home() {
         <div id="templates-section">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
                 <Flame className="h-5 w-5 text-orange-400" />
-                AI 웨딩 이미지 생성 템플릿
+                AI 템플릿 갤러리
               </h2>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Freepik AI, Flux Pro, Kling AI, Runway Gen-3 등 최신 AI 엔진으로 프리미엄 웨딩 사진, 프로필 이미지, 영상을 저렴하게 생성하세요. 95% 이상의 얼굴 일관성으로 완벽한 결과물을 보장합니다.
+                Freepik, Flux, Kling, Runway 등 최신 AI 엔진의 인기 템플릿
               </p>
             </div>
           </div>
