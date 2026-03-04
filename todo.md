@@ -183,3 +183,10 @@
 - [x] face_reference 업로드 시 얼굴 인식 체크 (초록 테두리 / 경고)
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 업데이트 및 통과 (115개 전체 통과)
+
+## v4.7 계절 변환과 효과 기능
+- [x] server/services/image-effects.ts 생성 (계절 변환, 색감 그레이딩)
+- [x] routers.ts에 effects 라우터 추가 (seasonTransform + colorGrade)
+- [x] ProjectWorkspace.tsx에 계절 변환 버튼/다이얼로그 추가
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 업데이트 및 통과 (123개 전체 통과)

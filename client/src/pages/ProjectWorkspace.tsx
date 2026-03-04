@@ -161,6 +161,23 @@ export default function ProjectWorkspace() {
     onError: (err) => toast.error(`영상 재생성 실패: ${err.message}`),
   });
 
+  // 계절 변환 / 색감 그레이딩
+  const seasonMutation = trpc.effects.seasonTransform.useMutation({
+    onSuccess: () => {
+      utils.generations.list.invalidate();
+      toast.success("계절 변환 완료! 갤러리에서 확인하세요.");
+    },
+    onError: (err) => toast.error(`계절 변환 실패: ${err.message}`),
+  });
+
+  const colorGradeMutation = trpc.effects.colorGrade.useMutation({
+    onSuccess: () => {
+      utils.generations.list.invalidate();
+      toast.success("색감 그레이딩 완료! 갤러리에서 확인하세요.");
+    },
+    onError: (err) => toast.error(`색감 변환 실패: ${err.message}`),
+  });
+
   // AI Vision 프롬프트 자동 생성
   const analyzeImagesMutation = trpc.generations.analyzeReferenceImages.useMutation({
     onSuccess: (data) => {
@@ -790,6 +807,71 @@ export default function ProjectWorkspace() {
                               </Button>
                             </DialogClose>
                           </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+
+                      {/* 계절 변환 버튼 */}
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" size="sm" className="gap-1.5">
+                            <Sparkles className="h-3.5 w-3.5" />계절 변환
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="bg-card border-border">
+                          <DialogHeader>
+                            <DialogTitle className="text-foreground">계절 & 색감 변환</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4 py-2">
+                            <div className="rounded-lg overflow-hidden border border-border bg-black/20 max-h-40">
+                              <img src={selectedGen.upscaledImageUrl || selectedGen.resultImageUrl} alt="" className="w-full h-auto object-contain max-h-40" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground mb-2">계절 변환</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                {[
+                                  { key: "spring", label: "🌸 봄 벚꽃", desc: "벡꽃 배경, 핑크 톤" },
+                                  { key: "summer", label: "🌿 여름 초록", desc: "생동감 넘치는 초록" },
+                                  { key: "autumn", label: "🍂 가을 단풍", desc: "따뜻한 오렌지 톤" },
+                                  { key: "winter", label: "❄️ 겨울 설경", desc: "순백의 눈 배경" },
+                                ].map(s => (
+                                  <DialogClose asChild key={s.key}>
+                                    <Button
+                                      variant="outline"
+                                      className="h-auto py-3 flex-col items-start gap-0.5"
+                                      onClick={() => seasonMutation.mutate({ generationId: selectedGen.id, season: s.key as any })}
+                                      disabled={seasonMutation.isPending}
+                                    >
+                                      <span className="text-sm">{s.label}</span>
+                                      <span className="text-[10px] text-muted-foreground font-normal">{s.desc}</span>
+                                    </Button>
+                                  </DialogClose>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground mb-2">색감 그레이딩</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                {[
+                                  { key: "film", label: "🎬 필름 감성", desc: "빈티지 그레인 효과" },
+                                  { key: "bw", label: "⚫ 흑백 클래식", desc: "드라마틱 모노크롬" },
+                                  { key: "golden", label: "🌟 골든아워", desc: "따뜻한 오렌지 톤" },
+                                  { key: "blue", label: "🌙 블루아워", desc: "차분한 블루 톤" },
+                                ].map(g => (
+                                  <DialogClose asChild key={g.key}>
+                                    <Button
+                                      variant="outline"
+                                      className="h-auto py-3 flex-col items-start gap-0.5"
+                                      onClick={() => colorGradeMutation.mutate({ generationId: selectedGen.id, grade: g.key as any })}
+                                      disabled={colorGradeMutation.isPending}
+                                    >
+                                      <span className="text-sm">{g.label}</span>
+                                      <span className="text-[10px] text-muted-foreground font-normal">{g.desc}</span>
+                                    </Button>
+                                  </DialogClose>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
                         </DialogContent>
                       </Dialog>
 

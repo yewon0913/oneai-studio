@@ -1276,6 +1276,64 @@ Score each 0-100 and reply with ONLY valid JSON:
         return { texts };
       }),
   }),
+
+  // ═══ 이미지 효과 (계절 변환, 색감 그레이딩) ═══
+  effects: router({
+    seasonTransform: protectedProcedure
+      .input(z.object({
+        generationId: z.number(),
+        season: z.enum(["spring", "summer", "autumn", "winter"]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const gen = await db.getGenerationById(input.generationId);
+        if (!gen?.resultImageUrl) throw new Error("이미지를 찾을 수 없습니다");
+
+        const { applySeasonTransform } = await import("./services/image-effects");
+        const resultUrl = await applySeasonTransform(
+          gen.upscaledImageUrl || gen.resultImageUrl,
+          input.season
+        );
+
+        // 새로운 generation으로 저장
+        const seasonLabels = { spring: "봄 벚꽃", summer: "여름 초록", autumn: "가을 단풍", winter: "겨울 설경" };
+        const newGen = await db.createGeneration({
+          projectId: gen.projectId,
+          promptText: `[${seasonLabels[input.season]} 변환] ${gen.promptText || ""}`,
+          resultImageUrl: resultUrl,
+          status: "completed",
+          stage: "draft",
+        });
+
+        return { id: newGen.id, resultImageUrl: resultUrl };
+      }),
+
+    colorGrade: protectedProcedure
+      .input(z.object({
+        generationId: z.number(),
+        grade: z.enum(["film", "bw", "golden", "blue"]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const gen = await db.getGenerationById(input.generationId);
+        if (!gen?.resultImageUrl) throw new Error("이미지를 찾을 수 없습니다");
+
+        const { applyColorGrade } = await import("./services/image-effects");
+        const resultUrl = await applyColorGrade(
+          gen.upscaledImageUrl || gen.resultImageUrl,
+          input.grade
+        );
+
+        const gradeLabels = { film: "필름 감성", bw: "흑백", golden: "골든아워", blue: "블루아워" };
+        const newGen = await db.createGeneration({
+          projectId: gen.projectId,
+          promptText: `[${gradeLabels[input.grade]} 효과] ${gen.promptText || ""}`,
+          resultImageUrl: resultUrl,
+          status: "completed",
+          stage: "draft",
+        });
+
+        return { id: newGen.id, resultImageUrl: resultUrl };
+      }),
+  }),
 });
 
 // processVideoAsync removed - video processing is now inline in the videos router using fal.ai Kling Video API
