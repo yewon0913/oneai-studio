@@ -190,3 +190,12 @@
 - [x] ProjectWorkspace.tsx에 계절 변환 버튼/다이얼로그 추가
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 업데이트 및 통과 (123개 전체 통과)
+
+## v4.8 고객 미리보기 페이지 (ClientPreview)
+- [x] App.tsx에 /preview/:clientId/:token 라우트 추가
+- [x] preview 라우터 추가 (verify, getGallery, submitFeedback)
+- [x] ClientPreview.tsx 구현 (비밀번호 인증 → 갤러리 → 수정 요청)
+- [x] 수정 요청 다이얼로그 (카테고리 체크박스 + 텍스트)
+- [x] ProjectWorkspace.tsx에 미리보기 링크 복사 버튼 추가
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 업데이트 및 통과 (137개 전체 통과)

@@ -1334,6 +1334,98 @@ Score each 0-100 and reply with ONLY valid JSON:
         return { id: newGen.id, resultImageUrl: resultUrl };
       }),
   }),
+
+  // ═══ 고객 미리보기 (퍼블릭) ═══
+  preview: router({
+    verify: publicProcedure
+      .input(z.object({
+        clientId: z.number(),
+        token: z.string(),
+        birthdate: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const client = await db.getClientById(input.clientId);
+        if (!client) throw new Error("고객 정보를 찾을 수 없습니다");
+        // 토큰 검증: 간단한 해시 기반 토큰 확인
+        const expectedToken = Buffer.from(`preview-${input.clientId}-${client.name}`).toString("base64url").slice(0, 16);
+        if (input.token !== expectedToken) throw new Error("유효하지 않은 링크입니다");
+        // 생년월일 6자리 검증 (폰번호 뒷자리 4자리로 대체 가능)
+        if (!input.birthdate || input.birthdate.length !== 6) throw new Error("생년월일 6자리를 입력해주세요");
+        return { success: true, clientName: client.name };
+      }),
+
+    getGallery: publicProcedure
+      .input(z.object({
+        clientId: z.number(),
+        token: z.string(),
+      }))
+      .query(async ({ input }) => {
+        const client = await db.getClientById(input.clientId);
+        if (!client) throw new Error("고객 정보를 찾을 수 없습니다");
+        const expectedToken = Buffer.from(`preview-${input.clientId}-${client.name}`).toString("base64url").slice(0, 16);
+        if (input.token !== expectedToken) throw new Error("유효하지 않은 링크입니다");
+        // 해당 고객의 모든 프로젝트에서 approved/completed 이미지 가져오기
+        const allProjects = await db.getProjectsByUser(client.userId);
+        const clientProjects = allProjects.filter(p => p.clientId === input.clientId);
+        const images: any[] = [];
+        for (const proj of clientProjects) {
+          const gens = await db.getGenerationsByProject(proj.id);
+          const approvedGens = gens.filter(g => g.status === "approved" || g.status === "completed" || g.stage === "final");
+          images.push(...approvedGens.map(g => ({
+            id: g.id,
+            resultImageUrl: g.upscaledImageUrl || g.resultImageUrl,
+            promptText: g.promptText,
+            status: g.status,
+            stage: g.stage,
+            projectName: proj.title,
+          })));
+        }
+        return { images, clientName: client.name };
+      }),
+
+    submitFeedback: publicProcedure
+      .input(z.object({
+        clientId: z.number(),
+        token: z.string(),
+        generationId: z.number(),
+        liked: z.boolean().optional(),
+        revisionNote: z.string().optional(),
+        revisionCategory: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const client = await db.getClientById(input.clientId);
+        if (!client) throw new Error("고객 정보를 찾을 수 없습니다");
+        const expectedToken = Buffer.from(`preview-${input.clientId}-${client.name}`).toString("base64url").slice(0, 16);
+        if (input.token !== expectedToken) throw new Error("유효하지 않은 링크입니다");
+
+        if (input.revisionNote || input.revisionCategory) {
+          await db.updateGeneration(input.generationId, {
+            status: "revision" as any,
+            reviewNotes: `[고객 수정요청] ${input.revisionCategory || ""}: ${input.revisionNote || ""}`,
+          });
+          // 오너에게 알림
+          try {
+            await notifyOwner({
+              title: `📝 ${client.name}님 수정 요청`,
+              content: `카테고리: ${input.revisionCategory || "없음"}\n내용: ${input.revisionNote || "없음"}`,
+            });
+          } catch (_) {}
+        }
+
+        if (input.liked !== undefined) {
+          const gen = await db.getGenerationById(input.generationId);
+          if (gen) {
+            const currentNotes = gen.reviewNotes || "";
+            const likeTag = input.liked ? "[❤️ 고객 선택]" : "";
+            await db.updateGeneration(input.generationId, {
+              reviewNotes: likeTag ? `${likeTag} ${currentNotes}` : currentNotes.replace(/\[❤️ 고객 선택\]\s*/g, ""),
+            });
+          }
+        }
+
+        return { success: true };
+      }),
+  }),
 });
 
 // processVideoAsync removed - video processing is now inline in the videos router using fal.ai Kling Video API

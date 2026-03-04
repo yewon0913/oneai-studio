@@ -396,6 +396,21 @@ export default function ProjectWorkspace() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => {
+                if (!project?.clientId) { toast.error("고객이 연결되지 않은 프로젝트입니다."); return; }
+                const clientName = client?.name || "";
+                const previewToken = btoa(`preview-${project.clientId}-${clientName}`).replace(/[+/=]/g, (c) => c === "+" ? "-" : c === "/" ? "_" : "").slice(0, 16);
+                const previewUrl = `${window.location.origin}/preview/${project.clientId}/${previewToken}`;
+                navigator.clipboard.writeText(previewUrl);
+                toast.success("미리보기 링크가 복사되었습니다!");
+              }}
+              className="gap-1.5"
+            >
+              🔗 미리보기 링크 복사
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setLocation(`/invitation/${projectId}`)}
               className="gap-1.5"
             >
