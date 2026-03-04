@@ -2,6 +2,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
 import { generateImage } from "./_core/imageGeneration";
@@ -1065,6 +1066,107 @@ IMPORTANT RULES:
     markAllRead: protectedProcedure
       .mutation(async ({ ctx }) => {
         await db.markAllNotificationsRead(ctx.user.id);
+        return { success: true };
+      }),
+  }),
+
+  // ─── Preview (고객 미리보기 - 퍼블릭) ───
+  preview: router({
+    verify: publicProcedure
+      .input(z.object({
+        clientId: z.number(),
+        token: z.string(),
+        birthdate: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const client = await db.getClientById(input.clientId);
+        if (!client) throw new TRPCError({ code: "NOT_FOUND", message: "고객 정보를 찾을 수 없습니다" });
+
+        // 토큰 검증
+        const expectedToken = `preview-${input.clientId}`;
+        if (input.token !== expectedToken) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "유효하지 않은 링크입니다" });
+        }
+
+        // 생년월일 검증: phone 뒤 6자리 또는 consultationNotes에서 확인
+        const phone = client.phone || "";
+        const phoneLast6 = phone.replace(/[^0-9]/g, "").slice(-6);
+        const notes = client.consultationNotes || "";
+        
+        // phone 뒤 6자리 매칭 또는 consultationNotes에 birthdate 포함 여부
+        if (phoneLast6 && input.birthdate === phoneLast6) {
+          return { success: true, clientName: client.name };
+        }
+        if (notes.includes(input.birthdate)) {
+          return { success: true, clientName: client.name };
+        }
+        
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "생년월일이 일치하지 않습니다" });
+      }),
+
+    getGallery: publicProcedure
+      .input(z.object({
+        clientId: z.number(),
+        token: z.string(),
+      }))
+      .query(async ({ input }) => {
+        const client = await db.getClientById(input.clientId);
+        if (!client) throw new TRPCError({ code: "NOT_FOUND", message: "고객 없음" });
+
+        const expectedToken = `preview-${input.clientId}`;
+        if (input.token !== expectedToken) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "유효하지 않은 링크입니다" });
+        }
+
+        const projects = await db.getProjectsByClient(input.clientId);
+        const images: any[] = [];
+        for (const proj of projects) {
+          const gens = await db.getGenerationsByProject(proj.id);
+          const approved = gens.filter((g: any) =>
+            g.status === "completed" || g.status === "approved"
+          );
+          images.push(...approved.map((g: any) => ({
+            id: g.id,
+            imageUrl: g.imageUrl,
+            prompt: g.prompt,
+            status: g.status,
+            projectId: proj.id,
+            projectName: proj.title,
+            createdAt: g.createdAt,
+          })));
+        }
+        return { images, clientName: client.name };
+      }),
+
+    submitFeedback: publicProcedure
+      .input(z.object({
+        clientId: z.number(),
+        token: z.string(),
+        generationId: z.number(),
+        liked: z.boolean().optional(),
+        revisionCategories: z.array(z.string()).optional(),
+        revisionNote: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const expectedToken = `preview-${input.clientId}`;
+        if (input.token !== expectedToken) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "유효하지 않은 링크입니다" });
+        }
+
+        if (input.liked !== undefined) {
+          // 좋아요/좋아요 취소
+          await db.updateGeneration(input.generationId, {
+            reviewNotes: input.liked ? "[고객 좋아요]" : "",
+          });
+        }
+
+        if (input.revisionNote || (input.revisionCategories && input.revisionCategories.length > 0)) {
+          const categories = input.revisionCategories?.join(", ") || "";
+          await db.updateGeneration(input.generationId, {
+            status: "reviewed",
+            reviewNotes: `[고객 수정요청] ${categories}: ${input.revisionNote || ""}`,
+          });
+        }
         return { success: true };
       }),
   }),

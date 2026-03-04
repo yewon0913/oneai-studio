@@ -135,6 +135,12 @@ export async function getProjectsByUser(userId: number, clientId?: number) {
   return db.select().from(projects).where(and(...conditions)).orderBy(desc(projects.updatedAt));
 }
 
+export async function getProjectsByClient(clientId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(projects).where(eq(projects.clientId, clientId)).orderBy(desc(projects.updatedAt));
+}
+
 export async function getProjectById(id: number) {
   const db = await getDb();
   if (!db) return undefined;

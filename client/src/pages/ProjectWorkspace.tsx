@@ -402,11 +402,26 @@ export default function ProjectWorkspace() {
             </div>
           </div>
           {client && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${client.gender === "male" ? "bg-blue-500/20" : "bg-pink-500/20"}`}>
-                <UserCircle className={`h-4 w-4 ${client.gender === "male" ? "text-blue-400" : "text-pink-400"}`} />
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${client.gender === "male" ? "bg-blue-500/20" : "bg-pink-500/20"}`}>
+                  <UserCircle className={`h-4 w-4 ${client.gender === "male" ? "text-blue-400" : "text-pink-400"}`} />
+                </div>
+                <span>{client.name}</span>
               </div>
-              <span>{client.name}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs border-rose-500/30 text-rose-400 hover:bg-rose-500/10"
+                onClick={() => {
+                  const previewUrl = `${window.location.origin}/preview/${client.id}/preview-${client.id}`;
+                  navigator.clipboard.writeText(previewUrl);
+                  toast.success("고객 미리보기 링크가 복사되었습니다");
+                }}
+              >
+                <Eye className="h-3.5 w-3.5" />
+                미리보기 링크
+              </Button>
             </div>
           )}
         </div>

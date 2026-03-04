@@ -136,3 +136,9 @@
 - [x] ProjectWorkspace.tsx 영상 변환 다이얼로그 (모션 타입 선택 - 이미 구현됨)
 - [x] 영상 상태 자동 폴링 로직 (refetchInterval 5초 - 이미 구현됨)
 - [x] 완료 시 video 태그로 미리보기 (이미 구현됨)
+
+## v3.12 고객 미리보기 페이지 신규 생성
+- [x] App.tsx에 /preview/:clientId/:token 라우트 추가
+- [x] pages/ClientPreview.tsx 신규 생성 (인증 화면 + 갤러리 + 수정 요청)
+- [x] routers.ts에 preview 라우터 추가 (verify, getGallery, submitFeedback)
+- [x] ProjectWorkspace.tsx에 미리보기 링크 복사 버튼 추가
