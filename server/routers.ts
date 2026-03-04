@@ -830,16 +830,17 @@ IMPORTANT RULES:
           input.attempts,
         );
 
-        // 각 결과를 generation으로 저장
+        // 각 결과를 generation으로 저장 (단계별 로그 포함)
         const saved = [];
-        for (const url of resultUrls) {
+        for (const result of resultUrls) {
           const gen = await db.createGeneration({
             projectId: input.projectId,
             promptText: input.promptText,
-            resultImageUrl: url,
+            resultImageUrl: result.url,
             status: "completed",
             stage: "draft",
             faceConsistencyScore: 75,
+            reviewNotes: result.log,
           });
           saved.push(gen);
         }

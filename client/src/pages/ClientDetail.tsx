@@ -313,6 +313,17 @@ export default function ClientDetailPage() {
               </p>
             </div>
 
+            {/* Face-swap 가이드 */}
+            <div className="bg-blue-950 border border-blue-800 rounded-lg p-3 text-xs text-blue-300">
+              <span>📸 face-swap 성공률을 높이려면:</span>
+              <ul className="mt-1 space-y-1 text-blue-400">
+                <li>✅ 정면 얼굴 (측면 X)</li>
+                <li>✅ 밝은 조명</li>
+                <li>✅ 얼굴 전체 노출 (마스크/선글라스 X)</li>
+                <li>✅ 고화질 사진 (흐릿한 사진 X)</li>
+              </ul>
+            </div>
+
             {(["front", "side"] as const).map((type) => {
               const typePhotos = type === "front" ? frontPhotos : type === "side" ? sidePhotos : [];
               return (

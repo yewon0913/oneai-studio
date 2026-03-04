@@ -68,6 +68,7 @@ export default function ProjectWorkspace() {
 
   // 멀티 AI 엔진 선택
   const [selectedEngines, setSelectedEngines] = useState<AIEngineId[]>(["flux_lora", "midjourney_omniref"]);
+  const [coupleAttempts, setCoupleAttempts] = useState(3);
   const handleToggleEngine = (engineId: AIEngineId) => {
     setSelectedEngines(prev =>
       prev.includes(engineId)
@@ -849,13 +850,22 @@ export default function ProjectWorkspace() {
                         <>⚠️ 신랑 고객이 연결되지 않았습니다</>
                       )}
                     </div>
+                    <select
+                      value={coupleAttempts}
+                      onChange={(e) => setCoupleAttempts(Number(e.target.value))}
+                      className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm w-full mb-2"
+                    >
+                      <option value={1}>1장 생성 (빠름)</option>
+                      <option value={3}>3장 생성 (추천)</option>
+                      <option value={5}>5장 생성 (베스트 선택용)</option>
+                    </select>
                     <Button
-                      onClick={() => generateCoupleMutation.mutate({
-                        projectId: project.id,
-                        promptText: promptText,
-                        brideClientId: project.clientId,
-                        groomClientId: project.partnerClientId ?? null,
-                        attempts: 3,
+                       onClick={() => generateCoupleMutation.mutate({
+                         projectId: project.id,
+                         promptText: promptText,
+                         brideClientId: project.clientId,
+                         groomClientId: project.partnerClientId ?? null,
+                         attempts: coupleAttempts,
                       })}
                       disabled={generateCoupleMutation.isPending || !project.partnerClientId}
                       className="w-full bg-pink-600 hover:bg-pink-700 gap-2 mt-2"
@@ -863,7 +873,7 @@ export default function ProjectWorkspace() {
                       {generateCoupleMutation.isPending ? (
                         <><Loader2 className="h-4 w-4 animate-spin" />커플 생성 중... (1~2분)</>
                       ) : (
-                        <><Users className="h-4 w-4" />커플 사진 생성 (3장)</>
+                        <><Users className="h-4 w-4" />커플 사진 생성 ({coupleAttempts}장)</>
                       )}
                     </Button>
                   </>

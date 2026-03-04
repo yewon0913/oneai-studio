@@ -179,3 +179,9 @@
 - [x] "Load failed" 에러 원인 파악 - fal SDK 타임아웃/네트워크 에러, 전체 실패 시 명확한 에러 메시지 반환
 - [x] face-swap 실패 시 폴백으로 원본 배경 저장하지 않도록 수정 - 실패 시 해당 회차 스킵
 - [x] face-swap 품질 개선 - 응답에 image.url 없으면 throw, 전체 실패 시 명확한 에러 메시지
+
+## v3.20 커플 생성 UX 개선 3가지
+- [x] ClientPhotoUpload에 face-swap 성공률 가이드 문구 추가
+- [x] couple-pipeline.ts 단계별 로그 반환 + routers.ts reviewNotes 저장
+- [x] ProjectWorkspace.tsx 커플 생성 장수 선택 드롭다운 (1/3/5장)
+- [x] 테스트 75개 통과, TS 에러 0개

@@ -13,12 +13,17 @@ function ensureFalConfig() {
   console.log("[couple-pipeline] fal.config 완료, key length:", key.trim().length);
 }
 
+export interface CoupleResult {
+  url: string;
+  log: string; // 단계별 로그 문자열
+}
+
 export async function generateCouplePipeline(
   prompt: string,
   bridePhotoUrl: string,
   groomPhotoUrl: string,
   attempts: number = 3
-): Promise<string[]> {
+): Promise<CoupleResult[]> {
   // 함수 호출 시점에 fal 설정
   ensureFalConfig();
 
@@ -30,9 +35,10 @@ export async function generateCouplePipeline(
   console.log("[couple-pipeline] brideUrl:", cleanBrideUrl.substring(0, 80));
   console.log("[couple-pipeline] groomUrl:", cleanGroomUrl.substring(0, 80));
 
-  const results: string[] = [];
+  const results: CoupleResult[] = [];
 
   for (let i = 0; i < attempts; i++) {
+    const stepLog: string[] = [];
     try {
       // 1단계: 커플 배경 생성
       console.log(`[couple-pipeline] ${i+1}회차 1단계: flux/dev 배경 생성`);
@@ -46,6 +52,7 @@ export async function generateCouplePipeline(
         },
       });
       const baseUrl = (baseResult as any).data.images[0].url;
+      stepLog.push("1단계(배경):✅");
       console.log(`[couple-pipeline] ${i+1}회차 1단계 완료`);
 
       // 2단계: 신부 얼굴 교체 (필수 - 실패 시 이 회차 스킵)
@@ -61,10 +68,10 @@ export async function generateCouplePipeline(
       );
       const brideUrl = (brideResult as any).data?.image?.url;
       if (!brideUrl) {
-        console.error(`[couple-pipeline] ${i+1}회차 2단계: 신부 face-swap 응답에 image.url 없음`);
-        console.error(`[couple-pipeline] 응답:`, JSON.stringify((brideResult as any).data).substring(0, 300));
+        stepLog.push("2단계(신부):❌ 응답에 URL 없음");
         throw new Error("신부 얼굴 교체 실패: 응답에 이미지 URL이 없습니다");
       }
+      stepLog.push("2단계(신부):✅");
       console.log(`[couple-pipeline] ${i+1}회차 2단계 완료`);
 
       // 3단계: 신랑 얼굴 교체 (필수 - 실패 시 이 회차 스킵)
@@ -80,10 +87,10 @@ export async function generateCouplePipeline(
       );
       const groomUrl = (groomResult as any).data?.image?.url;
       if (!groomUrl) {
-        console.error(`[couple-pipeline] ${i+1}회차 3단계: 신랑 face-swap 응답에 image.url 없음`);
-        console.error(`[couple-pipeline] 응답:`, JSON.stringify((groomResult as any).data).substring(0, 300));
+        stepLog.push("3단계(신랑):❌ 응답에 URL 없음");
         throw new Error("신랑 얼굴 교체 실패: 응답에 이미지 URL이 없습니다");
       }
+      stepLog.push("3단계(신랑):✅");
       console.log(`[couple-pipeline] ${i+1}회차 3단계 완료`);
 
       // 4단계: 업스케일
@@ -97,17 +104,24 @@ export async function generateCouplePipeline(
       });
       const finalUrl = (upscaleResult as any).data.image.url;
       if (!finalUrl) {
+        stepLog.push("4단계(업스케일):❌ 응답에 URL 없음");
         throw new Error("업스케일 실패: 응답에 이미지 URL이 없습니다");
       }
+      stepLog.push("4단계(업스케일):✅");
       console.log(`[couple-pipeline] ${i+1}회차 4단계 완료 - 성공!`);
 
-      results.push(finalUrl);
+      results.push({ url: finalUrl, log: stepLog.join(" ") });
 
     } catch (err: any) {
       const errMsg = err?.message || String(err);
       const errBody = err?.body ? JSON.stringify(err.body).substring(0, 200) : "no body";
+      // 실패한 단계가 아직 로그에 없으면 추가
+      if (!stepLog.some(s => s.includes("❌"))) {
+        stepLog.push(`❌ ${errMsg.substring(0, 50)}`);
+      }
       console.error(`[couple-pipeline] ${i+1}회차 실패: ${errMsg}`);
       console.error(`[couple-pipeline] 에러 body: ${errBody}`);
+      console.error(`[couple-pipeline] 로그: ${stepLog.join(" ")}`);
       // face-swap 실패 시 폴백으로 저장하지 않음 - 다음 회차로 재시도
     }
   }
