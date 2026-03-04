@@ -109,6 +109,28 @@ vi.mock("./_core/notification", () => ({
   notifyOwner: vi.fn().mockResolvedValue(true),
 }));
 
+// Mock fal.ai image pipeline
+vi.mock("./services/image-pipeline", () => ({
+  runSinglePipeline: vi.fn().mockResolvedValue("https://fal.ai/result/single.png"),
+  runCouplePipeline: vi.fn().mockResolvedValue("https://fal.ai/result/couple.png"),
+  upscale4K: vi.fn().mockResolvedValue("https://fal.ai/result/upscaled.png"),
+  generateBaseImage: vi.fn().mockResolvedValue("https://fal.ai/result/base.png"),
+  removeBackground: vi.fn().mockResolvedValue("https://fal.ai/result/nobg.png"),
+}));
+
+// Mock Anthropic SDK
+vi.mock("@anthropic-ai/sdk", () => {
+  return {
+    default: vi.fn().mockImplementation(() => ({
+      messages: {
+        create: vi.fn().mockResolvedValue({
+          content: [{ type: "text", text: "PROMPT: A beautiful Korean wedding couple standing in a sunlit European garden with golden hour lighting, soft bokeh background, romantic atmosphere, cinematic color grading\nNEGATIVE: deformed, distorted, ugly, blurry" }],
+        }),
+      },
+    })),
+  };
+});
+
 // Mock global fetch for image download and Pinterest scraping
 const mockFetch = vi.fn().mockImplementation((url: string) => {
   if (url.includes("pinterest") || url.includes("pin.it")) {
@@ -304,7 +326,7 @@ describe("AI Generation - Face Consistency Engine v3.2", () => {
     expect(result).toHaveProperty("id");
     expect(result).toHaveProperty("imageUrl");
     expect(result).toHaveProperty("generationTimeMs");
-    expect(result).toHaveProperty("faceConsistencyScore", 95);
+    expect(result).toHaveProperty("faceConsistencyScore", 92);
   });
 
   it("generates image with face fix mode (couple)", async () => {
@@ -317,7 +339,7 @@ describe("AI Generation - Face Consistency Engine v3.2", () => {
       faceFixMode: true,
     });
     expect(result).toHaveProperty("imageUrl");
-    expect(result).toHaveProperty("faceConsistencyScore", 95);
+    expect(result).toHaveProperty("faceConsistencyScore", 92);
   });
 
   it("generates image without face fix mode", async () => {
@@ -346,7 +368,7 @@ describe("AI Generation - Face Consistency Engine v3.2", () => {
     });
     expect(result).toHaveProperty("id");
     expect(result).toHaveProperty("imageUrl");
-    expect(result).toHaveProperty("faceConsistencyScore", 95);
+    expect(result).toHaveProperty("faceConsistencyScore", 92);
   });
 
   it("generates image with reference image URL (style transfer)", async () => {
@@ -521,6 +543,8 @@ describe("Upscale", () => {
     const caller = appRouter.createCaller(ctx);
     const result = await caller.generations.upscale({ id: 1 });
     expect(result).toHaveProperty("url");
+    expect(result).toHaveProperty("success", true);
+    expect(result).toHaveProperty("upscaledImageUrl");
   });
 });
 

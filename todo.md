@@ -146,3 +146,12 @@
 - [x] 커플 사진 풀 파이프라인 (runCouplePipeline)
 - [x] TypeScript 타입 안전성 확보 (fal.ai SDK 타입에 맞게 수정)
 - [x] 테스트 작성 및 통과 (99개 전체 통과)
+
+## v4.3 generations 라우터 완전 재구축 (fal.ai + Claude Vision)
+- [x] generations.generate를 fal.ai 파이프라인으로 교체 (runSinglePipeline, runCouplePipeline)
+- [x] generations.upscale를 fal.ai upscale4K로 교체
+- [x] generations.analyzeReferenceImages를 Claude Vision (Anthropic SDK) 직접 호출로 교체
+- [x] generations.requestAIReview를 Claude Vision (Anthropic SDK) 직접 호출로 교체
+- [x] 기존 프로시저 정리 (finalApprove, finalReject, reviewQueue, updateStatus 유지)
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 업데이트 및 통과 (103개 전체 통과)

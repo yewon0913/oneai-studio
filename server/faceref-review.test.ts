@@ -158,6 +158,36 @@ describe("generations - AI review system", () => {
   });
 });
 
+describe("generations - fal.ai pipeline", () => {
+  let caller: ReturnType<typeof appRouter.createCaller>;
+
+  beforeEach(() => {
+    const ctx = createTestContext();
+    caller = appRouter.createCaller(ctx);
+  });
+
+  it("should have generate procedure available", () => {
+    expect(caller.generations.generate).toBeDefined();
+    expect(typeof caller.generations.generate).toBe("function");
+  });
+
+  it("should have upscale procedure available", () => {
+    expect(caller.generations.upscale).toBeDefined();
+    expect(typeof caller.generations.upscale).toBe("function");
+  });
+
+  it("should have analyzeReferenceImages procedure available", () => {
+    expect(caller.generations.analyzeReferenceImages).toBeDefined();
+    expect(typeof caller.generations.analyzeReferenceImages).toBe("function");
+  });
+
+  it("should reject upscale for non-existent generation", async () => {
+    await expect(
+      caller.generations.upscale({ id: 999999 })
+    ).rejects.toThrow();
+  });
+});
+
 describe("merchandise formats", () => {
   let caller: ReturnType<typeof appRouter.createCaller>;
 
