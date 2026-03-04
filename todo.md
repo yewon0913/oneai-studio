@@ -167,3 +167,9 @@
 - [x] groomClientId를 z.number().nullable()로 변경 + null 시 에러 메시지
 - [x] 신부/신랑 사진 조회 시 front 없으면 첫 번째 사진 폴백
 - [x] ProjectWorkspace.tsx 커플 버튼 위에 partnerClientId 상태 표시 (✅/⚠️)
+
+## v3.18 커플 생성 "expected pattern" 에러 수정
+- [x] fal.config를 모듈 로드 시점 → 함수 호출 시점으로 이동 (배포 env 타이밍 이슈 해결)
+- [x] URL trim 적용 및 각 단계별 에러 로깅 강화
+- [x] FAL_KEY 없을 때 명확한 에러 메시지 반환
+- [x] 테스트 75개 통과, TS 에러 0개
