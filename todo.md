@@ -138,3 +138,11 @@
 - [x] @anthropic-ai/sdk 패키지 설치
 - [x] FAL_KEY 환경변수 설정
 - [x] ANTHROPIC_API_KEY 환경변수 설정
+
+## v4.2 fal.ai 이미지 파이프라인 서비스 구축
+- [x] server/services/image-pipeline.ts 파일 생성
+- [x] fal.ai 직접 호출 파이프라인 (기본 생성, 얼굴 합성, 4K 업스케일, 배경 제거)
+- [x] 개인 사진 풀 파이프라인 (runSinglePipeline)
+- [x] 커플 사진 풀 파이프라인 (runCouplePipeline)
+- [x] TypeScript 타입 안전성 확보 (fal.ai SDK 타입에 맞게 수정)
+- [x] 테스트 작성 및 통과 (99개 전체 통과)
