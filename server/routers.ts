@@ -1214,6 +1214,40 @@ Score each 0-100 and reply with ONLY valid JSON:
         return { success: true };
       }),
   }),
+
+  // ─── Invitations (모바일 청첩장) ───
+  invitations: router({
+    // AI 청첩 문구 생성
+    generateText: protectedProcedure
+      .input(z.object({
+        groomName: z.string(),
+        brideName: z.string(),
+        weddingDate: z.string(),
+        venue: z.string(),
+        style: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const anthropic = new Anthropic({
+          apiKey: process.env.ANTHROPIC_API_KEY,
+        });
+        const response = await anthropic.messages.create({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 600,
+          messages: [{
+            role: "user",
+            content: `${input.groomName}과 ${input.brideName}의 ${input.weddingDate} ${input.venue} 웨딩 청첩 문구를 ${input.style} 스타일로 3가지 만들어줘.\n각각 50자 내외, 한국어, 감성적으로.\nJSON 배열로만 답해: ["문구1", "문구2", "문구3"]`,
+          }],
+        });
+        const text = (response.content[0] as any).text;
+        const match = text.match(/\[[\s\S]*\]/);
+        const texts = match ? JSON.parse(match[0]) : [
+          "두 사람이 하나가 되는 날, 함께해 주세요.",
+          "사랑이 완성되는 순간에 초대합니다.",
+          "설레는 마음으로 기다리겠습니다.",
+        ];
+        return { texts };
+      }),
+  }),
 });
 
 // processVideoAsync removed - video processing is now inline in the videos router using fal.ai Kling Video API

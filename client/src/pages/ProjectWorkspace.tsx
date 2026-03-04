@@ -375,14 +375,24 @@ export default function ProjectWorkspace() {
               {project.concept && <span className="text-sm text-muted-foreground">{project.concept}</span>}
             </div>
           </div>
-          {client && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${client.gender === "male" ? "bg-blue-500/20" : "bg-pink-500/20"}`}>
-                <UserCircle className={`h-4 w-4 ${client.gender === "male" ? "text-blue-400" : "text-pink-400"}`} />
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setLocation(`/invitation/${projectId}`)}
+              className="gap-1.5"
+            >
+              📩 청첩장 만들기
+            </Button>
+            {client && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${client.gender === "male" ? "bg-blue-500/20" : "bg-pink-500/20"}`}>
+                  <UserCircle className={`h-4 w-4 ${client.gender === "male" ? "text-blue-400" : "text-pink-400"}`} />
+                </div>
+                <span>{client.name}</span>
               </div>
-              <span>{client.name}</span>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

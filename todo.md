@@ -162,3 +162,16 @@
 - [x] regenerate: 커스텀 프롬프트로 재생성
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 업데이트 및 통과 (103개 전체 통과)
+
+## v4.5 모바일 청첩장 영상 페이지
+- [x] invitations 라우터 추가 (generateText - Claude AI 문구 생성)
+- [x] App.tsx에 /invitation/:projectId 라우트 등록
+- [x] Invitation.tsx 5단계 스텝 UI 구현
+- [x] Step 1: 스타일 선택 (5가지 카드)
+- [x] Step 2: 정보 입력 + AI 문구 자동생성
+- [x] Step 3: 사진 선택 (프로젝트 완료 이미지 그리드, 6~10장)
+- [x] Step 4: BGM 선택 (10개 버튼 + 미리듣기)
+- [x] Step 5: 생성 결과 (영상 생성, 미리보기, 다운로드, 고객 링크)
+- [x] ProjectWorkspace.tsx 헤더에 청첩장 만들기 버튼 추가
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 업데이트 및 통과 (112개 전체 통과)
