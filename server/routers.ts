@@ -1170,6 +1170,47 @@ IMPORTANT RULES:
         return { success: true };
       }),
   }),
+
+  // ─── Invitations (청첩장 영상) ───
+  invitations: router({
+    generateText: protectedProcedure
+      .input(z.object({
+        groomName: z.string(),
+        brideName: z.string(),
+        weddingDate: z.string(),
+        venue: z.string(),
+        style: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const Anthropic = (await import("@anthropic-ai/sdk")).default;
+        const anthropic = new Anthropic({
+          apiKey: process.env.ANTHROPIC_API_KEY,
+        });
+
+        const response = await anthropic.messages.create({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 500,
+          messages: [{
+            role: "user",
+            content: `${input.groomName}과 ${input.brideName}의 웨딩 청첩 문구를
+${input.style} 스타일로 3가지 만들어줘.
+예식일: ${input.weddingDate}, 장소: ${input.venue}
+각각 40자 내외, 한국어, 감성적으로.
+JSON 배열로만 답해 (다른 텍스트 없이):
+["\ubb38\uad6c1", "\ubb38\uad6c2", "\ubb38\uad6c3"]`,
+          }],
+        });
+
+        const text = (response.content[0] as any).text;
+        const match = text.match(/\[[\s\S]*\]/);
+        const texts = match ? JSON.parse(match[0]) : [
+          "두 사람이 하나가 되는 날, 함께해 주세요.",
+          "사랑이 완성되는 순간에 초대합니다.",
+          "설레는 마음으로 기다리겠습니다.",
+        ];
+        return { texts };
+      }),
+  }),
 });
 
 // ─── 영상 생성 비동기 처리 ───

@@ -422,6 +422,14 @@ export default function ProjectWorkspace() {
                 <Eye className="h-3.5 w-3.5" />
                 미리보기 링크
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs border-purple-500/30 text-purple-400 hover:bg-purple-500/10"
+                onClick={() => setLocation(`/invitation/${projectId}`)}
+              >
+                📩 청첩장 만들기
+              </Button>
             </div>
           )}
         </div>

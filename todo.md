@@ -142,3 +142,9 @@
 - [x] pages/ClientPreview.tsx 신규 생성 (인증 화면 + 갤러리 + 수정 요청)
 - [x] routers.ts에 preview 라우터 추가 (verify, getGallery, submitFeedback)
 - [x] ProjectWorkspace.tsx에 미리보기 링크 복사 버튼 추가
+
+## v3.13 청첩장 영상 페이지 신규 생성
+- [x] routers.ts에 invitations 라우터 추가 (generateText mutation - Claude API)
+- [x] pages/Invitation.tsx 신규 생성 (5단계 스텝 위자드)
+- [x] App.tsx에 /invitation/:projectId 라우트 추가
+- [x] ProjectWorkspace.tsx 헤더에 "청첩장 만들기" 버튼 추가
