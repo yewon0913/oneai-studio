@@ -709,7 +709,7 @@ export const appRouter = router({
           const isFamily = project.projectMode === "family";
           const basePrompt = input.promptText || "romantic Korean wedding photo, golden hour";
           // AI 엔진 일관성 전략 적용 - 선택된 엔진에 따라 프롬프트 강화
-          const engines = input.engines || ["flux_pulid"];
+          const engines = input.engines || ["flux_dev"];
           const gender = client?.gender || "female";
           const prompt = input.faceFixMode 
             ? buildMultiEngineConsistencyPrompt({

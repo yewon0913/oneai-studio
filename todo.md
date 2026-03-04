@@ -259,3 +259,7 @@
 - [x] analyzeReferenceImages 프롬프트 교체 (얼굴/의상 묘사 제거, 배경/조명/포즈/분위기/카메라/스타일만, 80단어 이하)
 - [x] generate mutation 순서 수정: generateBaseImage → faceSwap(half-moon-ai) → upscale4K
 - [x] face swap API 도입 (half-moon-ai/ai-face-swap/faceswapimage + faceswapimagemulti)
+
+## v5.5 기본 엔진 변경 및 PuLID 분기 제거
+- [x] 기본 엔진을 flux_pulid → flux_dev로 변경
+- [x] runPipeline에서 flux_pulid 직접 생성 분기 제거 (항상 3단계 파이프라인)

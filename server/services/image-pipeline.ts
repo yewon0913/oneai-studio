@@ -211,17 +211,9 @@ export async function runPipeline(opts: {
   const { engine, prompt, faceImageUrls, negativePrompt, imageSize, isCouple } = opts;
   const primaryFaceUrl = faceImageUrls[0];
 
-  // ── flux_pulid 엔진: PuLID 직접 생성 (레거시 방식) ──
-  if (engine === "flux_pulid" && primaryFaceUrl) {
-    return generateWithPuLID(prompt, primaryFaceUrl, {
-      negativePrompt,
-      idWeight: 1.0,
-      imageSize,
-    });
-  }
-
   // ══════════════════════════════════════════════════════
-  // 3단계 파이프라인: generateBaseImage → faceSwap → return
+  // 항상 3단계 파이프라인: generateBaseImage → faceSwap → return
+  // (flux_pulid 직접 생성 분기 제거됨 - 모든 엔진 동일 파이프라인)
   // ══════════════════════════════════════════════════════
 
   // STEP 1: 배경 + 장면 + 포즈 이미지 생성 (얼굴 참조 없이)
