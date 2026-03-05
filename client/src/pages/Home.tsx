@@ -243,6 +243,13 @@ export default function Home() {
       color: "from-purple-600/20 to-purple-800/20",
     },
     {
+      title: "뷰티 브랜딩",
+      description: "당신의 사진으로 4가지 뷰티 스타일 생성",
+      icon: Sparkles,
+      href: "/beauty",
+      color: "from-rose-600/20 to-pink-800/20",
+    },
+    {
       title: "AI 템플릿 갤러리",
       description: "Flux, Kling, Runway 등 최신 템플릿",
       icon: Sparkles,
@@ -317,7 +324,7 @@ export default function Home() {
         {/* Quick Actions */}
         <div>
           <h2 className="text-lg font-semibold mb-4 text-foreground">빠른 작업</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             {quickActions.map((action) => (
               <Card
                 key={action.title}
