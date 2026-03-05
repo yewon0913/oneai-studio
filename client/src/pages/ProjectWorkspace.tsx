@@ -304,7 +304,9 @@ export default function ProjectWorkspace() {
       setAnalysisResult(result);
       if (result.prompt) setPromptText(result.prompt);
       if (result.negativePrompt) setNegativePrompt(result.negativePrompt);
-      toast.success("✨ AI 정밀 분석 완료! 프롬프트 자동 입력됨");
+      // 프롬프트 붙여넣기 후 첨부 파일 자동 삭제
+      setRefImages([]);
+      toast.success("✨ AI 정밀 분석 완료! 프롬프트 자동 입력됨 (첨부 파일 삭제됨)");
     } catch (err: any) {
       toast.error(`분석 실패: ${err.message}`);
     } finally {
@@ -327,10 +329,11 @@ export default function ProjectWorkspace() {
     });
   };
 
-  // AI 프롬프트를 메인 프롬프트에 삽입
+  // AI 프롬프트를 메인 프롬프트에 삽입 (자동 삭제 포함)
   const handleInsertAiPrompt = () => {
     setPromptText(aiPromptResult);
-    toast.success("AI 생성 프롬프트가 메인 프롬프트에 삽입되었습니다.");
+    setRefImages([]);
+    toast.success("AI 생성 프롬프트가 메인 프롬프트에 삽입되었습니다. (첨부 파일 삭제됨)");
   };
 
   const handleGenerate = () => {
@@ -613,9 +616,9 @@ export default function ProjectWorkspace() {
                   </Label>
 
                   {refImages.length > 0 && (
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-3 gap-2 p-3 rounded-lg bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700">
                       {refImages.map((img, idx) => (
-                        <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-border group">
+                        <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-slate-600 bg-slate-900 group">
                           <img 
                             src={img.preview.startsWith("data:") ? img.preview : img.url} 
                             alt={`참조 ${idx + 1}`} 
