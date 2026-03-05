@@ -1,4 +1,8 @@
-import { invokeLLM } from "../_core/llm";
+import Anthropic from "@anthropic-ai/sdk";
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 // ─────────────────────────────────────────────────────
 // 타입 정의
@@ -48,7 +52,7 @@ export interface AnalysisResult {
 }
 
 // ─────────────────────────────────────────────────────
-// Vision 분석 프롬프트
+// Claude Vision 분석 프롬프트
 // ─────────────────────────────────────────────────────
 const ANALYSIS_PROMPT = `당신은 전문 사진작가 + AI 프롬프트 엔지니어 + 20년 경력 뷰티 전문가입니다.
 이 사진을 아래 순서와 원칙으로 정밀 분석하세요.
@@ -199,7 +203,7 @@ export function buildFinalPrompt(result: AnalysisResult): {
     .join(", ");
 
   // ══════════════════════════════════════════
-  // NEGATIVE PROMPT — 5단계 방어 레이어
+  // NEGATIVE PROMPT — 3단계 방어 레이어
   // ══════════════════════════════════════════
 
   // ── 레이어 1: 얼굴/신원 방어 (최강) ─────────────
@@ -279,26 +283,24 @@ export async function analyzeImageToPrompt(
   imageUrl: string
 ): Promise<AnalysisResult> {
   try {
-    const response = await invokeLLM({
+    const response = await anthropic.messages.create({
+      model: "claude-opus-4-5",
+      max_tokens: 2000,
       messages: [
         {
           role: "user",
           content: [
             {
-              type: "image_url",
-              image_url: { url: imageUrl, detail: "high" },
+              type: "image",
+              source: { type: "url", url: imageUrl },
             },
-            {
-              type: "text",
-              text: ANALYSIS_PROMPT,
-            },
+            { type: "text", text: ANALYSIS_PROMPT },
           ],
         },
       ],
     });
 
-    const rawContent = response.choices?.[0]?.message?.content || "";
-    const text = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+    const text = (response.content[0] as any).text || "";
     const analysis = parseAnalysisResponse(text);
 
     const rawResult: AnalysisResult = {
@@ -329,27 +331,24 @@ export async function analyzeBase64ImageToPrompt(
   mimeType: "image/jpeg" | "image/png" | "image/webp" = "image/jpeg"
 ): Promise<AnalysisResult> {
   try {
-    const dataUrl = `data:${mimeType};base64,${base64Data}`;
-    const response = await invokeLLM({
+    const response = await anthropic.messages.create({
+      model: "claude-opus-4-5",
+      max_tokens: 2000,
       messages: [
         {
           role: "user",
           content: [
             {
-              type: "image_url",
-              image_url: { url: dataUrl, detail: "high" },
+              type: "image",
+              source: { type: "base64", media_type: mimeType, data: base64Data },
             },
-            {
-              type: "text",
-              text: ANALYSIS_PROMPT,
-            },
+            { type: "text", text: ANALYSIS_PROMPT },
           ],
         },
       ],
     });
 
-    const rawContent = response.choices?.[0]?.message?.content || "";
-    const text = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+    const text = (response.content[0] as any).text || "";
     const analysis = parseAnalysisResponse(text);
 
     const rawResult: AnalysisResult = {
