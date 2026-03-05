@@ -3,6 +3,7 @@
  * Flux를 사용한 뷰티 이미지 생성 (4장, 832x1216)
  */
 
+import { fal } from "@fal-ai/client";
 import { analyzeBeautyImageBase64, BeautyAnalysisResult } from "./beauty-analyzer";
 
 export interface BeautyGenerateInput {
@@ -23,11 +24,24 @@ export interface BeautyGenerateOutput {
 }
 
 /**
+ * Base64를 URL로 변환 (S3 업로드 또는 data URL 사용)
+ */
+function base64ToDataUrl(base64: string, mimeType: string): string {
+  if (base64.startsWith("data:")) {
+    return base64;
+  }
+  return `data:${mimeType};base64,${base64}`;
+}
+
+/**
  * Flux API를 통한 뷰티 이미지 생성
  */
 export async function generateBeautyImages(
   input: BeautyGenerateInput
 ): Promise<BeautyGenerateOutput> {
+  // FAL 설정 (배포 시점에 설정)
+  fal.config({ credentials: process.env.FAL_KEY });
+
   // 1. 뷰티 전용 분석
   const analysis = await analyzeBeautyImageBase64(
     input.imageBase64,
@@ -36,43 +50,43 @@ export async function generateBeautyImages(
   );
 
   const finalPrompt = input.customPrompt || analysis.prompt;
+  const imageDataUrl = base64ToDataUrl(input.imageBase64, input.mimeType || "image/jpeg");
 
-  // 2. Flux API 호출 (기존 image-pipeline.ts 참고)
-  const FLUX_API_URL = process.env.FLUX_API_URL || "https://api.flux.ai/v1/images/generate";
-  const FLUX_API_KEY = process.env.FLUX_API_KEY;
-
-  if (!FLUX_API_KEY) {
-    throw new Error("FLUX_API_KEY is not set");
-  }
-
-  const width = 832;
-  const height = 1216; // 세로형 뷰티 화보
+  // 2. Flux API 호출 (fal-ai/flux/dev/image-to-image)
+  const outputCount = input.outputCount || 4;
+  const images: string[] = [];
 
   try {
-    const fluxResponse = await fetch(FLUX_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${FLUX_API_KEY}`,
-      },
-      body: JSON.stringify({
-        prompt: finalPrompt,
-        negative_prompt: analysis.negativePrompt,
-        width,
-        height,
-        num_images: input.outputCount || 4,
-        guidance_scale: 3.5,
-        num_inference_steps: 28,
-      }),
-    });
+    // 4장을 순차적으로 생성
+    for (let i = 0; i < outputCount; i++) {
+      try {
+        const result = await fal.subscribe("fal-ai/flux/dev/image-to-image" as any, {
+          input: {
+            prompt: finalPrompt,
+            image_url: imageDataUrl,
+            strength: 0.75,
+            num_inference_steps: 28,
+            guidance_scale: 3.5,
+            enable_safety_checker: false,
+            width: 832,
+            height: 1216,
+          } as any,
+        });
 
-    if (!fluxResponse.ok) {
-      const errorData = await fluxResponse.json();
-      throw new Error(`Flux API error: ${JSON.stringify(errorData)}`);
+        const imageUrl = (result as any).data?.images?.[0]?.url;
+        if (imageUrl) {
+          images.push(imageUrl);
+        } else {
+          console.warn(`[Beauty] 이미지 ${i + 1} 생성 실패: URL 없음`);
+        }
+      } catch (error) {
+        console.error(`[Beauty] 이미지 ${i + 1} 생성 에러:`, error);
+      }
     }
 
-    const fluxData = await fluxResponse.json();
-    const images: string[] = fluxData.images || fluxData.data || [];
+    if (images.length === 0) {
+      throw new Error("모든 이미지 생성 실패");
+    }
 
     return {
       images,

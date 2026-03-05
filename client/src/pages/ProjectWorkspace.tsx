@@ -685,6 +685,10 @@ export default function ProjectWorkspace() {
                   </p>
                 </div>
 
+                {/* ═══ 뷰티 브랜딩 모듈 ═══ */}
+                <div className="p-4 rounded-lg bg-gradient-to-br from-slate-900 to-slate-800 border border-rose-500/20">
+                  <BeautyModule />
+                </div>
 
                 {/* ═══ AI 이미지 정밀 분석 (Anthropic Claude) ═══ */}
                 {refImages.length > 0 && (
@@ -756,11 +760,6 @@ export default function ProjectWorkspace() {
                     )}
                   </div>
                 )}
-
-                {/* ═══ 뷰티 브랜딩 모듈 ═══ */}
-                <div className="p-4 rounded-lg bg-gradient-to-br from-slate-900 to-slate-800 border border-rose-500/20">
-                  <BeautyModule />
-                </div>
 
                 {/* 원본 직접 적용 모드 안내 */}
                 {referenceMode === "direct_apply" && refImages.length > 0 && (
