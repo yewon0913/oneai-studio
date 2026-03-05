@@ -231,3 +231,14 @@
 - [x] Anthropic 크레딧 부족 에러 완전 해결 (LLM 의존성 제거)
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 75개 통과 확인
+
+## v3.27 뷰티 브랜딩 모듈 구축 (독립 모듈, 256가지 프롬프트)
+- [x] beauty-analyzer.ts 구축 (규칙 기반 특임 데이터, API 없음)
+- [x] beauty-pipeline.ts 구축 (Flux 4장 생성, 832x1216)
+- [x] beauty-router.ts 구축 (generateBeauty, analyzeBeauty mutation)
+- [x] routers.ts에 beautyRouter 2줄 추가
+- [x] client/pages/beauty/index.tsx 구축 (4탭 UI, 256가지 프롬프트 동적 생성)
+- [x] App.tsx에 /beauty 라우팅 추가
+- [x] 웨딩 페이지 정상 작동 확인 (독립 모듈)
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75개 통과 확인
