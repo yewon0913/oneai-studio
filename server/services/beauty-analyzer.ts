@@ -153,15 +153,16 @@ function buildBeautyPrompt(
   category: "skincare" | "makeup" | "luxury" | "natural"
 ): { prompt: string; negativePrompt: string } {
   const tier1_skin = [
-    `(${analysis.skinTone}:1.2)`,
-    `(${analysis.skinTexture}:1.2)`,
+    `(${analysis.skinTone}:1.5)`,
+    `(${analysis.skinTexture}:1.5)`,
     "skin pores visible",
     "natural skin texture",
     "subsurface scattering",
     "translucent skin",
+    "(facial identity consistency:2.0)",
   ].join(", ");
 
-  const tier2_face = analysis.faceFeatures ? `(${analysis.faceFeatures}:1.0)` : "";
+  const tier2_face = analysis.faceFeatures ? `(${analysis.faceFeatures}:2.0), (face consistency:2.0), (same person:2.0), (identical facial features:2.0)` : "";
 
   const tier3_lighting = analysis.lighting
     ? `${analysis.lighting}, catch light in eyes, specular highlight on nose bridge`

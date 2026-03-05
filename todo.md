@@ -231,3 +231,13 @@
 - [x] 이미지 다운로드 기능 추가
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 75개 통과 확인
+
+## v3.32 뷰티 모듈 독립 페이지 이동 및 얼굴 일관성 개선
+- [x] ProjectWorkspace.tsx에서 뷰티 모듈 제거 (웨딩 전용 공간 복원)
+- [x] App.tsx에 /beauty 라우트 추가 (독립 페이지)
+- [x] Beauty.tsx 페이지 생성 (뷰티 모듈 전체 포함)
+- [x] 뷰티 이미지 생성 시 얼굴 일관성 가중치 증가 (1.5 → 2.0)
+- [x] beauty-analyzer.ts에서 face consistency weight 상어
+- [x] 생성 이미지 얼굴 유사도 테스트 및 검증
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75개 통과 확인

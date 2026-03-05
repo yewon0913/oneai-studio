@@ -19,7 +19,7 @@ import {
 import { toast } from "sonner";
 import AIEngineSelector from "@/components/AIEngineSelector";
 import type { AIEngineId } from "../../../shared/aiEngines";
-import BeautyModule from "./beauty";
+
 
 const statusLabels: Record<string, string> = {
   draft: "초안", generating: "생성중", review: "검수중", revision: "수정중",
@@ -683,11 +683,6 @@ export default function ProjectWorkspace() {
                   <p className="text-[10px] text-muted-foreground">
                     핀터레스트 링크, 직접 이미지 URL, 또는 파일을 첨부하세요.
                   </p>
-                </div>
-
-                {/* ═══ 뷰티 브랜딩 모듈 ═══ */}
-                <div className="p-4 rounded-lg bg-gradient-to-br from-slate-900 to-slate-800 border border-rose-500/20">
-                  <BeautyModule />
                 </div>
 
                 {/* ═══ AI 이미지 정밀 분석 (Anthropic Claude) ═══ */}

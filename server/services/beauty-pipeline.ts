@@ -64,9 +64,9 @@ export async function generateBeautyImages(
           input: {
             prompt: finalPrompt,
             image_url: imageDataUrl,
-            strength: 0.75,
-            num_inference_steps: 28,
-            guidance_scale: 3.5,
+            strength: 0.65,
+            num_inference_steps: 32,
+            guidance_scale: 4.5,
             enable_safety_checker: false,
             width: 832,
             height: 1216,
