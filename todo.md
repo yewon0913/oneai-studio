@@ -193,3 +193,10 @@
 - [x] ProjectWorkspace.tsx에 AI 분석 버튼 + 15가지 카테고리 결과 UI 추가
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 75개 통과
+
+## v3.22 image-analyzer를 내장 LLM으로 교체
+- [x] image-analyzer.ts에서 Anthropic SDK → invokeLLM으로 교체
+- [x] 동일한 15가지 카테고리 분석 + 프롬프트 생성 유지
+- [x] Anthropic SDK 의존성 제거 불필요 (다른 곳에서 사용 가능)
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75개 통과

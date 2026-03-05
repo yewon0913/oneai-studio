@@ -1,8 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+import { invokeLLM } from "../_core/llm";
 
 export interface AnalysisResult {
   prompt: string;
@@ -69,25 +65,40 @@ JSON만 응답 (다른 텍스트 없이):
   "negativePrompt": "피해야 할 요소들 150단어 이내"
 }`;
 
+function parseResponse(text: string): AnalysisResult {
+  const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("JSON 파싱 실패: 응답에서 JSON을 찾을 수 없습니다");
+  const parsed = JSON.parse(match[0]);
+  return {
+    prompt: parsed.prompt || "",
+    negativePrompt: parsed.negativePrompt || "",
+    analysis: parsed.analysis || {},
+  };
+}
+
 export async function analyzeImageToPrompt(imageUrl: string): Promise<AnalysisResult> {
   try {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2000,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "url", url: imageUrl } },
-          { type: "text", text: ANALYSIS_PROMPT }
-        ]
-      }]
+    const response = await invokeLLM({
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: { url: imageUrl, detail: "high" },
+            },
+            {
+              type: "text",
+              text: ANALYSIS_PROMPT,
+            },
+          ],
+        },
+      ],
     });
-    const text = (response.content[0] as any).text || "";
-    const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("파싱 실패");
-    const parsed = JSON.parse(match[0]);
-    return { prompt: parsed.prompt || "", negativePrompt: parsed.negativePrompt || "", analysis: parsed.analysis || {} };
+    const rawContent = response.choices?.[0]?.message?.content || "";
+    const text = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+    return parseResponse(text);
   } catch (err: any) {
     throw new Error(`이미지 분석 실패: ${err.message}`);
   }
@@ -98,23 +109,27 @@ export async function analyzeBase64ImageToPrompt(
   mimeType: "image/jpeg" | "image/png" | "image/webp" = "image/jpeg"
 ): Promise<AnalysisResult> {
   try {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2000,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: mimeType, data: base64Data } },
-          { type: "text", text: ANALYSIS_PROMPT }
-        ]
-      }]
+    const dataUrl = `data:${mimeType};base64,${base64Data}`;
+    const response = await invokeLLM({
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: { url: dataUrl, detail: "high" },
+            },
+            {
+              type: "text",
+              text: ANALYSIS_PROMPT,
+            },
+          ],
+        },
+      ],
     });
-    const text = (response.content[0] as any).text || "";
-    const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("파싱 실패");
-    const parsed = JSON.parse(match[0]);
-    return { prompt: parsed.prompt || "", negativePrompt: parsed.negativePrompt || "", analysis: parsed.analysis || {} };
+    const rawContent = response.choices?.[0]?.message?.content || "";
+    const text = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+    return parseResponse(text);
   } catch (err: any) {
     throw new Error(`이미지 분석 실패: ${err.message}`);
   }
