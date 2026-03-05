@@ -200,3 +200,13 @@
 - [x] Anthropic SDK 의존성 제거 불필요 (다른 곳에서 사용 가능)
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 75개 통과
+
+## v3.23 헤어 카테고리 추가
+- [x] ANALYSIS_PROMPT에 16번 hair 카테고리 추가
+- [x] AnalysisResult 인터페이스에 hair 필드 추가
+- [x] 네거티브 프롬프트에 헤어 반대 요소 반영 지시 추가
+- [x] ProjectWorkspace.tsx 분석 결과 UI에 hair 항목 표시- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75개 통과인
+- [x] 기존 "AI 프롬프트 자동 생성 + 이미지 분석" 영역 UI 제거
+- [x] AI 정밀 분석 UI에 hair 항목 표시 추가
+- [x] 설명 텍스트 "15가지" → "16가지" 수정
