@@ -185,3 +185,11 @@
 - [x] couple-pipeline.ts 단계별 로그 반환 + routers.ts reviewNotes 저장
 - [x] ProjectWorkspace.tsx 커플 생성 장수 선택 드롭다운 (1/3/5장)
 - [x] 테스트 75개 통과, TS 에러 0개
+
+## v3.21 AI 이미지 정밀 분석 → 프롬프트 자동생성
+- [x] Anthropic SDK 설치 (@anthropic-ai/sdk)
+- [x] server/services/image-analyzer.ts 신규 생성 (15가지 카테고리 분석)
+- [x] routers.ts generations 라우터에 analyzeImage mutation 추가 (기존 mutation 미수정)
+- [x] ProjectWorkspace.tsx에 AI 분석 버튼 + 15가지 카테고리 결과 UI 추가
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75개 통과

@@ -69,6 +69,9 @@ export default function ProjectWorkspace() {
   // 멀티 AI 엔진 선택
   const [selectedEngines, setSelectedEngines] = useState<AIEngineId[]>(["flux_lora", "midjourney_omniref"]);
   const [coupleAttempts, setCoupleAttempts] = useState(3);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [showAnalysisDetail, setShowAnalysisDetail] = useState(false);
   const handleToggleEngine = (engineId: AIEngineId) => {
     setSelectedEngines(prev =>
       prev.includes(engineId)
@@ -285,7 +288,31 @@ export default function ProjectWorkspace() {
     setRefImages(prev => prev.filter((_, i) => i !== index));
   };
 
-  // AI 프롬프트 생성
+  // AI 정밀 분석 (Anthropic Claude - 15가지 카테고리)
+  const analyzeImageMutation = trpc.generations.analyzeImage.useMutation();
+  const handleAnalyzeReferenceImage = async () => {
+    if (refImages.length === 0) {
+      toast.error("참조 이미지를 먼저 첨부해주세요");
+      return;
+    }
+    setIsAnalyzing(true);
+    try {
+      const firstImage = refImages[0];
+      const result = await analyzeImageMutation.mutateAsync({
+        imageUrl: firstImage.url,
+      });
+      setAnalysisResult(result);
+      if (result.prompt) setPromptText(result.prompt);
+      if (result.negativePrompt) setNegativePrompt(result.negativePrompt);
+      toast.success("✨ AI 정밀 분석 완료! 프롬프트 자동 입력됨");
+    } catch (err: any) {
+      toast.error(`분석 실패: ${err.message}`);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  // AI 프롬프트 생성 (기존)
   const handleAnalyzeImages = () => {
     if (refImages.length === 0) {
       toast.error("분석할 참조 이미지를 먼저 첨부해주세요.");
@@ -693,6 +720,77 @@ export default function ProjectWorkspace() {
                           <ArrowRight className="h-3 w-3" />
                           메인 프롬프트에 삽입
                         </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ═══ AI 이미지 정밀 분석 (Anthropic Claude) ═══ */}
+                {refImages.length > 0 && (
+                  <div className="space-y-2 p-3 rounded-lg bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-foreground text-sm flex items-center gap-2">
+                        <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+                        AI 이미지 정밀 분석
+                      </Label>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs border-amber-500/30 hover:bg-amber-500/10"
+                        onClick={handleAnalyzeReferenceImage}
+                        disabled={isAnalyzing}
+                      >
+                        {isAnalyzing ? (
+                          <><Loader2 className="h-3 w-3 animate-spin" />⛳ AI 분석 중... (5~10초)</>
+                        ) : (
+                          <>🔬 AI 이미지 정밀 분석 → 프롬프트 자동생성</>
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Anthropic Claude가 카메라, 조명, 피부, 의상, 포즈, 표정, 배경 등 15가지 카테고리를 분석하여 최적화된 프롬프트를 생성합니다.
+                    </p>
+
+                    {analysisResult && (
+                      <div className="space-y-2 mt-2">
+                        <div className="p-2 rounded bg-green-500/10 border border-green-500/20">
+                          <p className="text-xs text-green-300">✅ 메인/네거티브 프롬프트에 자동 입력됐어요</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="w-full gap-1.5 text-xs text-amber-300 hover:bg-amber-500/10"
+                          onClick={() => setShowAnalysisDetail(!showAnalysisDetail)}
+                        >
+                          {showAnalysisDetail ? "▲ 15가지 분석 결과 접기" : "▼ 15가지 분석 결과 펼치기"}
+                        </Button>
+                        {showAnalysisDetail && analysisResult.analysis && (
+                          <div className="grid grid-cols-1 gap-1.5 text-[10px]">
+                            {[
+                              { icon: "📷", label: "카메라", key: "camera" },
+                              { icon: "💡", label: "조명", key: "lighting" },
+                              { icon: "🔬", label: "피부", key: "skin" },
+                              { icon: "👗", label: "의상", key: "outfit" },
+                              { icon: "🤸", label: "포즈", key: "pose" },
+                              { icon: "👁️", label: "표정", key: "expression" },
+                              { icon: "🌅", label: "배경", key: "background" },
+                              { icon: "✨", label: "분위기", key: "mood" },
+                              { icon: "💨", label: "움직임", key: "movement" },
+                              { icon: "📐", label: "공간감", key: "space" },
+                              { icon: "🕐", label: "시간날씨", key: "time" },
+                              { icon: "🌟", label: "광학효과", key: "optical" },
+                              { icon: "🖼️", label: "구도", key: "composition" },
+                              { icon: "🎨", label: "색보정", key: "colorGrade" },
+                              { icon: "💭", label: "내면감정", key: "innerState" },
+                            ].map(({ icon, label, key }) => (
+                              <div key={key} className="flex gap-1.5 p-1.5 rounded bg-black/20 border border-border/50">
+                                <span className="shrink-0">{icon}</span>
+                                <span className="text-amber-300 font-medium shrink-0">{label}:</span>
+                                <span className="text-foreground/80">{(analysisResult.analysis as any)[key] || "-"}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

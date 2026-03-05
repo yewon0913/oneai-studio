@@ -851,6 +851,24 @@ IMPORTANT RULES:
           message: `${saved.length}장 생성됨. 가장 잘 나온 걸 선택하세요.`,
         };
       }),
+
+    analyzeImage: protectedProcedure
+      .input(z.object({
+        imageUrl: z.string().optional(),
+        base64Data: z.string().optional(),
+        mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]).optional().default("image/jpeg"),
+      }))
+      .mutation(async ({ input }) => {
+        const { analyzeImageToPrompt, analyzeBase64ImageToPrompt } =
+          await import("./services/image-analyzer");
+        if (input.base64Data) {
+          return analyzeBase64ImageToPrompt(input.base64Data, input.mimeType as any);
+        }
+        if (input.imageUrl) {
+          return analyzeImageToPrompt(input.imageUrl);
+        }
+        throw new Error("이미지 URL 또는 base64 데이터가 필요합니다");
+      }),
   }),
 
   // ─── Batch Jobs (대량 생성) ───
