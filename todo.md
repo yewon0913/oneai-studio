@@ -213,3 +213,12 @@
 
 ## v3.24 프롬프트 가중치 순서 재정렬
 - [x] 프롬프트 생성 순서 재정렬: 1순위 face consistency(1.5) → 2순위 피부/표정/조명/카메라 → 3순위 헤어(0.8) → 4순위 의상/포즈/배경/색보정
+
+## v3.25 image-analyzer.ts 최강 프롬프트 엔진 v2.0으로 교체
+- [x] image-analyzer.ts를 Anthropic Claude 기반 최강 프롬프트 엔진으로 완전 교체
+- [x] faceFeatures, skin, lighting, expression, camera, mood, colorGrade, outfit, pose, background, space, time, hairSimple, hairNegative, optical, composition 분석 필드 추가
+- [x] buildFinalPrompt 함수로 10단계 우선순위 프롬프트 조립 (1순위 face consistency:1.5 → 10순위 hair:0.7)
+- [x] 네거티브 프롬프트 5단계 방어 레이어 구현 (얼굴/신원 → 피부 → 해부학적 오류 → 광학/스타일 → 헤어)
+- [x] Anthropic SDK 설치 및 ANTHROPIC_API_KEY 환경변수 확인
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75개 통과 확인
