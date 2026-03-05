@@ -17,7 +17,6 @@ const NotificationsPage = lazy(() => import("./pages/Notifications"));
 const FinalReviewPage = lazy(() => import("./pages/FinalReview"));
 const ClientPreview = lazy(() => import("./pages/ClientPreview"));
 const Invitation = lazy(() => import("./pages/Invitation"));
-const BeautyPage = lazy(() => import("./pages/beauty"));
 
 function PageLoader() {
   return (
@@ -45,7 +44,6 @@ function Router() {
         <Route path="/review" component={FinalReviewPage} />
         <Route path="/preview/:clientId/:token" component={ClientPreview} />
         <Route path="/invitation/:projectId" component={Invitation} />
-        <Route path="/beauty" component={BeautyPage} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

@@ -681,7 +681,51 @@ export default function ProjectWorkspace() {
                   </p>
                 </div>
 
-                {/* ═══ AI 이미지 정밀 분석 (16가지 카테고리) ═══ */}
+                {/* ═══ AI 프롬프트 자동 생성 ═══ */}
+                {refImages.length > 0 && referenceMode !== "direct_apply" && (
+                  <div className="space-y-2 p-3 rounded-lg bg-gradient-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/20">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-foreground text-sm flex items-center gap-2">
+                        <Brain className="h-3.5 w-3.5 text-purple-400" />
+                        AI 프롬프트 자동 생성
+                      </Label>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs border-purple-500/30 hover:bg-purple-500/10"
+                        onClick={handleAnalyzeImages}
+                        disabled={analyzeImagesMutation.isPending}
+                      >
+                        {analyzeImagesMutation.isPending ? (
+                          <><Loader2 className="h-3 w-3 animate-spin" />분석 중...</>
+                        ) : (
+                          <><Eye className="h-3 w-3" />이미지 분석</>
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      AI Vision이 첨부된 이미지를 분석하여 동일한 장면, 구도, 조명, 스타일을 재현하는 프롬프트를 자동 생성합니다.
+                    </p>
+
+                    {aiPromptResult && (
+                      <div className="space-y-2 mt-2">
+                        <div className="p-2 rounded bg-black/20 border border-border">
+                          <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">{aiPromptResult}</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="w-full gap-1.5 bg-purple-600 hover:bg-purple-700 text-xs"
+                          onClick={handleInsertAiPrompt}
+                        >
+                          <ArrowRight className="h-3 w-3" />
+                          메인 프롬프트에 삽입
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ═══ AI 이미지 정밀 분석 (Anthropic Claude) ═══ */}
                 {refImages.length > 0 && (
                   <div className="space-y-2 p-3 rounded-lg bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20">
                     <div className="flex items-center justify-between">
@@ -704,7 +748,7 @@ export default function ProjectWorkspace() {
                       </Button>
                     </div>
                     <p className="text-[10px] text-muted-foreground">
-                      AI가 카메라, 조명, 피부, 의상, 포즈, 표정, 배경, 헤어 등 16가지 카테고리를 분석하여 최적화된 프롬프트를 생성합니다.
+                      Anthropic Claude가 카메라, 조명, 피부, 의상, 포즈, 표정, 배경 등 15가지 카테고리를 분석하여 최적화된 프롬프트를 생성합니다.
                     </p>
 
                     {analysisResult && (
@@ -718,7 +762,7 @@ export default function ProjectWorkspace() {
                           className="w-full gap-1.5 text-xs text-amber-300 hover:bg-amber-500/10"
                           onClick={() => setShowAnalysisDetail(!showAnalysisDetail)}
                         >
-                          {showAnalysisDetail ? "▲ 16가지 분석 결과 접기" : "▼ 16가지 분석 결과 펼치기"}
+                          {showAnalysisDetail ? "▲ 15가지 분석 결과 접기" : "▼ 15가지 분석 결과 펼치기"}
                         </Button>
                         {showAnalysisDetail && analysisResult.analysis && (
                           <div className="grid grid-cols-1 gap-1.5 text-[10px]">
@@ -738,7 +782,6 @@ export default function ProjectWorkspace() {
                               { icon: "🖼️", label: "구도", key: "composition" },
                               { icon: "🎨", label: "색보정", key: "colorGrade" },
                               { icon: "💭", label: "내면감정", key: "innerState" },
-                              { icon: "💇", label: "헤어", key: "hair" },
                             ].map(({ icon, label, key }) => (
                               <div key={key} className="flex gap-1.5 p-1.5 rounded bg-black/20 border border-border/50">
                                 <span className="shrink-0">{icon}</span>
