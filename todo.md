@@ -206,3 +206,9 @@
 - [x] AI 정밀 분석 후 프롬프트 붙여넣기 시 첨부 파일 자동 삭제
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 75개 통과 확인
+
+### v3.29 ProjectWorkspace 불아진 센션 삭제
+- [x] "AI 템플릿 갤러리" 센션 제거 (Home.tsx)
+- [x] "AI 프롬프트 자동 생성" 센션 제거 (ProjectWorkspace.tsx)
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75개 통과 확인
