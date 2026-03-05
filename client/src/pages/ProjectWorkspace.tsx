@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import AIEngineSelector from "@/components/AIEngineSelector";
 import type { AIEngineId } from "../../../shared/aiEngines";
+import BeautyModule from "./beauty";
 
 const statusLabels: Record<string, string> = {
   draft: "초안", generating: "생성중", review: "검수중", revision: "수정중",
@@ -755,6 +756,11 @@ export default function ProjectWorkspace() {
                     )}
                   </div>
                 )}
+
+                {/* ═══ 뷰티 브랜딩 모듈 ═══ */}
+                <div className="p-4 rounded-lg bg-gradient-to-br from-slate-900 to-slate-800 border border-rose-500/20">
+                  <BeautyModule />
+                </div>
 
                 {/* 원본 직접 적용 모드 안내 */}
                 {referenceMode === "direct_apply" && refImages.length > 0 && (

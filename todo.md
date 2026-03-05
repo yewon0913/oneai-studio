@@ -212,3 +212,14 @@
 - [x] "AI 프롬프트 자동 생성" 센션 제거 (ProjectWorkspace.tsx)
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 75개 통과 확인
+
+## v3.30 뷰티 브랜딩 모듈 구축 (참조 이미지 영역에 위치)
+- [x] beauty-analyzer.ts 구축 (규칙 기반 특임 데이터, 256가지 조합)
+- [x] beauty-pipeline.ts 구축 (Flux 4장 생성, 832x1216)
+- [x] beauty-router.ts 구축 (tRPC 라우터)
+- [x] routers.ts 2줄 추가 (beautyRouter import)
+- [x] client/pages/beauty/index.tsx 구축 (4탭 UI, 참조 이미지 영역에 위치)
+- [x] ProjectWorkspace.tsx에 뷰티 모듈 통합
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75개 통과 확인
+- [x] 웨딩/뷰티 독립성 검증 완료
