@@ -260,3 +260,12 @@
 - [x] memory-pipeline.ts 로직 업데이트 (BGM, 목소리 처리)
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 75개 통과 확인
+
+## v3.36 Memory 모듈 최적화 (Claude 피드백 반영)
+- [x] memory-pipeline.ts 완전 재작성 (createKlingVideo 함수명 변경)
+- [x] runMemoryPipeline 파라미터 정리 (customPrompt, voiceLine, shouldGenerateVideo, enableAudio)
+- [x] memory-router.ts 파라미터 정리 (animationStyle 제거, customPrompt 추가)
+- [x] Memory.tsx mutation 호출 수정 (새 파라미터 매핑)
+- [x] CodeFormer API 파라미터 수정 (upscaling 제거)
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75개 통과 확인

@@ -78,21 +78,17 @@ export default function Memory() {
   const handleGenerateMemory = async () => {
     if (!selectedImage || !imageBase64) return;
 
-    const direction = showDirectionInput ? customDirection : DIRECTION_PRESETS[activeDirection];
-    const bgmText = enableBGM ? (activeBGM === "custom" ? customBGM : BGM_PRESETS[activeBGM]) : "";
+    const customPrompt = showDirectionInput ? customDirection : DIRECTION_PRESETS[activeDirection];
 
     await generateMemoryMutation.mutateAsync(
       {
         imageBase64,
         mimeType,
-        animationStyle: activeDirection,
-        generateVideo,
+        customPrompt,
+        voiceLine: enableVoice ? voiceScript : null,
+        shouldGenerateVideo: generateVideo,
+        enableAudio: enableBGM,
         duration: videoDuration,
-        direction,
-        enableBGM,
-        bgmStyle: bgmText,
-        enableVoice,
-        voiceScript,
       } as any,
       {
         onSuccess: (result: any) => {
