@@ -1,323 +1,412 @@
-/**
- * Memory Restoration Module - Independent Page
- */
-
 import { useState, useRef } from "react";
-import { useLocation } from "wouter";
-import { trpc } from "@/lib/trpc";
+import { Upload, Video, Music, Mic, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Loader2, Upload, Download, X, ArrowLeft,
-  CheckCircle2, Sparkles, Play, Video, Image
-} from "lucide-react";
-import { toast } from "sonner";
+import { Card, CardContent } from "@/components/ui/card";
+import { trpc } from "@/lib/trpc";
+import { Spinner } from "@/components/ui/spinner";
 
-type AnimationStyle = "calm" | "nostalgia" | "lively";
-type Step = "idle" | "restoring" | "colorizing" | "generating" | "done";
+type DirectionStyle = "calm" | "nostalgia" | "lively" | "gratitude";
+type BGMStyle = "piano" | "orchestra" | "acoustic" | "custom";
+type VideoDuration = 5 | 10 | 15;
 
-const STYLE_INFO: Record<AnimationStyle, {
-  label: string; description: string; emoji: string; color: string;
-}> = {
-  calm:      { label: "잔잔함", description: "눈 깜빡임, 잔잔한 미소",   emoji: "🕯️", color: "from-amber-600 to-yellow-500" },
-  nostalgia: { label: "그리움", description: "고개 돌림, 따뜻한 눈빛",   emoji: "🌸", color: "from-rose-600 to-pink-500"   },
-  lively:    { label: "생동감", description: "환한 미소, 손 흔들기",     emoji: "✨", color: "from-emerald-600 to-teal-500" },
+const DIRECTION_PRESETS: Record<DirectionStyle, string> = {
+  calm: "부드럽고 고요한 분위기에서 천천히 움직이는 모습. 자연스러운 표정과 우아한 제스처. 따뜻한 조명.",
+  nostalgia: "추억 어린 표정으로 먼 곳을 바라보는 모습. 부드러운 회상의 감정. 황금빛 조명.",
+  lively: "밝고 생생한 표정으로 활기차게 움직이는 모습. 자연스러운 웃음과 생동감. 선명한 조명.",
+  gratitude: "감사함이 묻어나는 따뜻한 표정. 부드러운 손 제스처. 감정적인 순간 포착.",
 };
 
-const STEP_LIST: { key: Step; label: string; sub: string }[] = [
-  { key: "restoring",  label: "사진 복원 중", sub: "손상·노이즈 제거 (CodeFormer)" },
-  { key: "colorizing", label: "색상 복원 중", sub: "흑백 → 컬러 변환 (DeOldify)" },
-  { key: "generating", label: "영상 생성 중", sub: "살아 움직이는 5초 영상 (Kling 3.0)" },
-  { key: "done",       label: "완성!",        sub: "다운로드 가능" },
-];
+const BGM_PRESETS: Record<BGMStyle, string> = {
+  piano: "잔잔한 피아노 배경음악",
+  orchestra: "감정적인 오케스트라 음악",
+  acoustic: "어쿠스틱 기타 배경음악",
+  custom: "직접 입력",
+};
 
-function StepIndicator({ current }: { current: Step }) {
-  const order: Step[] = ["restoring", "colorizing", "generating", "done"];
-  const currentIdx = order.indexOf(current);
-  return (
-    <div className="flex flex-col gap-3 p-4 rounded-lg bg-slate-800/60 border border-slate-700">
-      {STEP_LIST.map((s, i) => {
-        const isDone   = currentIdx > i;
-        const isActive = current === s.key;
-        return (
-          <div key={s.key} className="flex items-center gap-3">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
-              isDone ? "bg-emerald-500" : isActive ? "bg-rose-500" : "bg-slate-700"
-            }`}>
-              {isDone   ? <CheckCircle2 className="w-4 h-4 text-white" /> :
-               isActive ? <Loader2 className="w-4 h-4 text-white animate-spin" /> :
-                          <span className="text-xs text-slate-500">{i + 1}</span>}
-            </div>
-            <div>
-              <p className={`text-sm font-semibold ${
-                isDone ? "text-emerald-400" : isActive ? "text-white" : "text-slate-500"
-              }`}>{s.label}</p>
-              <p className="text-xs text-slate-500">{s.sub}</p>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+const DURATION_COSTS: Record<VideoDuration, number> = {
+  5: 500,
+  10: 800,
+  15: 1200,
+};
 
 export default function Memory() {
-  const [, setLocation] = useLocation();
-  const [activeStyle, setActiveStyle]         = useState<AnimationStyle>("nostalgia");
-  const [generateVideo, setGenerateVideo]     = useState(true);
-  const [selectedImage, setSelectedImage]     = useState<string | null>(null);
-  const [selectedFileName, setSelectedFileName] = useState<string>("");
-  const [mimeType, setMimeType]               = useState<"image/jpeg" | "image/png" | "image/webp">("image/jpeg");
-  const [step, setStep]                       = useState<Step>("idle");
-  const [restoredImageUrl, setRestoredImageUrl]   = useState<string | null>(null);
-  const [colorizedImageUrl, setColorizedImageUrl] = useState<string | null>(null);
-  const [videoUrl, setVideoUrl]               = useState<string | null>(null);
-  const [wasGrayscale, setWasGrayscale]       = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [imageBase64, setImageBase64] = useState<string>("");
+  const [mimeType, setMimeType] = useState<"image/jpeg" | "image/png" | "image/webp">("image/jpeg");
 
+  // 연출 지시
+  const [activeDirection, setActiveDirection] = useState<DirectionStyle>("calm");
+  const [customDirection, setCustomDirection] = useState("");
+  const [showDirectionInput, setShowDirectionInput] = useState(false);
+
+  // 영상 옵션
+  const [generateVideo, setGenerateVideo] = useState(true);
+  const [videoDuration, setVideoDuration] = useState<VideoDuration>(5);
+
+  // BGM
+  const [enableBGM, setEnableBGM] = useState(false);
+  const [activeBGM, setActiveBGM] = useState<BGMStyle>("piano");
+  const [customBGM, setCustomBGM] = useState("");
+
+  // 목소리
+  const [enableVoice, setEnableVoice] = useState(false);
+  const [voiceScript, setVoiceScript] = useState("");
+
+  // 생성 상태
   const generateMemoryMutation = trpc.memory.generateMemory.useMutation();
+  const [generatedImages, setGeneratedImages] = useState<{
+    restored?: string;
+    colorized?: string;
+    video?: string;
+  }>({});
 
-  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { toast.error("파일 크기가 10MB를 초과합니다"); return; }
-    if (!file.type.startsWith("image/")) { toast.error("이미지 파일만 선택할 수 있습니다"); return; }
-    const mime = (file.type as "image/jpeg" | "image/png" | "image/webp") || "image/jpeg";
-    setMimeType(mime);
+
     const reader = new FileReader();
-    reader.onload = (e) => {
-      setSelectedImage(e.target?.result as string);
-      setSelectedFileName(file.name);
-      setRestoredImageUrl(null);
-      setColorizedImageUrl(null);
-      setVideoUrl(null);
-      setStep("idle");
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      setImageBase64(base64.split(",")[1] || base64);
+      setMimeType((file.type as any) || "image/jpeg");
+      setSelectedImage(URL.createObjectURL(file));
     };
     reader.readAsDataURL(file);
   };
 
-  const handleClearImage = () => {
-    setSelectedImage(null);
-    setSelectedFileName("");
-    setRestoredImageUrl(null);
-    setColorizedImageUrl(null);
-    setVideoUrl(null);
-    setStep("idle");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
+  const handleGenerateMemory = async () => {
+    if (!selectedImage || !imageBase64) return;
 
-  const handleGenerate = async () => {
-    if (!selectedImage) { toast.error("사진을 먼저 선택해주세요"); return; }
-    setStep("restoring");
-    setRestoredImageUrl(null);
-    setColorizedImageUrl(null);
-    setVideoUrl(null);
-    try {
-      const base64Data = selectedImage.includes(",") ? selectedImage.split(",")[1] : selectedImage;
-      const t1 = setTimeout(() => setStep("colorizing"), 15000);
-      const t2 = setTimeout(() => setStep("generating"), 40000);
-      const result = await generateMemoryMutation.mutateAsync({
-        imageBase64: base64Data,
+    const direction = showDirectionInput ? customDirection : DIRECTION_PRESETS[activeDirection];
+    const bgmText = enableBGM ? (activeBGM === "custom" ? customBGM : BGM_PRESETS[activeBGM]) : "";
+
+    await generateMemoryMutation.mutateAsync(
+      {
+        imageBase64,
         mimeType,
-        animationStyle: activeStyle,
+        animationStyle: activeDirection,
         generateVideo,
-      });
-      clearTimeout(t1);
-      clearTimeout(t2);
-      setRestoredImageUrl(result.restoredImageUrl);
-      setColorizedImageUrl(result.colorizedImageUrl);
-      setVideoUrl(result.videoUrl);
-      setWasGrayscale(result.wasGrayscale);
-      setStep("done");
-      toast.success("기억이 살아났습니다! 🎉");
-    } catch (error) {
-      console.error("Memory generation error:", error);
-      setStep("idle");
-      toast.error("처리 실패. 다시 시도해주세요.");
-    }
+        duration: videoDuration,
+        direction,
+        enableBGM,
+        bgmStyle: bgmText,
+        enableVoice,
+        voiceScript,
+      } as any,
+      {
+        onSuccess: (result: any) => {
+          setGeneratedImages({
+            restored: result.restoredImageUrl,
+            colorized: result.colorizedImageUrl,
+            video: result.videoUrl,
+          });
+        },
+      }
+    );
   };
-
-  const handleDownload = (url: string, filename: string) => {
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.target = "_blank";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const isProcessing = step !== "idle" && step !== "done";
-  const finalImageUrl = colorizedImageUrl || restoredImageUrl;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6">
       <div className="max-w-4xl mx-auto">
-
         <div className="mb-8">
-          <Button variant="ghost" size="sm" onClick={() => setLocation("/")}
-            className="mb-4 gap-2 text-slate-400 hover:text-white">
-            <ArrowLeft className="w-4 h-4" />돌아가기
-          </Button>
-          <div className="flex items-center gap-3 mb-3">
-            <span className="text-4xl">⏱️</span>
-            <h1 className="text-3xl font-bold text-white">AI 기억복원소</h1>
-          </div>
-          <p className="text-slate-400">오래된 사진을 고화질로 복원하고, 살아 움직이는 영상으로 만들어드립니다</p>
+          <h1 className="text-4xl font-bold text-white mb-2">⏱️ 기억복원소</h1>
+          <p className="text-slate-400">오래된 사진을 복원하고 감정 어린 영상으로 변환하세요</p>
         </div>
 
-        <Card className="bg-slate-900/50 border-slate-800 mb-6">
-          <CardHeader><CardTitle className="text-white">영상 감성 선택</CardTitle></CardHeader>
-          <CardContent className="space-y-6">
+        <div className="space-y-6">
+          {/* 📷 사진 업로드 */}
+          <Card className="bg-slate-800/50 border-slate-700">
+            <CardContent className="p-6">
+              <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                <Upload className="w-5 h-5" /> 📷 사진 업로드
+              </h2>
 
-            <div className="grid grid-cols-3 gap-3">
-              {(Object.entries(STYLE_INFO) as Array<[AnimationStyle, typeof STYLE_INFO[AnimationStyle]]>).map(([key, info]) => (
-                <button key={key} onClick={() => setActiveStyle(key)}
-                  className={`p-4 rounded-lg transition-all text-center ${
-                    activeStyle === key
-                      ? `bg-gradient-to-r ${info.color} text-white shadow-lg scale-105`
-                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                  }`}>
-                  <div className="text-2xl mb-1">{info.emoji}</div>
-                  <div className="font-semibold text-sm">{info.label}</div>
-                  <div className="text-xs opacity-80 mt-1">{info.description}</div>
-                </button>
-              ))}
-            </div>
+              {!selectedImage ? (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-slate-600 rounded-lg p-10 text-center cursor-pointer hover:border-rose-500/50 transition-colors bg-slate-800/30"
+                >
+                  <Upload className="w-12 h-12 text-slate-500 mx-auto mb-3" />
+                  <h3 className="font-semibold text-white text-lg mb-2">오래된 사진을 올려주세요</h3>
+                  <p className="text-sm text-slate-400">손상된 사진, 흑백 사진, 낡은 사진 모두 가능</p>
+                </div>
+              ) : (
+                <div className="flex gap-4">
+                  <img src={selectedImage} alt="selected" className="w-32 h-32 rounded-lg object-cover" />
+                  <div className="flex-1">
+                    <p className="text-white mb-3">선택된 사진</p>
+                    <Button
+                      onClick={() => {
+                        setSelectedImage(null);
+                        setImageBase64("");
+                      }}
+                      variant="outline"
+                      className="bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20"
+                    >
+                      다른 사진 선택
+                    </Button>
+                  </div>
+                </div>
+              )}
 
-            <div onClick={() => setGenerateVideo(!generateVideo)}
-              className={`flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-all ${
-                generateVideo ? "border-rose-500/50 bg-rose-500/10" : "border-slate-700 bg-slate-800/30"
-              }`}>
-              <Video className={`w-5 h-5 ${generateVideo ? "text-rose-400" : "text-slate-500"}`} />
-              <div className="flex-1">
-                <p className={`font-medium text-sm ${generateVideo ? "text-white" : "text-slate-400"}`}>영상 생성 포함</p>
-                <p className="text-xs text-slate-500">
-                  {generateVideo ? "복원 이미지 + 5초 영상 모두 생성 (~5~7분)" : "복원 이미지만 생성 (~1분)"}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+            </CardContent>
+          </Card>
+
+          {/* 🎬 연출 지시 */}
+          <Card className="bg-slate-800/50 border-slate-700">
+            <CardContent className="p-6">
+              <h2 className="text-lg font-semibold text-white mb-4">🎬 연출 지시</h2>
+
+              {!showDirectionInput ? (
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  {(["calm", "nostalgia", "lively", "gratitude"] as DirectionStyle[]).map((style) => (
+                    <button
+                      key={style}
+                      onClick={() => {
+                        setActiveDirection(style);
+                        setShowDirectionInput(false);
+                      }}
+                      className={`p-3 rounded-lg font-medium transition-all text-sm ${
+                        activeDirection === style && !showDirectionInput
+                          ? "bg-rose-500 text-white"
+                          : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                      }`}
+                    >
+                      [{style === "calm" ? "잔잔함" : style === "nostalgia" ? "그리움" : style === "lively" ? "생동감" : "감사"}]
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              <button
+                onClick={() => setShowDirectionInput(!showDirectionInput)}
+                className="w-full p-3 rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 transition-all text-sm mb-3 flex items-center justify-between"
+              >
+                <span>✏️ {showDirectionInput ? "프리셋으로 돌아가기" : "직접 입력"}</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${showDirectionInput ? "rotate-180" : ""}`} />
+              </button>
+
+              {showDirectionInput && (
+                <textarea
+                  value={customDirection}
+                  onChange={(e) => setCustomDirection(e.target.value)}
+                  placeholder="예시: 부드럽고 우아한 표정으로 천천히 움직이는 모습..."
+                  className="w-full p-3 rounded-lg bg-slate-900 border border-slate-600 text-white placeholder-slate-500 text-sm"
+                  rows={4}
+                />
+              )}
+
+              <div className="mt-3 p-3 rounded-lg bg-slate-900/50 border border-slate-700">
+                <p className="text-xs text-slate-400">
+                  💡 <strong>작성 팁:</strong> 표정(밝은/슬픈/감사), 제스처(손 움직임/고개 기울임), 조명(따뜻한/차가운) 등을 구체적으로 묘사하면 더 좋은 결과를 얻을 수 있습니다.
                 </p>
               </div>
-              <div className={`w-10 h-6 rounded-full transition-all relative ${generateVideo ? "bg-rose-500" : "bg-slate-700"}`}>
-                <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${generateVideo ? "left-5" : "left-1"}`} />
-              </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {!selectedImage ? (
-              <div onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-slate-600 rounded-lg p-10 text-center cursor-pointer hover:border-rose-500/50 transition-colors bg-slate-800/30">
-                <Upload className="w-12 h-12 text-slate-500 mx-auto mb-3" />
-                <h3 className="font-semibold text-white text-lg mb-2">오래된 사진을 올려주세요</h3>
-                <p className="text-sm text-slate-400">JPG, PNG, WebP 지원 · 흑백 사진도 OK · 최대 10MB</p>
+          {/* 🎞️ 영상 옵션 */}
+          <Card className="bg-slate-800/50 border-slate-700">
+            <CardContent className="p-6">
+              <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                <Video className="w-5 h-5" /> 🎞️ 영상 옵션
+              </h2>
+
+              {/* 영상 생성 토글 */}
+              <div
+                onClick={() => setGenerateVideo(!generateVideo)}
+                className={`flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-all mb-4 ${
+                  generateVideo ? "border-rose-500/50 bg-rose-500/10" : "border-slate-700 bg-slate-800/30"
+                }`}
+              >
+                <Video className={`w-5 h-5 ${generateVideo ? "text-rose-400" : "text-slate-500"}`} />
+                <div className="flex-1">
+                  <p className={`font-medium text-sm ${generateVideo ? "text-white" : "text-slate-400"}`}>영상 생성 포함</p>
+                  <p className="text-xs text-slate-500">
+                    {generateVideo ? `복원 이미지 + ${videoDuration}초 영상 모두 생성` : "복원 이미지만 생성"}
+                  </p>
+                </div>
+                <div className={`w-10 h-6 rounded-full transition-all relative ${generateVideo ? "bg-rose-500" : "bg-slate-700"}`}>
+                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${generateVideo ? "left-5" : "left-1"}`} />
+                </div>
+              </div>
+
+              {/* 영상 길이 선택 */}
+              {generateVideo && (
+                <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700 mb-4">
+                  <p className="text-sm font-semibold text-white mb-3">영상 길이 선택</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[5, 10, 15].map((duration) => (
+                      <button
+                        key={duration}
+                        onClick={() => setVideoDuration(duration as VideoDuration)}
+                        className={`py-2 px-3 rounded-lg font-medium transition-all text-sm ${
+                          videoDuration === duration
+                            ? "bg-rose-500 text-white"
+                            : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                        }`}
+                      >
+                        {duration}초
+                        <br />
+                        <span className="text-xs opacity-75">{DURATION_COSTS[duration as VideoDuration]}원</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* BGM 토글 */}
+              {generateVideo && (
+                <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700 mb-4">
+                  <div
+                    onClick={() => setEnableBGM(!enableBGM)}
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                      enableBGM ? "border-amber-500/50 bg-amber-500/10" : "border-slate-700 bg-slate-800/30"
+                    }`}
+                  >
+                    <Music className={`w-5 h-5 ${enableBGM ? "text-amber-400" : "text-slate-500"}`} />
+                    <div className="flex-1">
+                      <p className={`font-medium text-sm ${enableBGM ? "text-white" : "text-slate-400"}`}>🎵 BGM 추가</p>
+                    </div>
+                    <div className={`w-10 h-6 rounded-full transition-all relative ${enableBGM ? "bg-amber-500" : "bg-slate-700"}`}>
+                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${enableBGM ? "left-5" : "left-1"}`} />
+                    </div>
+                  </div>
+
+                  {enableBGM && (
+                    <div className="mt-3 space-y-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        {(["piano", "orchestra", "acoustic", "custom"] as BGMStyle[]).map((bgm) => (
+                          <button
+                            key={bgm}
+                            onClick={() => setActiveBGM(bgm)}
+                            className={`p-2 rounded-lg font-medium transition-all text-xs ${
+                              activeBGM === bgm
+                                ? "bg-amber-500 text-white"
+                                : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                            }`}
+                          >
+                            {BGM_PRESETS[bgm]}
+                          </button>
+                        ))}
+                      </div>
+
+                      {activeBGM === "custom" && (
+                        <input
+                          type="text"
+                          value={customBGM}
+                          onChange={(e) => setCustomBGM(e.target.value)}
+                          placeholder="예: 클래식 바이올린 음악"
+                          className="w-full p-2 rounded-lg bg-slate-900 border border-slate-600 text-white placeholder-slate-500 text-sm"
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 목소리 토글 */}
+              {generateVideo && (
+                <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700">
+                  <div
+                    onClick={() => setEnableVoice(!enableVoice)}
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                      enableVoice ? "border-purple-500/50 bg-purple-500/10" : "border-slate-700 bg-slate-800/30"
+                    }`}
+                  >
+                    <Mic className={`w-5 h-5 ${enableVoice ? "text-purple-400" : "text-slate-500"}`} />
+                    <div className="flex-1">
+                      <p className={`font-medium text-sm ${enableVoice ? "text-white" : "text-slate-400"}`}>🗣️ 나레이션 추가</p>
+                      <p className="text-xs text-slate-500">+300원</p>
+                    </div>
+                    <div className={`w-10 h-6 rounded-full transition-all relative ${enableVoice ? "bg-purple-500" : "bg-slate-700"}`}>
+                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${enableVoice ? "left-5" : "left-1"}`} />
+                    </div>
+                  </div>
+
+                  {enableVoice && (
+                    <div className="mt-3 space-y-3">
+                      <textarea
+                        value={voiceScript}
+                        onChange={(e) => setVoiceScript(e.target.value)}
+                        placeholder="예시: 이 사진은 2010년 여름, 우리가 처음 만난 날입니다..."
+                        className="w-full p-3 rounded-lg bg-slate-900 border border-slate-600 text-white placeholder-slate-500 text-sm"
+                        rows={3}
+                      />
+
+                      <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700">
+                        <p className="text-xs text-slate-400">
+                          💡 <strong>팁:</strong> 추억, 감정, 감사의 말 등을 담아 작성하면 더 감동적인 영상이 됩니다.
+                        </p>
+                      </div>
+
+                      <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                        <p className="text-xs text-red-400">
+                          ⚠️ <strong>주의:</strong> 나레이션 생성에 추가 크레딧이 소모됩니다.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 생성 버튼 */}
+          <Button
+            onClick={handleGenerateMemory}
+            disabled={!selectedImage || generateMemoryMutation.isPending}
+            className="w-full py-6 bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-semibold rounded-lg transition-all"
+          >
+            {generateMemoryMutation.isPending ? (
+              <div className="flex items-center gap-2">
+                <Spinner className="w-4 h-4" />
+                생성 중...
               </div>
             ) : (
-              <div className="flex gap-4 p-4 rounded-lg bg-slate-800/50 border border-slate-700">
-                <img src={selectedImage} alt="Selected" className="w-24 h-24 rounded-lg object-cover border border-rose-500/30 flex-shrink-0" />
-                <div className="flex-1 flex flex-col justify-between">
-                  <div>
-                    <h3 className="font-semibold text-white mb-1">사진 선택됨</h3>
-                    <p className="text-sm text-slate-400 truncate">{selectedFileName}</p>
-                    <p className="text-xs text-slate-500 mt-1">{STYLE_INFO[activeStyle].emoji} {STYLE_INFO[activeStyle].label} 스타일로 복원합니다</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button onClick={() => fileInputRef.current?.click()} variant="outline" size="sm" className="border-slate-600 text-slate-300 hover:bg-slate-700">
-                      <Upload className="w-4 h-4 mr-2" />다른 사진
-                    </Button>
-                    <Button onClick={handleClearImage} variant="outline" size="sm" className="border-slate-600 text-slate-300 hover:bg-slate-700">
-                      <X className="w-4 h-4 mr-2" />제거
-                    </Button>
-                  </div>
-                </div>
-              </div>
+              "✨ 기억 복원하기"
             )}
+          </Button>
 
-            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
+          {/* 생성 결과 */}
+          {Object.keys(generatedImages).length > 0 && (
+            <Card className="bg-slate-800/50 border-slate-700">
+              <CardContent className="p-6">
+                <h2 className="text-lg font-semibold text-white mb-4">✨ 생성 완료</h2>
 
-            {selectedImage && (
-              <Button onClick={handleGenerate} disabled={isProcessing}
-                className="w-full bg-gradient-to-r from-rose-600 to-pink-500 hover:from-rose-700 hover:to-pink-600 text-white font-semibold py-6 text-lg">
-                {isProcessing
-                  ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" />처리 중... (잠시만 기다려주세요)</>
-                  : <><Sparkles className="w-5 h-5 mr-2" />기억 복원 시작</>}
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-
-        {step !== "idle" && (
-          <Card className="bg-slate-900/50 border-slate-800 mb-6">
-            <CardHeader><CardTitle className="text-white">처리 진행 상황</CardTitle></CardHeader>
-            <CardContent>
-              <StepIndicator current={step} />
-              {isProcessing && (
-                <p className="text-xs text-slate-500 mt-3 text-center">
-                  {generateVideo ? "영상 포함 시 총 5~7분 소요됩니다" : "복원 이미지만 생성 시 약 1분 소요됩니다"}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {step === "done" && (
-          <Card className="bg-slate-900/50 border-slate-800">
-            <CardHeader><CardTitle className="text-white">🎉 복원 완료</CardTitle></CardHeader>
-            <CardContent className="space-y-6">
-
-              <div>
-                <h3 className="text-sm font-semibold text-slate-400 mb-3 flex items-center gap-2">
-                  <Image className="w-4 h-4" />복원된 사진
-                  {wasGrayscale && (
-                    <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30">🎨 컬러화 완료</span>
-                  )}
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="relative rounded-lg overflow-hidden border border-slate-700">
-                    <img src={selectedImage!} alt="원본" className="w-full aspect-[3/4] object-cover" />
-                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 py-2 text-center">
-                      <p className="text-xs text-slate-300">원본</p>
+                <div className="space-y-4">
+                  {generatedImages.restored && (
+                    <div>
+                      <p className="text-sm text-slate-400 mb-2">복원된 이미지</p>
+                      <img src={generatedImages.restored} alt="restored" className="w-full rounded-lg" />
                     </div>
-                  </div>
-                  {finalImageUrl && (
-                    <div className="relative group rounded-lg overflow-hidden border border-rose-500/30">
-                      <img src={finalImageUrl} alt="복원됨" className="w-full aspect-[3/4] object-cover" />
-                      <div className="absolute bottom-0 left-0 right-0 bg-black/60 py-2 text-center">
-                        <p className="text-xs text-rose-300">{wasGrayscale ? "복원 + 컬러화" : "복원 완료"}</p>
-                      </div>
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                        <Button onClick={() => handleDownload(finalImageUrl, "memory-restored.jpg")}
-                          size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 hover:bg-white text-black font-semibold">
-                          <Download className="w-4 h-4 mr-2" />다운로드
-                        </Button>
-                      </div>
+                  )}
+
+                  {generatedImages.colorized && (
+                    <div>
+                      <p className="text-sm text-slate-400 mb-2">컬러화된 이미지</p>
+                      <img src={generatedImages.colorized} alt="colorized" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {generatedImages.video && (
+                    <div>
+                      <p className="text-sm text-slate-400 mb-2">생성된 영상</p>
+                      <video src={generatedImages.video} controls className="w-full rounded-lg" />
                     </div>
                   )}
                 </div>
-              </div>
-
-              {videoUrl && (
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-400 mb-3 flex items-center gap-2">
-                    <Play className="w-4 h-4" />살아 움직이는 영상
-                    <span className="text-xs bg-rose-500/20 text-rose-400 px-2 py-0.5 rounded-full border border-rose-500/30">
-                      {STYLE_INFO[activeStyle].emoji} {STYLE_INFO[activeStyle].label}
-                    </span>
-                  </h3>
-                  <div className="relative rounded-lg overflow-hidden border border-rose-500/30 bg-black max-w-sm mx-auto">
-                    <video src={videoUrl} controls autoPlay loop className="w-full" style={{ aspectRatio: "9/16" }} />
-                  </div>
-                  <div className="flex justify-center mt-3">
-                    <Button onClick={() => handleDownload(videoUrl, "memory-video.mp4")}
-                      className="bg-gradient-to-r from-rose-600 to-pink-500 hover:from-rose-700 hover:to-pink-600 text-white">
-                      <Download className="w-4 h-4 mr-2" />영상 다운로드 (mp4)
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              <Button onClick={handleClearImage} variant="outline" className="w-full border-slate-600 text-slate-300 hover:bg-slate-800">
-                새 사진으로 다시 시작
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </div>
     </div>
   );

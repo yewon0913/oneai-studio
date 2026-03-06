@@ -1,210 +1,223 @@
-/**
- * Memory Restoration Module - Image & Video Pipeline
- * CodeFormer(복원) + DeOldify(컬러화) + Kling 3.0(영상화)
- */
-
 import { fal } from "@fal-ai/client";
+fal.config({ credentials: process.env.FAL_KEY });
 
-export interface MemoryGenerateInput {
-  imageBase64: string;
-  mimeType?: "image/jpeg" | "image/png" | "image/webp";
-  animationStyle: "calm" | "nostalgia" | "lively";
-  generateVideo: boolean;
-}
+// ─── Types ───────────────────────────────────────────────
 
-export interface MemoryGenerateOutput {
+export type AnimationStyle = "calm" | "nostalgia" | "lively" | "gratitude";
+
+export interface MemoryPipelineResult {
   restoredImageUrl: string;
   colorizedImageUrl: string | null;
   videoUrl: string | null;
   wasGrayscale: boolean;
-  prompt: string;
 }
 
-async function isGrayscale(base64: string): Promise<boolean> {
+// ─── Animation Prompts ───────────────────────────────────
+
+const ANIMATION_PROMPTS: Record<AnimationStyle, string> = {
+  calm: "The person in this restored historical photograph gently blinks their eyes and breathes softly. A slight warm smile appears on their face. Their expression is peaceful and full of memories. Cinematic, warm sepia tones, slow and graceful motion.",
+  nostalgia: "The person in this old photograph slowly turns their head and looks directly at the camera with warm, loving eyes. They gently nod as if greeting someone they haven't seen in a long time. Emotional, vintage, warm golden hour light.",
+  lively: "The person in this restored photograph comes alive with joy. They smile broadly and wave their hand in a warm greeting. Their eyes light up with happiness. Natural outdoor lighting, joyful expression, realistic natural movement.",
+  gratitude: "The person in this restored photograph looks directly at the camera with heartfelt gratitude in their eyes. They place their hand on their heart and nod slowly with a warm, genuine smile. Emotional, intimate, soft warm lighting, deeply touching moment.",
+};
+
+// ─── Grayscale Detection ─────────────────────────────────
+
+async function isGrayscaleImage(imageUrl: string): Promise<boolean> {
   try {
-    const buffer = Buffer.from(base64, "base64");
-    const sampleSize = Math.min(buffer.length, 50000);
-    let rSum = 0, gSum = 0, bSum = 0, count = 0;
-    for (let i = 100; i < sampleSize - 3; i += 30) {
-      const r = buffer[i];
-      const g = buffer[i + 1];
-      const b = buffer[i + 2];
+    const response = await fetch(imageUrl);
+    const buffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+
+    // JPEG/PNG 샘플 픽셀로 채도 추정 (간단한 휴리스틱)
+    let colorDiff = 0;
+    let samples = 0;
+    const step = Math.floor(bytes.length / 200);
+
+    for (let i = 0; i < bytes.length - 3; i += step) {
+      const r = bytes[i];
+      const g = bytes[i + 1];
+      const b = bytes[i + 2];
       if (r !== undefined && g !== undefined && b !== undefined) {
-        rSum += r; gSum += g; bSum += b; count++;
+        colorDiff += Math.abs(r - g) + Math.abs(g - b) + Math.abs(r - b);
+        samples++;
       }
     }
-    if (count === 0) return false;
-    const rAvg = rSum / count;
-    const gAvg = gSum / count;
-    const bAvg = bSum / count;
-    const maxDiff = Math.max(
-      Math.abs(rAvg - gAvg),
-      Math.abs(gAvg - bAvg),
-      Math.abs(rAvg - bAvg)
-    );
-    return maxDiff < 15;
+
+    const avgDiff = samples > 0 ? colorDiff / samples : 0;
+    return avgDiff < 15; // 평균 색상 차이가 15 미만이면 흑백
   } catch {
     return false;
   }
 }
 
-function toDataUrl(base64: string, mimeType: string): string {
-  if (base64.startsWith("data:")) return base64;
-  return `data:${mimeType};base64,${base64}`;
-}
+// ─── Step 1: Photo Restoration (FAL CodeFormer) ──────────
 
-async function restoreWithCodeFormer(imageBase64: string, mimeType: string): Promise<string> {
-  fal.config({ credentials: process.env.FAL_KEY });
-  const imageUrl = toDataUrl(imageBase64, mimeType);
+async function restorePhoto(imageBase64: string, mimeType: string): Promise<string> {
+  // FAL에 이미지 업로드
+  const blob = base64ToBlob(imageBase64, mimeType);
+  const uploadedUrl = await fal.storage.upload(blob);
+
   const result = await fal.subscribe("fal-ai/codeformer" as any, {
     input: {
-      image_url: imageUrl,
-      codeformer_fidelity: 0.7,
-      background_enhance: true,
-      face_upsample: true,
-      upscale: 2,
+      image_url: uploadedUrl,
+      fidelity: 0.7,
+      upscaling: 2,
+      face_upscale: true,
     } as any,
   });
+
   const output = (result as any).data;
   const url = output?.image?.url || output?.output || output?.url;
   if (!url) throw new Error("CodeFormer: 복원 결과 URL이 없습니다");
   return url;
 }
 
-async function colorizeWithDeOldify(imageUrl: string): Promise<string> {
-  fal.config({ credentials: process.env.FAL_KEY });
-  const result = await fal.subscribe("fal-ai/deoldify" as any, {
-    input: {
-      image_url: imageUrl,
-      model: "Artistic",
-      render_factor: 35,
-    } as any,
-  });
-  const output = (result as any).data;
-  const url = output?.image?.url || output?.output || output?.url;
-  if (!url) throw new Error("DeOldify: 컬러화 결과 URL이 없습니다");
-  return url;
-}
+// ─── Step 2: Colorization (FAL DDCOLOR) ──────────────────
 
-const ANIMATION_PROMPTS: Record<string, { prompt: string; negativePrompt: string }> = {
-  calm: {
-    prompt: "The person in this restored historical photograph gently blinks their eyes and breathes softly. A slight warm smile appears on their face. Their expression is peaceful and full of memories. The background has a very subtle, gentle movement like a soft breeze. Cinematic, warm sepia tones, nostalgic atmosphere, slow and graceful motion, film grain texture.",
-    negativePrompt: "fast motion, jerky movement, distorted face, unnatural expression, excessive movement, blinking too fast, scary, horror",
-  },
-  nostalgia: {
-    prompt: "The person in this old photograph slowly turns their head and looks directly at the camera with warm, loving eyes. They gently nod as if greeting someone they haven't seen in a long time. Soft bokeh light particles float in the background. Emotional, vintage, warm golden hour light, gentle and loving movement, tearful but happy atmosphere.",
-    negativePrompt: "modern background, artificial lighting, fast motion, unnatural expression, distorted features",
-  },
-  lively: {
-    prompt: "The person in this restored photograph comes alive with joy. They smile broadly and wave their hand in a warm greeting. Their eyes light up with happiness and vitality. Natural outdoor lighting with gentle wind moving their hair slightly. Full of life, vibrant, joyful expression, realistic natural movement.",
-    negativePrompt: "stiff movement, expressionless, dark atmosphere, horror, distorted face, unnatural motion",
-  },
-};
-
-async function generateVideoWithKling(
-  imageUrl: string,
-  animationStyle: "calm" | "nostalgia" | "lively"
-): Promise<string> {
-  const piApiKey = process.env.PIAPI_API_KEY;
-  if (!piApiKey) throw new Error("PIAPI_API_KEY 환경변수가 설정되지 않았습니다");
-
-  const { prompt, negativePrompt } = ANIMATION_PROMPTS[animationStyle];
-
-  const createRes = await fetch("https://api.piapi.ai/api/kling/v1/video/image2video", {
-    method: "POST",
-    headers: {
-      "x-api-key": piApiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "kling-v3",
-      image_url: imageUrl,
-      prompt,
-      negative_prompt: negativePrompt,
-      duration: 5,
-      mode: "pro",
-      aspect_ratio: "9:16",
-    }),
-  });
-
-  if (!createRes.ok) {
-    const errText = await createRes.text();
-    throw new Error(`Kling API 오류: ${createRes.status} - ${errText}`);
-  }
-
-  const createData = await createRes.json();
-  const taskId = createData?.data?.task_id || createData?.task_id;
-  if (!taskId) throw new Error("Kling: task_id를 받지 못했습니다");
-
-  const maxAttempts = 120;
-  for (let i = 0; i < maxAttempts; i++) {
-    await new Promise((r) => setTimeout(r, 5000));
-
-    const statusRes = await fetch(`https://api.piapi.ai/api/kling/v1/video/${taskId}`, {
-      headers: { "x-api-key": piApiKey },
+async function colorizePhoto(imageUrl: string): Promise<string> {
+  try {
+    const result = await fal.subscribe("fal-ai/ddcolor" as any, {
+      input: {
+        image_url: imageUrl,
+      } as any,
     });
 
-    if (!statusRes.ok) continue;
-
-    const statusData = await statusRes.json();
-    const status = statusData?.data?.status || statusData?.status;
-
-    if (status === "succeeded" || status === "completed") {
-      const videoUrl =
-        statusData?.data?.output?.works?.[0]?.resource?.resource ||
-        statusData?.data?.video_url ||
-        statusData?.output?.video_url;
-      if (!videoUrl) throw new Error("Kling: 영상 URL을 찾을 수 없습니다");
-      return videoUrl;
-    }
-
-    if (status === "failed" || status === "error") {
-      const errMsg = statusData?.data?.error_message || "영상 생성 실패";
-      throw new Error(`Kling 영상 생성 실패: ${errMsg}`);
-    }
+    const output = (result as any).data;
+    const url = output?.image?.url || output?.output || output?.url;
+    if (!url) throw new Error("DDColor: 컬러화 결과 URL이 없습니다");
+    return url;
+  } catch (error) {
+    console.warn("Colorization failed, using restored image:", error);
+    return imageUrl;
   }
-
-  throw new Error("Kling: 영상 생성 타임아웃 (10분 초과)");
 }
 
-export async function runMemoryPipeline(
-  input: MemoryGenerateInput
-): Promise<MemoryGenerateOutput> {
-  const mimeType = input.mimeType || "image/jpeg";
-  const { prompt } = ANIMATION_PROMPTS[input.animationStyle];
+// ─── Step 3: Video Generation (Kling 3.0 via PiAPI) ──────
 
-  let restoredImageUrl: string;
+async function generateVideo(
+  imageUrl: string,
+  style: AnimationStyle,
+  duration: 5 | 10 | 15
+): Promise<string | null> {
+  if (!process.env.PIAPI_API_KEY) {
+    console.warn("PIAPI_API_KEY not set, skipping video generation");
+    return null;
+  }
+
   try {
-    restoredImageUrl = await restoreWithCodeFormer(input.imageBase64, mimeType);
-  } catch (err) {
-    console.error("[Memory] CodeFormer 실패, 원본 사용:", err);
-    restoredImageUrl = toDataUrl(input.imageBase64, mimeType);
-  }
+    // 작업 제출
+    const submitRes = await fetch("https://api.piapi.ai/api/kling/v1/video/image2video", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.PIAPI_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "kling-v3",
+        image_url: imageUrl,
+        prompt: ANIMATION_PROMPTS[style],
+        duration,
+        mode: "pro",
+        aspect_ratio: "9:16",
+      }),
+    });
 
-  const grayscale = await isGrayscale(input.imageBase64);
-  let colorizedImageUrl: string | null = null;
-
-  if (grayscale) {
-    try {
-      colorizedImageUrl = await colorizeWithDeOldify(restoredImageUrl);
-    } catch (err) {
-      console.error("[Memory] DeOldify 실패, 복원 이미지 사용:", err);
-      colorizedImageUrl = null;
+    if (!submitRes.ok) {
+      const err = await submitRes.text();
+      throw new Error(`PiAPI submit failed: ${err}`);
     }
+
+    const submitData = await submitRes.json();
+    const taskId = submitData?.task_id;
+    if (!taskId) throw new Error("No task_id returned from PiAPI");
+
+    // 폴링 (최대 10분)
+    const maxAttempts = 120;
+    for (let i = 0; i < maxAttempts; i++) {
+      await sleep(5000);
+
+      const pollRes = await fetch(`https://api.piapi.ai/api/kling/v1/video/${taskId}`, {
+        headers: { "x-api-key": process.env.PIAPI_API_KEY! },
+      });
+
+      if (!pollRes.ok) continue;
+
+      const pollData = await pollRes.json();
+      const status = pollData?.status;
+
+      if (status === "succeeded" || status === "completed") {
+        return pollData?.output?.works?.[0]?.resource?.resource ?? null;
+      }
+      if (status === "failed") {
+        throw new Error(`Kling video generation failed: ${JSON.stringify(pollData)}`);
+      }
+    }
+
+    throw new Error("Video generation timed out after 10 minutes");
+  } catch (error) {
+    console.error("Video generation error:", error);
+    return null;
+  }
+}
+
+// ─── Helpers ─────────────────────────────────────────────
+
+function base64ToBlob(base64: string, mimeType: string): Blob {
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  return new Blob([new Uint8Array(byteNumbers)], { type: mimeType });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ─── Main Pipeline ────────────────────────────────────────
+
+export async function runMemoryPipeline(
+  imageBase64: string,
+  mimeType: string,
+  animationStyle: AnimationStyle,
+  generateVideoFlag: boolean,
+  duration: 5 | 10 | 15 = 5,
+  direction?: string,
+  enableBGM?: boolean,
+  bgmStyle?: string,
+  enableVoice?: boolean,
+  voiceScript?: string
+): Promise<MemoryPipelineResult> {
+  console.log("[Memory] Step 1: Restoring photo with CodeFormer...");
+  const restoredUrl = await restorePhoto(imageBase64, mimeType);
+  console.log("[Memory] Restored:", restoredUrl);
+
+  console.log("[Memory] Step 2: Checking grayscale...");
+  const grayscale = await isGrayscaleImage(restoredUrl);
+  console.log("[Memory] Is grayscale:", grayscale);
+
+  let colorizedUrl: string | null = null;
+  if (grayscale) {
+    console.log("[Memory] Step 2b: Colorizing...");
+    colorizedUrl = await colorizePhoto(restoredUrl);
+    console.log("[Memory] Colorized:", colorizedUrl);
   }
 
-  const finalImageUrl = colorizedImageUrl || restoredImageUrl;
+  const finalImageUrl = colorizedUrl ?? restoredUrl;
 
   let videoUrl: string | null = null;
-  if (input.generateVideo) {
-    videoUrl = await generateVideoWithKling(finalImageUrl, input.animationStyle);
+  if (generateVideoFlag) {
+    console.log("[Memory] Step 3: Generating video...");
+    videoUrl = await generateVideo(finalImageUrl, animationStyle, duration);
+    console.log("[Memory] Video:", videoUrl);
   }
 
   return {
-    restoredImageUrl,
-    colorizedImageUrl,
+    restoredImageUrl: restoredUrl,
+    colorizedImageUrl: colorizedUrl,
     videoUrl,
     wasGrayscale: grayscale,
-    prompt,
   };
 }
