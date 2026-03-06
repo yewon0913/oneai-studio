@@ -250,6 +250,13 @@ export default function Home() {
       color: "from-rose-600/20 to-pink-800/20",
     },
     {
+      title: "⏱️ 기억복원소",
+      description: "오래된 사진을 복원하고 영상으로 만들기",
+      icon: Clock,
+      href: "/memory",
+      color: "from-amber-600/20 to-yellow-800/20",
+    },
+    {
       title: "AI 템플릿 갤러리",
       description: "Flux, Kling, Runway 등 최신 템플릿",
       icon: Sparkles,

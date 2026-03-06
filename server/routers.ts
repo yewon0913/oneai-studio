@@ -12,6 +12,7 @@ import { notifyOwner } from "./_core/notification";
 import { nanoid } from "nanoid";
 import { MERCHANDISE_FORMATS, type MerchandiseFormatKey } from "../drizzle/schema";
 import { beautyRouter } from "./routers/beauty-router";
+import { memoryRouter } from "./routers/memory-router";
 
 // ─── 핀터레스트/외부 URL에서 실제 이미지를 다운로드하여 base64로 변환 ───
 async function resolveImageToBase64(url: string): Promise<{ b64Json: string; mimeType: string } | null> {
@@ -1239,6 +1240,7 @@ JSON 배열로만 답해 (다른 텍스트 없이):
 
   // ─── Beauty Branding Module ───
   beauty: beautyRouter,
+  memory: memoryRouter,
 });
 
 // ─── 영상 생성 비동기 처리 ───
