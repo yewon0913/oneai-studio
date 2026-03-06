@@ -109,20 +109,20 @@ const BEAUTY_ANALYSIS_DATA = {
  */
 const CATEGORY_TEMPLATES: Record<string, Record<string, string>> = {
   skincare: {
-    positive: "glass skin, dewy fresh, water droplets, Laneige Sulwhasoo style, hydrated skin, luminous complexion",
-    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4)",
+    positive: "glass skin, dewy fresh, water droplets, Laneige Sulwhasoo style, hydrated skin, luminous complexion, skin texture visible, pores visible, natural skin, photorealistic skin",
+    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4), (digital art:1.5), (illustration:1.5), (painting:1.5)",
   },
   makeup: {
-    positive: "flawless foundation, visible pores, Korean beauty, 3CE Romand style, precise makeup, editorial makeup",
-    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4)",
+    positive: "flawless foundation, visible pores, Korean beauty, 3CE Romand style, precise makeup, editorial makeup, skin texture visible, natural skin pores, photorealistic makeup",
+    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4), (digital art:1.5), (illustration:1.5), (painting:1.5)",
   },
   luxury: {
-    positive: "dramatic lighting, luxury beauty brand, Chanel Dior editorial, high fashion, luxury campaign, sophisticated",
-    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4)",
+    positive: "dramatic lighting, luxury beauty brand, Chanel Dior editorial, high fashion, luxury campaign, sophisticated, skin texture visible, natural skin pores, photorealistic luxury",
+    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4), (digital art:1.5), (illustration:1.5), (painting:1.5)",
   },
   natural: {
-    positive: "fresh no-makeup glow, natural light, vitamin skin, organic beauty, clean beauty, minimal makeup",
-    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4)",
+    positive: "fresh no-makeup glow, natural light, vitamin skin, organic beauty, clean beauty, minimal makeup, skin texture visible, natural skin pores, photorealistic natural",
+    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4), (digital art:1.5), (illustration:1.5), (painting:1.5)",
   },
 };
 
@@ -160,24 +160,27 @@ function buildBeautyPrompt(
     "subsurface scattering",
     "translucent skin",
     "(facial identity consistency:2.0)",
+    "photorealistic skin",
+    "real skin texture",
+    "not airbrushed",
   ].join(", ");
 
-  const tier2_face = analysis.faceFeatures ? `(${analysis.faceFeatures}:2.0), (face consistency:2.0), (same person:2.0), (identical facial features:2.0)` : "";
+  const tier2_face = analysis.faceFeatures ? `(${analysis.faceFeatures}:2.0), (face consistency:2.0), (same person:2.0), (identical facial features:2.0), (photorealistic face:1.8), (natural face:1.8)` : "";
 
   const tier3_lighting = analysis.lighting
-    ? `${analysis.lighting}, catch light in eyes, specular highlight on nose bridge`
-    : "beauty dish lighting, catch light in eyes";
+    ? `${analysis.lighting}, catch light in eyes, specular highlight on nose bridge, professional studio lighting, directional light, shadow detail`
+    : "beauty dish lighting, catch light in eyes, professional studio lighting";
 
   const tier4_camera = analysis.camera
-    ? `${analysis.camera}`
-    : "Hasselblad X2D, 120mm macro f/2.8";
+    ? `${analysis.camera}, professional photography, RAW sensor data, color accurate, high resolution`
+    : "Hasselblad X2D, 120mm macro f/2.8, professional photography, RAW sensor data";
 
-  const categoryTags = CATEGORY_TEMPLATES[category].positive;
+  const categoryTags = CATEGORY_TEMPLATES[category].positive + ", photorealistic quality";
   const qualityTags =
-    "photorealistic, 8K ultra detail, RAW photo, medium format, beauty campaign, film grain ISO 200";
+    "photorealistic, 8K ultra detail, RAW photo, medium format, beauty campaign, film grain ISO 200, shot on Sony A7R V, 85mm f/1.4, skin texture visible, natural skin pores, subsurface scattering, NOT illustration, NOT digital art, NOT painting, professional beauty photography, studio lighting, color graded, editorial quality";
 
   const finalPrompt = [
-    "Korean beauty model, 20s,",
+    "Korean beauty model, 20s, photorealistic portrait,",
     tier1_skin,
     tier2_face,
     tier3_lighting,
@@ -192,9 +195,15 @@ function buildBeautyPrompt(
     .filter(Boolean)
     .join(", ");
 
+  // 실사 품질 보장을 위한 최종 정제
+  const finalPromptCleaned = finalPrompt
+    .replace(/,\s*,/g, ",") // 중복 쉼표 제거
+    .replace(/\s+/g, " ") // 중복 공백 제거
+    .trim();
+
   const negativePrompt = CATEGORY_TEMPLATES[category].negative;
 
-  return { prompt: finalPrompt, negativePrompt };
+  return { prompt: finalPromptCleaned, negativePrompt };
 }
 
 /**

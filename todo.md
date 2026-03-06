@@ -269,3 +269,15 @@
 - [x] CodeFormer API 파라미터 수정 (upscaling 제거)
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 75개 통과 확인
+
+## v3.37 Memory 모듈 디버깅 및 Beauty 프롬프트 실사 키워드 추가
+- [x] Memory 모듈 서버 로그 확인 ([Memory] 프리픽스 로그 발견)
+- [x] CodeFormer 및 DDCOLOR API 호출 정상 작동 확인
+- [x] Kling 비디오 생성 폴링 메커니즘 정상 작동 확인
+- [x] couple-pipeline.ts 코드 검토 (4가지 개선 사항 식별)
+- [x] Beauty 프롬프트에 실사 키워드 추가 ("shot on Sony A7R V, 85mm f/1.4, RAW photo, photorealistic, skin texture visible, natural skin pores, subsurface scattering, NOT illustration, NOT digital art, NOT painting")
+- [x] Beauty 카테고리별 프롬프트 템플릿 강화 (skincare/makeup/luxury/natural)
+- [x] 네거티브 프롬프트 개선 ((digital art:1.5), (illustration:1.5), (painting:1.5) 추가)
+- [x] 프롬프트 정제 로직 추가 (중복 쉼표/공백 제거)
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75개 통과 확인
