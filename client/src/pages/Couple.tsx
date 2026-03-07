@@ -8,9 +8,9 @@ import { Loader2, Upload, Download, X, ArrowLeft, Heart, RefreshCw, CheckCircle2
 import { toast } from "sonner";
 
 const ENGINES = [
-  { key: "flux", label: "FLUX Dev", sub: "고품질 기본" },
-  { key: "lora", label: "FLUX LoRA", sub: "스타일 특화" },
-  { key: "sdxl", label: "Stable Diffusion", sub: "빠른 생성" },
+  { key: "flux-dev", label: "FLUX Dev", sub: "고품질 기본" },
+  { key: "flux-lora", label: "FLUX LoRA", sub: "스타일 특화" },
+  { key: "stable-diffusion", label: "Stable Diffusion", sub: "빠른 생성" },
 ] as const;
 type EngineKey = typeof ENGINES[number]["key"];
 
@@ -75,7 +75,7 @@ export default function Couple() {
   const [prompt, setPrompt] = useState("romantic wedding photo, soft natural lighting, elegant atmosphere, photorealistic");
   const [negativePrompt, setNegativePrompt] = useState("blurry, low quality, distorted face, extra limbs, watermark, cartoon");
   const [faceLock, setFaceLock] = useState(true);
-  const [engine, setEngine] = useState<EngineKey>("flux");
+  const [engine, setEngine] = useState<EngineKey>("flux-dev");
   const [ratio, setRatio] = useState<RatioKey>("4:3");
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentStep, setCurrentStep] = useState(-1);
@@ -188,6 +188,7 @@ export default function Couple() {
         negativePrompt,
         engine,
         faceLock,
+        refImages: refImages.length > 0 ? refImages : undefined,
       });
 
       clearTimeout(t1);

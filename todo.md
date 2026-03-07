@@ -345,3 +345,26 @@
 - [x] 결과 다운로드
 - [x] TypeScript 에러 0개 확인
 - [x] 브라우저 테스트 완료
+
+
+## v3.43 얼굴 일관성 극대화 최적화
+- [x] 참조 이미지 originalImages 전달 최적화
+  - couple-router.ts에 refImages 파라미터 추가
+  - couple-pipeline.ts에서 refImages 업로드 및 처리 로직 추가
+  - generateBackground에 refImageUrls 전달
+  - originalImages에 고객 사진 + 참조 이미지 모두 포함 (최대 5개)
+  - Couple.tsx에서 refImages를 mutation 호출 시 전달
+- [x] faceLock 모드 극대화
+  - guidance_scale 극대화 (Flux Dev: 4.0 → 5.5, Flux LoRA: 4.5 → 6.5, SD: 5.0 → 7.5)
+  - num_inference_steps 증가 (Flux Dev: 30 → 35, Flux LoRA: 32 → 40, SD: 35 → 45)
+  - strength 상향 (0.7 → 0.75)
+- [x] AI 엔진 선택 구현
+  - Couple.tsx 엔진 키 업데이트 ("flux" → "flux-dev", "lora" → "flux-lora", "sdxl" → "stable-diffusion")
+  - couple-pipeline.ts에서 엔진별 모델 호출 (flux-dev: fal-ai/flux/dev, flux-lora: fal-ai/flux/pro, stable-diffusion: fal-ai/stable-diffusion-3-5-large)
+  - 엔진별 guidance_scale, num_inference_steps 최적화
+- [x] 프롬프트 일관성 극대화
+  - 포지티브: "identical face, same face, exact same person, face consistency, facial identity preserved" 추가
+  - faceLock 시: "CRITICAL: face consistency, MUST preserve exact facial features, identical facial identity, face identity locked, facial recognition match 100%" 추가
+  - 네거티브: 가중치 상향 (1.5 → 2.0) 및 새 키워드 추가 (face change, different face, face swap, altered face, unrecognizable face, face modification, wrong face)
+- [x] 모든 테스트 통과 (75/75)
+- [x] TypeScript 에러 0개

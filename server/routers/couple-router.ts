@@ -13,6 +13,7 @@ export const coupleRouter = router({
       negativePrompt: z.string().optional(),
       engine: z.string().optional(),
       faceLock: z.boolean().optional(),
+      refImages: z.array(z.object({ base64: z.string(), name: z.string() })).optional(),
     }))
     .mutation(async ({ input }) => {
       console.log("[couple-router] Starting...");
@@ -25,6 +26,7 @@ export const coupleRouter = router({
         input.negativePrompt,
         input.engine,
         input.faceLock,
+        input.refImages,
       );
       return { images: results.map((r) => ({ url: r.url, log: r.log })) };
     }),

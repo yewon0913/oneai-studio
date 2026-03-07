@@ -84,33 +84,111 @@ async function removeBackground(imageUrl: string): Promise<string> {
 }
 
 const BACKGROUND_PROMPTS: Record<string, string> = {
-  cherry_blossom: "romantic Korean garden with cherry blossom trees in full bloom, soft pink petals falling gently, golden hour sunlight filtering through branches, dreamy bokeh background, professional wedding photography, couple posing together, beautiful faces clearly visible, natural skin texture, romantic lighting",
-  chapel: "elegant luxury wedding chapel interior, white and ivory flower arrangements, crystal chandelier, soft warm candlelight, white marble floor, cinematic wedding photography, couple standing together, beautiful faces, romantic atmosphere, professional lighting",
-  garden: "beautiful outdoor garden wedding venue, lush green lawn, white floral arch covered in roses, warm natural sunlight, soft bokeh, professional wedding photography, couple posing, beautiful faces clearly visible, natural skin tones, romantic garden setting",
-  beach: "romantic beach at golden hour sunset, warm orange and pink sky reflected on calm ocean, soft sand, gentle waves, cinematic wedding photography, couple embracing, beautiful faces, romantic beach atmosphere, professional photography, natural lighting",
-  forest: "enchanted forest wedding, tall trees with dappled sunlight, green leaves, magical fairy light bokeh, romantic atmosphere, professional photography, couple posing together, beautiful faces clearly visible, natural skin texture, romantic forest setting",
-  palace: "grand royal palace garden, European architecture, manicured hedges, fountain, warm afternoon light, luxury wedding photography, couple standing together, beautiful faces, elegant atmosphere, professional lighting, romantic palace setting",
+  cherry_blossom: "romantic Korean garden with cherry blossom trees in full bloom, soft pink petals falling gently, golden hour sunlight filtering through branches, dreamy bokeh background, professional wedding photography",
+  chapel: "elegant luxury wedding chapel interior, white and ivory flower arrangements, crystal chandelier, soft warm candlelight, white marble floor, cinematic wedding photography",
+  garden: "beautiful outdoor garden wedding venue, lush green lawn, white floral arch covered in roses, warm natural sunlight, soft bokeh, professional wedding photography",
+  beach: "romantic beach at golden hour sunset, warm orange and pink sky reflected on calm ocean, soft sand, gentle waves, cinematic wedding photography",
+  forest: "enchanted forest wedding, tall trees with dappled sunlight, green leaves, magical fairy light bokeh, romantic atmosphere, professional photography",
+  palace: "grand royal palace garden, European architecture, manicured hedges, fountain, warm afternoon light, luxury wedding photography",
 };
 
-async function generateBackground(scene: string, aspectRatio: string): Promise<string> {
-  console.log("[couple] Step 2: Generating background:", scene);
+interface GenerateBackgroundOptions {
+  scene: string;
+  aspectRatio: string;
+  coupleImageUrl: string;
+  customPrompt?: string;
+  customNegativePrompt?: string;
+  engine?: string;
+  faceLock?: boolean;
+  refImageUrls?: string[];
+}
 
-  const prompt = BACKGROUND_PROMPTS[scene] ?? BACKGROUND_PROMPTS.cherry_blossom;
-  const negativePrompt = "(deformed:1.3), (distorted:1.3), (ugly:1.3), (bad anatomy:1.3), blurry, low quality, cartoon, illustration, painting, 3d render, CGI, (no people:0.5)";
+async function generateBackground(options: GenerateBackgroundOptions): Promise<string> {
+  const { scene, aspectRatio, coupleImageUrl, customPrompt, customNegativePrompt, engine, faceLock, refImageUrls } = options;
+  
+  console.log(`[couple] Step 2: Generating background for ${scene}...`);
+  console.log(`[couple] Engine: ${engine || "flux-dev"}, FaceLock: ${faceLock}`);
 
-  const result = await falRun("fal-ai/flux/dev", {
+  // 배경 프롬프트 구성
+  let prompt = BACKGROUND_PROMPTS[scene] ?? BACKGROUND_PROMPTS.cherry_blossom;
+  
+  // 커스텀 프롬프트가 있으면 병합
+  if (customPrompt) {
+    prompt = `${prompt}, ${customPrompt}`;
+  }
+
+  // 얼굴 일관성 강화 키워드 추가 (극대화)
+  prompt += ", couple posing together, beautiful faces clearly visible, natural skin texture, maintain exact facial features, preserve face appearance, identical face, same face, exact same person, face consistency, facial identity preserved, professional wedding photography";
+
+  // faceLock 활성화 시 추가 강화
+  if (faceLock) {
+    prompt += ", CRITICAL: face consistency, MUST preserve exact facial features, identical facial identity, exact same face appearance, face identity locked, no face changes, face fidelity maximum, facial recognition match 100%";
+  }
+
+  // 네거티브 프롬프트 (극대화)
+  let negativePrompt = customNegativePrompt || 
+    "(deformed:1.3), (distorted:1.3), (ugly:1.3), (bad anatomy:1.3), blurry, low quality, cartoon, illustration, painting, 3d render, CGI, (no people:0.5)";
+
+  // 얼굴 손상 방지 키워드 (극대화)
+  negativePrompt += ", (face distortion:2.0), (facial deformation:2.0), (blurry faces:2.0), (face change:1.8), (different face:1.8), (face swap:1.8), (altered face:1.8), (unrecognizable face:1.8), (face modification:1.8), (wrong face:1.8)";
+
+  // 프롬프트 길이 제한 (최대 1000자)
+  if (prompt.length > 1000) {
+    prompt = prompt.substring(0, 1000);
+  }
+
+  console.log(`[couple] Prompt (${prompt.length}): ${prompt.substring(0, 100)}...`);
+
+  // 엔진별 모델 선택 및 파라미터 조정
+  let modelId = "fal-ai/flux/dev";
+  let guidanceScale = 4.0;
+  let numInferenceSteps = 30;
+
+  if (engine === "flux-lora") {
+    modelId = "fal-ai/flux/pro";
+    guidanceScale = faceLock ? 6.5 : 4.5;  // faceLock 시 극대화
+    numInferenceSteps = faceLock ? 40 : 32;
+  } else if (engine === "stable-diffusion") {
+    modelId = "fal-ai/stable-diffusion-3-5-large";
+    guidanceScale = faceLock ? 7.5 : 5.0;  // faceLock 시 극대화
+    numInferenceSteps = faceLock ? 45 : 35;
+  } else {
+    // flux-dev (기본값)
+    guidanceScale = faceLock ? 5.5 : 4.0;  // faceLock 시 극대화
+    numInferenceSteps = faceLock ? 35 : 30;
+  }
+
+  console.log(`[couple] Using model: ${modelId}, guidance: ${guidanceScale}, steps: ${numInferenceSteps}`);
+
+  // originalImages로 고객 사진 전달 (얼굴 일관성 극대화)
+  const input: Record<string, unknown> = {
     prompt,
     negative_prompt: negativePrompt,
-    num_inference_steps: 30,
-    guidance_scale: 4.0,
+    num_inference_steps: numInferenceSteps,
+    guidance_scale: guidanceScale,
     image_size: aspectRatio === "16:9" ? "landscape_16_9" : aspectRatio === "1:1" ? "square_hd" : "portrait_4_3",
     enable_safety_checker: false,
     num_images: 1,
-  });
+  };
+
+  // 고객 사진 + 참조 이미지를 originalImages로 전달 (얼굴 일관성 강화)
+  if (coupleImageUrl) {
+    const originalImages = [coupleImageUrl];
+    // 참조 이미지 추가 (최대 5개)
+    if (refImageUrls && refImageUrls.length > 0) {
+      originalImages.push(...refImageUrls.slice(0, 5));
+      console.log(`[couple] Adding ${refImageUrls.length} reference images`);
+    }
+    input.original_images = originalImages;
+    input.strength = faceLock ? 0.75 : 0.65; // faceLock 시 75% 원본 구도 유지
+    console.log(`[couple] Using originalImages (${originalImages.length} images) with strength: ${input.strength}`);
+  }
+
+  const result = await falRun(modelId, input);
 
   const images = result?.images as Array<{ url: string }> | undefined;
   const url = images?.[0]?.url;
-  if (!url) throw new Error("FLUX returned no URL");
+  if (!url) throw new Error("Image generation returned no URL");
 
   console.log("[couple] Background generated:", url);
   return url;
@@ -121,7 +199,7 @@ async function enhanceFaces(imageUrl: string): Promise<string> {
     console.log("[couple] Step 4: Enhancing faces...");
     const result = await falRun("fal-ai/codeformer", {
       image_url: imageUrl,
-      fidelity: 0.9,
+      fidelity: 0.95, // 얼굴 보존 극대화
       upscaling: 2,
       face_upscale: true,
     });
@@ -147,16 +225,33 @@ export async function generateCouplePipeline(
   customPrompt?: string,
   customNegativePrompt?: string,
   engine?: string,
-  faceLock?: boolean
+  faceLock?: boolean,
+  refImages?: Array<{ base64: string; name: string }>
 ): Promise<CoupleResult[]> {
   console.log("[couple] ===== Pipeline Start =====");
-  console.log("[couple] Scene:", scene, "Ratio:", aspectRatio);
+  console.log("[couple] Scene:", scene, "Ratio:", aspectRatio, "Engine:", engine, "FaceLock:", faceLock);
+  console.log("[couple] RefImages count:", refImages?.length || 0);
 
   const results: CoupleResult[] = [];
 
   const coupleUrl = await uploadToFal(coupleImageBase64, mimeType);
 
   const subjectUrl = await removeBackground(coupleUrl);
+
+  // 참조 이미지 업로드 (있으면)
+  const refImageUrls: string[] = [];
+  if (refImages && refImages.length > 0) {
+    console.log("[couple] Uploading reference images...");
+    for (let i = 0; i < Math.min(refImages.length, 5); i++) {
+      try {
+        const refUrl = await uploadToFal(refImages[i].base64, mimeType);
+        refImageUrls.push(refUrl);
+        console.log(`[couple] Ref image ${i + 1} uploaded`);
+      } catch (err) {
+        console.warn(`[couple] Failed to upload ref image ${i + 1}:`, err);
+      }
+    }
+  }
 
   const scenes = scene === "all"
     ? ["cherry_blossom", "chapel"]
@@ -165,7 +260,17 @@ export async function generateCouplePipeline(
   for (const s of scenes) {
     const stepLog: string[] = ["배경제거✅"];
     try {
-      const bgUrl = await generateBackground(s, aspectRatio);
+      // 배경 생성 시 고객 사진 + 참조 이미지 전달
+      const bgUrl = await generateBackground({
+        scene: s,
+        aspectRatio,
+        coupleImageUrl: coupleUrl, // 고객 사진를 originalImages로 전달
+        customPrompt,
+        customNegativePrompt,
+        engine,
+        faceLock,
+        refImageUrls, // 참조 이미지 추가
+      });
       stepLog.push("배경생성✅");
 
       let finalUrl = await enhanceFaces(bgUrl);
