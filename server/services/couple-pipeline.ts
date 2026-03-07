@@ -143,7 +143,11 @@ export async function generateCouplePipeline(
   coupleImageBase64: string,
   mimeType: string,
   scene: string,
-  aspectRatio: string = "4:3"
+  aspectRatio: string = "4:3",
+  customPrompt?: string,
+  customNegativePrompt?: string,
+  engine?: string,
+  faceLock?: boolean
 ): Promise<CoupleResult[]> {
   console.log("[couple] ===== Pipeline Start =====");
   console.log("[couple] Scene:", scene, "Ratio:", aspectRatio);
@@ -155,7 +159,7 @@ export async function generateCouplePipeline(
   const subjectUrl = await removeBackground(coupleUrl);
 
   const scenes = scene === "all"
-    ? ["cherry_blossom", "chapel", "garden", "beach"]
+    ? ["cherry_blossom", "chapel"]
     : [scene];
 
   for (const s of scenes) {

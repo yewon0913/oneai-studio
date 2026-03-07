@@ -327,3 +327,21 @@
 - [x] Couple 파이프라인에 방향 보정 로직 추가
 - [x] TypeScript 에러 0개 확인
 - [x] 브라우저 테스트 완료
+
+## v3.42 커플 합성 파이프라인 완전 구현
+- [x] couple-router.ts에 analyzeCouple 엔드포인트 추가 (Claude Opus 4.5 분석)
+- [x] couple-pipeline.ts 업데이트 (새 파라미터: prompt, negativePrompt, engine, faceLock)
+- [x] 생성 장수 2장으로 제한 ("all" 선택 시 cherry_blossom, chapel만)
+- [x] 이미지 URL → base64 변환 (삭제 방지)
+- [x] Couple.tsx 완전 재작성 (자동 분석, 커스터마이징, 참조 이미지, AI 엔진 선택)
+- [x] 커플 사진 업로드 시 자동 AI 분석 기능
+- [x] 분석 결과 배지 표시 (스타일/분위기/추천배경)
+- [x] 참조 이미지 첨부 (최대 10장)
+- [x] 메인/네거티브 프롬프트 입력
+- [x] 얼굴 고정 모드 토글
+- [x] AI 엔진 선택 (Flux Dev, Flux LoRA, Stable Diffusion)
+- [x] 사진 비율 선택 (4:3, 16:9, 1:1)
+- [x] 진행 상태 표시
+- [x] 결과 다운로드
+- [x] TypeScript 에러 0개 확인
+- [x] 브라우저 테스트 완료
