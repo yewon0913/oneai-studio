@@ -82,23 +82,25 @@ async function removeBackground(imageUrl: string): Promise<string> {
 }
 
 const BACKGROUND_PROMPTS: Record<string, string> = {
-  cherry_blossom: "romantic Korean garden, cherry blossom trees in full bloom, soft pink petals falling gently, golden hour sunlight filtering through branches, dreamy bokeh background, professional wedding photography, no people",
-  chapel: "elegant luxury wedding chapel interior, white and ivory flower arrangements, crystal chandelier, soft warm candlelight, white marble floor, cinematic wedding photography, no people",
-  garden: "beautiful outdoor garden wedding venue, lush green lawn, white floral arch covered in roses, warm natural sunlight, soft bokeh, professional wedding photography, no people",
-  beach: "romantic beach at golden hour sunset, warm orange and pink sky reflected on calm ocean, soft sand, gentle waves, cinematic wedding photography, no people",
-  forest: "enchanted forest wedding, tall trees with dappled sunlight, green leaves, magical fairy light bokeh, romantic atmosphere, professional photography, no people",
-  palace: "grand royal palace garden, European architecture, manicured hedges, fountain, warm afternoon light, luxury wedding photography, no people",
+  cherry_blossom: "romantic Korean garden with cherry blossom trees in full bloom, soft pink petals falling gently, golden hour sunlight filtering through branches, dreamy bokeh background, professional wedding photography, couple posing together, beautiful faces clearly visible, natural skin texture, romantic lighting",
+  chapel: "elegant luxury wedding chapel interior, white and ivory flower arrangements, crystal chandelier, soft warm candlelight, white marble floor, cinematic wedding photography, couple standing together, beautiful faces, romantic atmosphere, professional lighting",
+  garden: "beautiful outdoor garden wedding venue, lush green lawn, white floral arch covered in roses, warm natural sunlight, soft bokeh, professional wedding photography, couple posing, beautiful faces clearly visible, natural skin tones, romantic garden setting",
+  beach: "romantic beach at golden hour sunset, warm orange and pink sky reflected on calm ocean, soft sand, gentle waves, cinematic wedding photography, couple embracing, beautiful faces, romantic beach atmosphere, professional photography, natural lighting",
+  forest: "enchanted forest wedding, tall trees with dappled sunlight, green leaves, magical fairy light bokeh, romantic atmosphere, professional photography, couple posing together, beautiful faces clearly visible, natural skin texture, romantic forest setting",
+  palace: "grand royal palace garden, European architecture, manicured hedges, fountain, warm afternoon light, luxury wedding photography, couple standing together, beautiful faces, elegant atmosphere, professional lighting, romantic palace setting",
 };
 
 async function generateBackground(scene: string, aspectRatio: string): Promise<string> {
   console.log("[couple] Step 2: Generating background:", scene);
 
   const prompt = BACKGROUND_PROMPTS[scene] ?? BACKGROUND_PROMPTS.cherry_blossom;
+  const negativePrompt = "(deformed:1.3), (distorted:1.3), (ugly:1.3), (bad anatomy:1.3), blurry, low quality, cartoon, illustration, painting, 3d render, CGI, (no people:0.5)";
 
   const result = await falRun("fal-ai/flux/dev", {
     prompt,
-    num_inference_steps: 28,
-    guidance_scale: 3.5,
+    negative_prompt: negativePrompt,
+    num_inference_steps: 30,
+    guidance_scale: 4.0,
     image_size: aspectRatio === "16:9" ? "landscape_16_9" : aspectRatio === "1:1" ? "square_hd" : "portrait_4_3",
     enable_safety_checker: false,
     num_images: 1,
@@ -117,7 +119,7 @@ async function enhanceFaces(imageUrl: string): Promise<string> {
     console.log("[couple] Step 4: Enhancing faces...");
     const result = await falRun("fal-ai/codeformer", {
       image_url: imageUrl,
-      fidelity: 0.85,
+      fidelity: 0.9,
       upscaling: 2,
       face_upscale: true,
     });

@@ -1412,21 +1412,20 @@ export default function ProjectWorkspace() {
         {/* 커플 합성 탭 */}
         {activeTab === "couple" && (
         <div className="max-w-4xl mx-auto space-y-6">
-          {/* 커플 사진 업로드 */}
+          {/* 커플 사진 업로드 - 간단한 버전 */}
           <Card className="bg-card border-border">
             <CardHeader><CardTitle className="text-foreground flex items-center gap-2"><Heart className="h-5 w-5 text-rose-500 fill-rose-500" />💑 커플 사진 업로드</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               {!coupleImage ? (
                 <div onClick={() => coupleFileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-600 rounded-lg p-10 text-center cursor-pointer hover:border-rose-500/50 transition-colors bg-slate-800/30">
-                  <Upload className="w-14 h-14 text-slate-500 mx-auto mb-3" />
-                  <h3 className="font-semibold text-foreground text-lg mb-2">함께 찍은 커플 사진을 올려주세요</h3>
-                  <p className="text-sm text-muted-foreground">JPG · PNG · WebP · 최대 20MB</p>
-                  <p className="text-xs text-muted-foreground/70 mt-2">두 분이 함께 나온 사진 1장이면 충분해요</p>
+                  className="border-2 border-dashed border-slate-600 rounded-lg p-6 text-center cursor-pointer hover:border-rose-500/50 transition-colors bg-slate-800/30">
+                  <Upload className="w-10 h-10 text-slate-500 mx-auto mb-2" />
+                  <h3 className="font-semibold text-foreground text-base mb-1">함께 찍은 커플 사진을 올려주세요</h3>
+                  <p className="text-xs text-muted-foreground">JPG · PNG · WebP · 최대 20MB</p>
                 </div>
               ) : (
                 <div className="relative rounded-lg overflow-hidden border border-rose-500/30">
-                  <img src={coupleImage} alt="커플" className="w-full max-h-80 object-contain bg-slate-800" />
+                  <img src={coupleImage} alt="커플" className="w-full max-h-64 object-contain bg-slate-800" />
                   <div className="absolute top-2 right-2 flex gap-2">
                     <Button onClick={() => coupleFileInputRef.current?.click()} size="sm" className="bg-black/70 hover:bg-black text-white border-0">
                       <Upload className="w-4 h-4 mr-1" />변경
@@ -1435,21 +1434,12 @@ export default function ProjectWorkspace() {
                       <X className="w-4 h-4" />
                     </Button>
                   </div>
-                  <div className="absolute bottom-0 inset-x-0 bg-black/60 py-2 px-3">
+                  <div className="absolute bottom-0 inset-x-0 bg-black/60 py-1.5 px-3">
                     <p className="text-xs text-slate-300 truncate">{coupleFileName}</p>
                   </div>
                 </div>
               )}
               <input ref={coupleFileInputRef} type="file" accept="image/*" onChange={handleCoupleImageSelect} className="hidden" />
-              <div className="p-3 rounded-lg bg-slate-800/40 border border-slate-700/50">
-                <p className="text-xs text-muted-foreground font-medium mb-1">💡 잘 나오는 사진 조건</p>
-                <div className="grid grid-cols-2 gap-x-4 text-xs text-muted-foreground">
-                  <p>✅ 두 분 얼굴이 잘 보이는 사진</p>
-                  <p>✅ 밝고 선명한 사진</p>
-                  <p>✅ 상반신 이상 나오는 사진</p>
-                  <p>❌ 너무 어둡거나 흐린 사진</p>
-                </div>
-              </div>
             </CardContent>
           </Card>
 

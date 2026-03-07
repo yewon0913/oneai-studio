@@ -299,3 +299,11 @@
 - [x] 커플 합성 핸들러 함수 (handleCoupleImageSelect, handleCoupleGenerate, handleCoupleDownload)
 - [x] TypeScript 에러 0개 확인
 - [x] 브라우저 테스트 완료 (탭 전환 정상 작동)
+
+## v3.39 커플 합성 탭 UI 개선 및 인물 표현 강화
+- [x] ProjectWorkspace 커플 탭에서 "이미지 생성 설정" 섹션 제거
+- [x] "웨딩 배경 선택" 섹션을 커플 합성 탭의 메인 UI로 배치
+- [x] 커플 합성 파이프라인 프롬프트 강화 (인물 표현 키워드 추가)
+- [x] 얼굴 일관성 가중치 증가 (face consistency weight 상향)
+- [x] 커플 생성 테스트 및 인물 표현 품질 검증
+- [x] TypeScript 에러 0개 확인
