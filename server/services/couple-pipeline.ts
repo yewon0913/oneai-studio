@@ -1,3 +1,5 @@
+import { correctImageOrientation } from "./image-orientation";
+
 export interface CoupleResult {
   url: string;
   log: string;
@@ -162,8 +164,25 @@ export async function generateCouplePipeline(
       const bgUrl = await generateBackground(s, aspectRatio);
       stepLog.push("배경생성✅");
 
-      const finalUrl = await enhanceFaces(bgUrl);
+      let finalUrl = await enhanceFaces(bgUrl);
       stepLog.push("후처리✅");
+
+      try {
+        const response = await fetch(finalUrl);
+        const buffer = await response.arrayBuffer();
+        const generatedBase64 = Buffer.from(buffer).toString("base64");
+        const correctedBase64 = await correctImageOrientation(
+          coupleImageBase64,
+          generatedBase64,
+          mimeType,
+          mimeType
+        );
+        const correctedDataUrl = `data:${mimeType};base64,${correctedBase64}`;
+        finalUrl = correctedDataUrl;
+        stepLog.push("방향보정✅");
+      } catch (orientationError) {
+        console.warn(`[couple] Scene ${s} 방향 보정 실패:`, orientationError);
+      }
 
       results.push({ url: finalUrl, log: stepLog.join(" ") });
       console.log(`[couple] Scene ${s} complete`);

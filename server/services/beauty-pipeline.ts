@@ -5,6 +5,7 @@
 
 import { fal } from "@fal-ai/client";
 import { analyzeBeautyImageBase64, BeautyAnalysisResult } from "./beauty-analyzer";
+import { correctImageOrientation } from "./image-orientation";
 
 export interface BeautyGenerateInput {
   imageBase64: string;
@@ -73,9 +74,24 @@ export async function generateBeautyImages(
           } as any,
         });
 
-        const imageUrl = (result as any).data?.images?.[0]?.url;
+        let imageUrl = (result as any).data?.images?.[0]?.url;
         if (imageUrl) {
-          images.push(imageUrl);
+          try {
+            const response = await fetch(imageUrl);
+            const buffer = await response.arrayBuffer();
+            const generatedBase64 = Buffer.from(buffer).toString("base64");
+            const correctedBase64 = await correctImageOrientation(
+              input.imageBase64,
+              generatedBase64,
+              input.mimeType || "image/jpeg",
+              input.mimeType || "image/jpeg"
+            );
+            const correctedDataUrl = `data:${input.mimeType || "image/jpeg"};base64,${correctedBase64}`;
+            images.push(correctedDataUrl);
+          } catch (orientationError) {
+            console.warn(`[Beauty] 이미지 ${i + 1} 방향 보정 실패:`, orientationError);
+            images.push(imageUrl);
+          }
         } else {
           console.warn(`[Beauty] 이미지 ${i + 1} 생성 실패: URL 없음`);
         }
