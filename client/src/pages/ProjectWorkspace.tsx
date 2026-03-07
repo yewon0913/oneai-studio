@@ -1496,6 +1496,51 @@ export default function ProjectWorkspace() {
                 <Textarea value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} className="bg-slate-800 border-slate-700 text-foreground placeholder-slate-500 min-h-16 text-xs" />
               </div>
 
+              {/* AI 이미지 정밀분석 */}
+              {coupleImage && (
+                <div>
+                  <Label className="text-foreground font-semibold mb-2 flex items-center gap-2"><Brain className="w-4 h-4 text-blue-400" />🔍 AI 이미지 정밀분석</Label>
+                  <Button onClick={async () => {
+                    setIsAnalyzing(true);
+                    try {
+                      const mutation = trpc.couple.analyzeCouple.useMutation();
+                      const result = await mutation.mutateAsync({
+                        imageBase64: coupleImage,
+                        mimeType: coupleMimeType
+                      });
+                      setAnalysisResult(result);
+                      setShowAnalysisDetail(true);
+                    } catch (err) {
+                      toast.error("분석 실패. 다시 시도해주세요.");
+                    } finally {
+                      setIsAnalyzing(false);
+                    }
+                  }} disabled={isAnalyzing} className="w-full border-slate-600 text-muted-foreground hover:bg-slate-800">
+                    {isAnalyzing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />분석 중...</> : <>🔍 AI 정밀분석</>}
+                  </Button>
+                  {analysisResult && (
+                    <div className="mt-3 p-3 rounded-lg bg-slate-800/40 border border-slate-700/50">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-medium text-foreground">분석 완료</p>
+                        <button onClick={() => setShowAnalysisDetail(!showAnalysisDetail)} className="text-xs text-blue-400 hover:text-blue-300">
+                          {showAnalysisDetail ? "접기" : "펼치기"}
+                        </button>
+                      </div>
+                      {showAnalysisDetail && (
+                        <div className="space-y-2 text-xs text-muted-foreground">
+                          {Object.entries(analysisResult).map(([key, value]) => (
+                            <div key={key} className="flex justify-between">
+                              <span className="font-medium text-slate-300">{key}:</span>
+                              <span className="text-slate-400">{String(value).slice(0, 50)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* 얼굴 고정 모드 */}
               <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/40 border border-slate-700/50">
                 <Lock className="w-4 h-4 text-muted-foreground" />
@@ -1508,10 +1553,59 @@ export default function ProjectWorkspace() {
                 </button>
               </div>
 
+              {/* 사진 비율 선택 */}
+              <div>
+                <Label className="text-foreground font-semibold mb-2 flex items-center gap-2">📐 사진 비율</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["4:3", "16:9", "1:1"] as const).map(ratio => (
+                    <button key={ratio} onClick={() => setCoupleRatio(ratio)} className={`p-3 rounded-lg border transition-all ${
+                      coupleRatio === ratio
+                        ? "bg-rose-500/20 border-rose-500 text-rose-400"
+                        : "bg-slate-800/40 border-slate-700 text-muted-foreground hover:border-slate-600"
+                    }`}>
+                      <p className="font-semibold">{ratio}</p>
+                      <p className="text-xs">{ratio === "4:3" ? "기본" : ratio === "16:9" ? "와이드" : "정사각"}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 웨딩 배경 선택 */}
+              <div>
+                <Label className="text-foreground font-semibold mb-2 flex items-center gap-2">🌸 웨딩 배경</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { value: "cherry_blossom" as const, label: "벚꽃 정원", emoji: "🌸" },
+                    { value: "chapel" as const, label: "예배당", emoji: "⛪" },
+                  ]).map(bg => (
+                    <button key={bg.value} onClick={() => setCoupleScene(bg.value)} className={`p-3 rounded-lg border transition-all ${
+                      coupleScene === bg.value
+                        ? "bg-rose-500/20 border-rose-500 text-rose-400"
+                        : "bg-slate-800/40 border-slate-700 text-muted-foreground hover:border-slate-600"
+                    }`}>
+                      <p className="text-lg mb-1">{bg.emoji}</p>
+                      <p className="font-semibold text-sm">{bg.label}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* AI 엔진 선택 */}
               <div>
-                <Label className="text-foreground font-semibold mb-2 flex items-center gap-2"><Zap className="w-4 h-4 text-yellow-400" />AI 엔진 일관성 전략</Label>
-                <AIEngineSelector selectedEngines={selectedEngines} onToggleEngine={handleToggleEngine} />
+                <Label className="text-foreground font-semibold mb-2 flex items-center gap-2"><Zap className="w-4 h-4 text-yellow-400" />⚡ AI 엔진</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { value: "flux-dev" as const, label: "FLUX Dev", desc: "고품질 기본" },
+                    { value: "flux-pro" as const, label: "FLUX Pro 1.1", desc: "프리미엄 품질" },
+                  ]).map(engine => (
+                    <button key={engine.value} onClick={() => {
+                      // AI 엔진 선택 로직
+                    }} className="p-3 rounded-lg border bg-slate-800/40 border-slate-700 text-muted-foreground hover:border-slate-600 transition-all">
+                      <p className="font-semibold text-sm text-foreground">{engine.label}</p>
+                      <p className="text-xs text-muted-foreground">{engine.desc}</p>
+                    </button>
+                  ))}
+                </div>
               </div>
             </CardContent>
           </Card>
