@@ -81,12 +81,17 @@ export default function ProjectWorkspace() {
   const [coupleImage, setCoupleImage] = useState<string | null>(null);
   const [coupleFileName, setCoupleFileName] = useState("");
   const [coupleMimeType, setCoupleMimeType] = useState<"image/jpeg"|"image/png"|"image/webp">("image/jpeg");
-  const [coupleScene, setCoupleScene] = useState<"all"|"cherry_blossom"|"chapel"|"garden"|"beach"|"forest"|"palace">("all");
+  const [coupleScene, setCoupleScene] = useState<"cherry_blossom"|"chapel">("cherry_blossom");
   const [coupleRatio, setCoupleRatio] = useState<"4:3"|"16:9"|"1:1">("4:3");
   const [isCoupleGenerating, setIsCoupleGenerating] = useState(false);
   const [coupleCurrStep, setCoupleCurrStep] = useState(-1);
   const [coupleResults, setCoupleResults] = useState<{url:string;log:string}[]>([]);
   const coupleFileInputRef = useRef<HTMLInputElement>(null);
+  
+  // 커플 탭 AI 엔진 선택
+  const [coupleEngine, setCoupleEngine] = useState<"flux-dev" | "flux-pro">("flux-dev");
+  const [coupleComparisonMode, setCoupleComparisonMode] = useState(false);
+  const [coupleComparisonResults, setCoupleComparisonResults] = useState<{dev?: {url:string;log:string}; pro?: {url:string;log:string}}>({});
   const handleToggleEngine = (engineId: AIEngineId) => {
     setSelectedEngines(prev =>
       prev.includes(engineId)
@@ -1659,21 +1664,67 @@ export default function ProjectWorkspace() {
               </div>
 
               {/* AI 엔진 선택 */}
-              <div>
-                <Label className="text-foreground font-semibold mb-2 flex items-center gap-2"><Zap className="w-4 h-4 text-yellow-400" />⚡ AI 엔진</Label>
+              <div className="space-y-3">
+                <Label className="text-foreground font-semibold flex items-center gap-2"><Zap className="w-4 h-4 text-yellow-400" />⚡ AI 엔진 선택</Label>
+                
+                {/* 모드 선택 */}
                 <div className="grid grid-cols-2 gap-2">
-                  {([
-                    { value: "flux-dev" as const, label: "FLUX Dev", desc: "고품질 기본" },
-                    { value: "flux-pro" as const, label: "FLUX Pro 1.1", desc: "프리미엄 품질" },
-                  ]).map(engine => (
-                    <button key={engine.value} onClick={() => {
-                      // AI 엔진 선택 로직
-                    }} className="p-3 rounded-lg border bg-slate-800/40 border-slate-700 text-muted-foreground hover:border-slate-600 transition-all">
-                      <p className="font-semibold text-sm text-foreground">{engine.label}</p>
-                      <p className="text-xs text-muted-foreground">{engine.desc}</p>
-                    </button>
-                  ))}
+                  <button
+                    onClick={() => setCoupleComparisonMode(false)}
+                    className={`p-3 rounded-lg border transition-all ${
+                      !coupleComparisonMode
+                        ? "bg-blue-500/20 border-blue-500 text-blue-300"
+                        : "bg-slate-800/40 border-slate-700 text-muted-foreground hover:border-slate-600"
+                    }`}
+                  >
+                    <p className="font-semibold text-sm">단일 엔진</p>
+                    <p className="text-xs text-muted-foreground/80">한 가지만 선택</p>
+                  </button>
+                  <button
+                    onClick={() => setCoupleComparisonMode(true)}
+                    className={`p-3 rounded-lg border transition-all ${
+                      coupleComparisonMode
+                        ? "bg-purple-500/20 border-purple-500 text-purple-300"
+                        : "bg-slate-800/40 border-slate-700 text-muted-foreground hover:border-slate-600"
+                    }`}
+                  >
+                    <p className="font-semibold text-sm">엔진 비교</p>
+                    <p className="text-xs text-muted-foreground/80">동시 생성 비교</p>
+                  </button>
                 </div>
+
+                {/* 엔진 선택 */}
+                {!coupleComparisonMode && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { value: "flux-dev" as const, label: "FLUX Dev", desc: "고품질 기본" },
+                      { value: "flux-pro" as const, label: "FLUX Pro 1.1", desc: "프리미엄 품질" },
+                    ]).map(engine => (
+                      <button
+                        key={engine.value}
+                        onClick={() => setCoupleEngine(engine.value)}
+                        className={`p-3 rounded-lg border transition-all ${
+                          coupleEngine === engine.value
+                            ? "bg-rose-500/20 border-rose-500 text-rose-400"
+                            : "bg-slate-800/40 border-slate-700 text-muted-foreground hover:border-slate-600"
+                        }`}
+                      >
+                        <p className="font-semibold text-sm text-foreground">{engine.label}</p>
+                        <p className="text-xs text-muted-foreground">{engine.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* 비교 모드 설명 */}
+                {coupleComparisonMode && (
+                  <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                    <p className="text-sm text-purple-300 font-medium mb-2">🔬 엔진 비교 모드</p>
+                    <p className="text-xs text-muted-foreground">
+                      FLUX Dev와 FLUX Pro 1.1을 동시에 생성하여 얼굴 일관성 품질을 비교합니다. 생성 시간이 2배 소요됩니다.
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
