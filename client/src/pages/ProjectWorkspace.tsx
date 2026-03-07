@@ -1447,42 +1447,153 @@ export default function ProjectWorkspace() {
           <Card className="bg-card border-border">
             <CardHeader><CardTitle className="text-foreground flex items-center gap-2"><Sparkles className="h-5 w-5 text-purple-400" />✨ 이미지 생성 설정</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              {/* 참조 이미지 첨부 */}
-              <div>
-                <Label className="text-foreground font-semibold mb-2 flex items-center gap-2"><ImageLucide className="w-4 h-4" />참조 이미지 첨부 (최대 10장)</Label>
-                <div className="flex gap-2 mb-3">
-                  <Button onClick={() => refFileInputRef.current?.click()} variant="outline" className="flex-1 border-slate-600 text-muted-foreground hover:bg-slate-800">
-                    <Upload className="w-4 h-4 mr-2" />파일 첨부
-                  </Button>
-                  {refImages.length > 0 && (
-                    <Button onClick={() => setRefImages([])} variant="outline" size="sm" className="border-slate-600 text-muted-foreground hover:bg-red-900/20">
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-                <input ref={refFileInputRef} type="file" accept="image/*" multiple onChange={(e) => {
-                  const files = Array.from(e.target.files || []);
-                  const newImages = files.slice(0, 10 - refImages.length).map(file => ({
-                    url: URL.createObjectURL(file),
-                    preview: URL.createObjectURL(file),
-                    file
-                  }));
-                  setRefImages([...refImages, ...newImages]);
-                }} className="hidden" />
+              {/* ═══ 참조 이미지 다중 첨부 ═══ */}
+              <div className="space-y-3">
+                <Label className="text-foreground text-sm flex items-center gap-2">
+                  <ImageLucide className="h-3.5 w-3.5 text-primary" />
+                  참조 이미지 첨부
+                  <span className="text-xs text-muted-foreground">(최대 10장)</span>
+                </Label>
+
                 {refImages.length > 0 && (
-                  <div className="flex gap-2 flex-wrap">
+                  <div className="grid grid-cols-3 gap-2 p-3 rounded-lg bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700">
                     {refImages.map((img, idx) => (
-                      <div key={idx} className="relative w-16 h-16 rounded border border-slate-600 overflow-hidden">
-                        <img src={img.preview} alt="ref" className="w-full h-full object-cover" />
-                        <button onClick={() => setRefImages(refImages.filter((_, i) => i !== idx))} className="absolute top-0 right-0 bg-black/70 text-white p-0.5 rounded-bl">
-                          <X className="w-3 h-3" />
+                      <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-slate-600 bg-slate-900 group">
+                        <img 
+                          src={img.preview.startsWith("data:") ? img.preview : img.url} 
+                          alt={`참조 ${idx + 1}`} 
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23333' width='100' height='100'/%3E%3Ctext x='50' y='55' text-anchor='middle' fill='%23999' font-size='12'%3EURL%3C/text%3E%3C/svg%3E";
+                          }}
+                        />
+                        <button
+                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600/90 hover:bg-red-600 flex items-center justify-center shadow-lg z-10"
+                          onClick={() => handleRemoveRefImage(idx)}
+                        >
+                          <X className="h-3 w-3 text-white" />
                         </button>
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
+                          <p className="text-[9px] text-white/80 truncate">{idx + 1}번</p>
+                        </div>
                       </div>
                     ))}
                   </div>
                 )}
-                <p className="text-xs text-muted-foreground/70 mt-2">핀터레스트 링크, 직접 이미지 URL, 또는 파일을 첨부하세요.</p>
+
+                <div className="flex gap-2">
+                  <input
+                    ref={refFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleRefFileSelect}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 gap-1.5 text-xs"
+                    onClick={() => refFileInputRef.current?.click()}
+                    disabled={refImages.length >= 10}
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    파일 첨부
+                  </Button>
+                </div>
+
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="핀터레스트 URL 또는 이미지 URL..."
+                    value={referenceUrl}
+                    onChange={(e) => setReferenceUrl(e.target.value)}
+                    className="text-xs flex-1"
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAddRefUrl(); }}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddRefUrl}
+                    disabled={!referenceUrl.trim() || refImages.length >= 10}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  핀터레스트 링크, 직접 이미지 URL, 또는 파일을 첨부하세요.
+                </p>
               </div>
+
+              {/* ═══ AI 이미지 정밀 분석 (Anthropic Claude) ═══ */}
+              {refImages.length > 0 && (
+                <div className="space-y-2 p-3 rounded-lg bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-foreground text-sm flex items-center gap-2">
+                      <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+                      AI 이미지 정밀 분석
+                    </Label>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-xs border-amber-500/30 hover:bg-amber-500/10"
+                      onClick={handleAnalyzeReferenceImage}
+                      disabled={isAnalyzing}
+                    >
+                      {isAnalyzing ? (
+                        <><Loader2 className="h-3 w-3 animate-spin" />⛳ AI 분석 중... (5~10초)</>
+                      ) : (
+                        <>🔬 AI 이미지 정밀 분석 → 프롬프트 자동생성</>
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Anthropic Claude가 카메라, 조명, 피부, 의상, 포즈, 표정, 배경 등 15가지 카테고리를 분석하여 최적화된 프롬프트를 생성합니다.
+                  </p>
+
+                  {analysisResult && (
+                    <div className="space-y-2 mt-2">
+                      <div className="p-2 rounded bg-green-500/10 border border-green-500/20">
+                        <p className="text-xs text-green-300">✅ 메인/네거티브 프롬프트에 자동 입력됐어요</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="w-full gap-1.5 text-xs text-amber-300 hover:bg-amber-500/10"
+                        onClick={() => setShowAnalysisDetail(!showAnalysisDetail)}
+                      >
+                        {showAnalysisDetail ? "▲ 15가지 분석 결과 접기" : "▼ 15가지 분석 결과 펼치기"}
+                      </Button>
+                      {showAnalysisDetail && analysisResult.analysis && (
+                        <div className="grid grid-cols-1 gap-1.5 text-[10px]">
+                          {[
+                            { icon: "📷", label: "카메라", key: "camera" },
+                            { icon: "💡", label: "조명", key: "lighting" },
+                            { icon: "🔬", label: "피부", key: "skin" },
+                            { icon: "👗", label: "의상", key: "outfit" },
+                            { icon: "🤸", label: "포즈", key: "pose" },
+                            { icon: "👁️", label: "표정", key: "expression" },
+                            { icon: "🌅", label: "배경", key: "background" },
+                            { icon: "✨", label: "분위기", key: "mood" },
+                            { icon: "💨", label: "움직임", key: "movement" },
+                            { icon: "📐", label: "공간감", key: "space" },
+                            { icon: "🕐", label: "시간날씨", key: "time" },
+                            { icon: "🌟", label: "광학효과", key: "optical" },
+                            { icon: "🖼️", label: "구도", key: "composition" },
+                            { icon: "🎨", label: "색보정", key: "colorGrade" },
+                            { icon: "💭", label: "내면감정", key: "innerState" },
+                          ].map(({ icon, label, key }) => (
+                            <div key={key} className="flex gap-1.5 p-1.5 rounded bg-black/20 border border-border/50">
+                              <span className="shrink-0">{icon}</span>
+                              <span className="text-amber-300 font-medium shrink-0">{label}:</span>
+                              <span className="text-foreground/80">{(analysisResult.analysis as any)[key] || "-"}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 메인 프롬프트 */}
               <div>
@@ -1496,50 +1607,7 @@ export default function ProjectWorkspace() {
                 <Textarea value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} className="bg-slate-800 border-slate-700 text-foreground placeholder-slate-500 min-h-16 text-xs" />
               </div>
 
-              {/* AI 이미지 정밀분석 */}
-              {coupleImage && (
-                <div>
-                  <Label className="text-foreground font-semibold mb-2 flex items-center gap-2"><Brain className="w-4 h-4 text-blue-400" />🔍 AI 이미지 정밀분석</Label>
-                  <Button onClick={async () => {
-                    setIsAnalyzing(true);
-                    try {
-                      const mutation = trpc.couple.analyzeCouple.useMutation();
-                      const result = await mutation.mutateAsync({
-                        imageBase64: coupleImage,
-                        mimeType: coupleMimeType
-                      });
-                      setAnalysisResult(result);
-                      setShowAnalysisDetail(true);
-                    } catch (err) {
-                      toast.error("분석 실패. 다시 시도해주세요.");
-                    } finally {
-                      setIsAnalyzing(false);
-                    }
-                  }} disabled={isAnalyzing} className="w-full border-slate-600 text-muted-foreground hover:bg-slate-800">
-                    {isAnalyzing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />분석 중...</> : <>🔍 AI 정밀분석</>}
-                  </Button>
-                  {analysisResult && (
-                    <div className="mt-3 p-3 rounded-lg bg-slate-800/40 border border-slate-700/50">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm font-medium text-foreground">분석 완료</p>
-                        <button onClick={() => setShowAnalysisDetail(!showAnalysisDetail)} className="text-xs text-blue-400 hover:text-blue-300">
-                          {showAnalysisDetail ? "접기" : "펼치기"}
-                        </button>
-                      </div>
-                      {showAnalysisDetail && (
-                        <div className="space-y-2 text-xs text-muted-foreground">
-                          {Object.entries(analysisResult).map(([key, value]) => (
-                            <div key={key} className="flex justify-between">
-                              <span className="font-medium text-slate-300">{key}:</span>
-                              <span className="text-slate-400">{String(value).slice(0, 50)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+
 
               {/* 얼굴 고정 모드 */}
               <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/40 border border-slate-700/50">
