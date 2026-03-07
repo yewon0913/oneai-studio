@@ -130,10 +130,10 @@ export default function Couple() {
 
   const handleRefFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const remaining = 10 - refImages.length;
+    const remaining = 1 - refImages.length;
 
     if (remaining <= 0) {
-      toast.error("참조 이미지는 최대 10장입니다");
+      toast.error("참조 이미지는 1장만 가능합니다");
       return;
     }
 
@@ -299,13 +299,13 @@ export default function Couple() {
                     {analyzeMutation.data && (
                       <div className="flex gap-2 mt-2 flex-wrap">
                         <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">
-                          {analyzeMutation.data.style}
+                          조명: {analyzeMutation.data.analysis?.lighting?.substring(0, 12)}...
                         </span>
                         <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">
-                          {analyzeMutation.data.mood}
+                          분위기: {analyzeMutation.data.analysis?.mood?.substring(0, 12)}...
                         </span>
                         <span className="text-xs bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded">
-                          추천: {analyzeMutation.data.suggestion}
+                          ✨ 15가지 분석 완료
                         </span>
                       </div>
                     )}
@@ -355,15 +355,15 @@ export default function Couple() {
             <div className="flex items-center justify-between">
               <CardTitle className="text-white">
                 📸 참조 이미지{" "}
-                <span className="text-sm font-normal text-slate-500">(선택, 최대 10장)</span>
+                <span className="text-sm font-normal text-slate-500">(선택, 1장 분석용)</span>
               </CardTitle>
               <span className="text-xs text-slate-500">
-                {refImages.length}/10
+                {refImages.length}/1
               </span>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {refImages.map((img, idx) => (
                 <div
                   key={idx}
@@ -382,7 +382,7 @@ export default function Couple() {
                   </button>
                 </div>
               ))}
-              {refImages.length < 10 && (
+              {refImages.length < 1 && (
                 <div
                   onClick={() => refImgRef.current?.click()}
                   className="aspect-square rounded-lg border-2 border-dashed border-slate-600 hover:border-rose-500/50 cursor-pointer flex items-center justify-center transition-colors bg-slate-800/30"
@@ -419,6 +419,51 @@ export default function Couple() {
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
+            {/* AI 정밀분석 버튼 */}
+            {refImages.length > 0 && (
+              <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/30">
+                <Button
+                  onClick={async () => {
+                    if (refImages.length === 0) {
+                      toast.error("참조 이미지를 업로드해주세요");
+                      return;
+                    }
+                    try {
+                      const result = await analyzeMutation.mutateAsync({
+                        imageBase64: refImages[0].base64,
+                        mimeType,
+                      });
+                      // 분석 결과 프롬프트 적용
+                      setPrompt(result.prompt);
+                      setNegativePrompt(result.negativePrompt);
+                      // 분석 완료 후 참조 이미지 자동 삭제
+                      setRefImages([]);
+                      toast.success("✨ 15가지 분석 완료! 프롬프트가 자동 적용되었습니다");
+                    } catch (err) {
+                      toast.error("분석 실패. 다시 시도해주세요");
+                    }
+                  }}
+                  disabled={analyzeMutation.isPending}
+                  className="w-full bg-gradient-to-r from-purple-600 to-rose-600 hover:from-purple-700 hover:to-rose-700 text-white"
+                >
+                  {analyzeMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      AI 분석 중...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      🔍 AI 정밀분석 (15가지 카테고리)
+                    </>
+                  )}
+                </Button>
+                <p className="text-xs text-slate-500 mt-2">
+                  참조 이미지를 분석하여 메인/네거티브 프롬프트를 자동 생성합니다
+                </p>
+              </div>
+            )}
+
             <div>
               <label className="text-sm text-slate-400 mb-2 block">
                 📝 메인 프롬프트

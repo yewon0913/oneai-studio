@@ -368,3 +368,18 @@
   - 네거티브: 가중치 상향 (1.5 → 2.0) 및 새 키워드 추가 (face change, different face, face swap, altered face, unrecognizable face, face modification, wrong face)
 - [x] 모든 테스트 통과 (75/75)
 - [x] TypeScript 에러 0개
+
+
+## v3.44 커플촬영 AI 정밀이미지분석 기능 추가 (15가지 카테고리)
+- [x] couple-router.ts analyzeCouple 확장 - 15가지 분석 (image-analyzer 활용)
+- [x] Couple.tsx 참조 이미지 최대 1장으로 제한
+- [x] Couple.tsx 참조 이미지 영역에 "🔍 AI 정밀분석" 버튼 추가
+- [x] analyzeCouple 엔드포인트 호출 (첫 번째 참조 이미지 분석)
+- [x] 분석 결과 (15가지 카테고리) 배지 표시 (조명, 분위기 샘플)
+- [x] 분석 결과 → 메인 프롬프트 자동 생성 및 입력 필드에 적용
+- [x] 분석 결과 → 네거티브 프롬프트 자동 생성 및 입력 필드에 적용
+- [x] 분석 완료 후 참조 이미지 자동 삭제
+- [x] 로딩 상태 표시 (분석 중 UI 피드백 - "AI 분석 중...")
+- [x] 에러 핸들링 (분석 실패 시 토스트 메시지)
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75/75 통과
