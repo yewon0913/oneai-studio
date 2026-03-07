@@ -224,12 +224,10 @@ export async function generateCouplePipeline(
   customPrompt?: string,
   customNegativePrompt?: string,
   engine?: string,
-  faceLock?: boolean,
-  refImages?: Array<{ base64: string; name: string }>
+  faceLock?: boolean
 ): Promise<CoupleResult[]> {
   console.log("[couple] ===== Pipeline Start =====");
   console.log("[couple] Scene:", scene, "Ratio:", aspectRatio, "Engine:", engine, "FaceLock:", faceLock);
-  console.log("[couple] RefImages count:", refImages?.length || 0);
 
   const results: CoupleResult[] = [];
 
@@ -237,20 +235,7 @@ export async function generateCouplePipeline(
 
   const subjectUrl = await removeBackground(coupleUrl);
 
-  // 참조 이미지 업로드 (있으면)
   const refImageUrls: string[] = [];
-  if (refImages && refImages.length > 0) {
-    console.log("[couple] Uploading reference images...");
-    for (let i = 0; i < Math.min(refImages.length, 5); i++) {
-      try {
-        const refUrl = await uploadToFal(refImages[i].base64, mimeType);
-        refImageUrls.push(refUrl);
-        console.log(`[couple] Ref image ${i + 1} uploaded`);
-      } catch (err) {
-        console.warn(`[couple] Failed to upload ref image ${i + 1}:`, err);
-      }
-    }
-  }
 
   const scenes = scene === "all"
     ? ["cherry_blossom", "chapel"]
@@ -259,16 +244,16 @@ export async function generateCouplePipeline(
   for (const s of scenes) {
     const stepLog: string[] = ["배경제거✅"];
     try {
-      // 배경 생성 시 고객 사진 + 참조 이미지 전달
+      // 배경 생성
       const bgUrl = await generateBackground({
         scene: s,
         aspectRatio,
-        coupleImageUrl: coupleUrl, // 고객 사진를 originalImages로 전달
+        coupleImageUrl: coupleUrl,
         customPrompt,
         customNegativePrompt,
         engine,
         faceLock,
-        refImageUrls, // 참조 이미지 추가
+        refImageUrls,
       });
       stepLog.push("배경생성✅");
 

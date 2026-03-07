@@ -392,6 +392,15 @@
 - [x] 프롬프트에 얼굴 보존 키워드 강화로 대체
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 75/75 통과
+- [x] 개발 서버 재시작 완료
 - [ ] 수동 테스트: Flux Dev + faceLock ON으로 생성 후 얼굴 일치도 확인
 - [ ] 수동 테스트: Flux Pro 1.1로 생성 후 품질 비교
 - [ ] 수동 테스트: 에러 메시지 없는지 확인
+
+
+## v3.46 Couple 사진 1장 배경 분석 시스템
+- [x] Couple.tsx 간소화 (커플 사진 1장만 업로드)
+- [x] couple-router.ts analyzeCouple 엔드포인트 추가 (배경만 분석)
+- [x] couple-pipeline.ts 수정 (참조 이미지 파라미터 제거)
+- [x] TypeScript 에러 0개
+- [x] 테스트 75/75 통과
