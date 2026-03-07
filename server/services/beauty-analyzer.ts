@@ -110,19 +110,19 @@ const BEAUTY_ANALYSIS_DATA = {
 const CATEGORY_TEMPLATES: Record<string, Record<string, string>> = {
   skincare: {
     positive: "glass skin, dewy fresh, water droplets, Laneige Sulwhasoo style, hydrated skin, luminous complexion, skin texture visible, pores visible, natural skin, photorealistic skin",
-    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4), (digital art:1.5), (illustration:1.5), (painting:1.5)",
+    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4), illustration, digital art, painting, anime, cartoon, fake skin, airbrushed",
   },
   makeup: {
     positive: "flawless foundation, visible pores, Korean beauty, 3CE Romand style, precise makeup, editorial makeup, skin texture visible, natural skin pores, photorealistic makeup",
-    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4), (digital art:1.5), (illustration:1.5), (painting:1.5)",
+    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4), illustration, digital art, painting, anime, cartoon, fake skin, airbrushed",
   },
   luxury: {
     positive: "dramatic lighting, luxury beauty brand, Chanel Dior editorial, high fashion, luxury campaign, sophisticated, skin texture visible, natural skin pores, photorealistic luxury",
-    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4), (digital art:1.5), (illustration:1.5), (painting:1.5)",
+    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4), illustration, digital art, painting, anime, cartoon, fake skin, airbrushed",
   },
   natural: {
     positive: "fresh no-makeup glow, natural light, vitamin skin, organic beauty, clean beauty, minimal makeup, skin texture visible, natural skin pores, photorealistic natural",
-    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4), (digital art:1.5), (illustration:1.5), (painting:1.5)",
+    negative: "(plastic skin:1.6), (airbrushed:1.6), (smooth skin:1.5), (porcelain skin:1.5), (wax skin:1.5), (beauty filter:1.5), (no pores:1.5), (blurred skin:1.4), illustration, digital art, painting, anime, cartoon, fake skin, airbrushed",
   },
 };
 
@@ -177,7 +177,7 @@ function buildBeautyPrompt(
 
   const categoryTags = CATEGORY_TEMPLATES[category].positive + ", photorealistic quality";
   const qualityTags =
-    "photorealistic, 8K ultra detail, RAW photo, medium format, beauty campaign, film grain ISO 200, shot on Sony A7R V, 85mm f/1.4, skin texture visible, natural skin pores, subsurface scattering, NOT illustration, NOT digital art, NOT painting, professional beauty photography, studio lighting, color graded, editorial quality";
+    "shot on Sony A7R V, 85mm f/1.4, RAW photo, photorealistic, 8K ultra detail, medium format, beauty campaign, film grain ISO 200, skin pores visible, natural skin texture, subsurface scattering, NOT illustration, NOT digital art, NOT painting, NOT AI generated, professional beauty photography, studio lighting, color graded, editorial quality";
 
   const finalPrompt = [
     "Korean beauty model, 20s, photorealistic portrait,",

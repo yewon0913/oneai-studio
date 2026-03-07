@@ -1443,60 +1443,85 @@ export default function ProjectWorkspace() {
             </CardContent>
           </Card>
 
-          {/* 웨딩 배경 선택 */}
+          {/* 이미지 생성 설정 */}
           <Card className="bg-card border-border">
-            <CardHeader><CardTitle className="text-foreground">🏞️ 웨딩 배경 선택</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-foreground flex items-center gap-2"><Sparkles className="h-5 w-5 text-purple-400" />✨ 이미지 생성 설정</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {([
-                  { key: "all", emoji: "✨", label: "전체 4장", sub: "모든 배경" },
-                  { key: "cherry_blossom", emoji: "🌸", label: "벚꽃 정원", sub: "로맨틱" },
-                  { key: "chapel", emoji: "⛪", label: "고급 채플", sub: "우아함" },
-                  { key: "garden", emoji: "🌿", label: "야외 정원", sub: "자연" },
-                  { key: "beach", emoji: "🌅", label: "해변 노을", sub: "골든아워" },
-                  { key: "forest", emoji: "🌲", label: "숲속", sub: "동화같은" },
-                  { key: "palace", emoji: "🏰", label: "유럽 궁전", sub: "럭셔리" },
-                ] as const).map((s) => (
-                  <button key={s.key} onClick={() => setCoupleScene(s.key)}
-                    className={`p-3 rounded-lg text-center border transition-all ${
-                      coupleScene === s.key ? "bg-rose-500/20 border-rose-500/60 text-foreground scale-105" : "bg-slate-800 border-slate-700 text-muted-foreground hover:border-slate-600"
-                    }`}>
-                    <div className="text-2xl mb-1">{s.emoji}</div>
-                    <div className="text-xs font-semibold">{s.label}</div>
-                    <div className="text-xs opacity-60 mt-0.5">{s.sub}</div>
-                  </button>
-                ))}
-              </div>
+              {/* 참조 이미지 첨부 */}
               <div>
-                <p className="text-sm text-muted-foreground mb-2">사진 비율</p>
-                <div className="flex gap-2">
-                  {([
-                    { key: "4:3", label: "4:3", sub: "기본" },
-                    { key: "16:9", label: "16:9", sub: "와이드" },
-                    { key: "1:1", label: "1:1", sub: "정사각" },
-                  ] as const).map((r) => (
-                    <button key={r.key} onClick={() => setCoupleRatio(r.key)}
-                      className={`px-4 py-2 rounded-lg text-sm border transition-all ${
-                        coupleRatio === r.key ? "bg-rose-500/20 border-rose-500/60 text-rose-300" : "bg-slate-800 border-slate-700 text-muted-foreground"
-                      }`}>
-                      {r.label}<span className="block text-xs opacity-60">{r.sub}</span>
-                    </button>
-                  ))}  
+                <Label className="text-foreground font-semibold mb-2 flex items-center gap-2"><ImageLucide className="w-4 h-4" />참조 이미지 첨부 (최대 10장)</Label>
+                <div className="flex gap-2 mb-3">
+                  <Button onClick={() => refFileInputRef.current?.click()} variant="outline" className="flex-1 border-slate-600 text-muted-foreground hover:bg-slate-800">
+                    <Upload className="w-4 h-4 mr-2" />파일 첨부
+                  </Button>
+                  {refImages.length > 0 && (
+                    <Button onClick={() => setRefImages([])} variant="outline" size="sm" className="border-slate-600 text-muted-foreground hover:bg-red-900/20">
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
                 </div>
+                <input ref={refFileInputRef} type="file" accept="image/*" multiple onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  const newImages = files.slice(0, 10 - refImages.length).map(file => ({
+                    url: URL.createObjectURL(file),
+                    preview: URL.createObjectURL(file),
+                    file
+                  }));
+                  setRefImages([...refImages, ...newImages]);
+                }} className="hidden" />
+                {refImages.length > 0 && (
+                  <div className="flex gap-2 flex-wrap">
+                    {refImages.map((img, idx) => (
+                      <div key={idx} className="relative w-16 h-16 rounded border border-slate-600 overflow-hidden">
+                        <img src={img.preview} alt="ref" className="w-full h-full object-cover" />
+                        <button onClick={() => setRefImages(refImages.filter((_, i) => i !== idx))} className="absolute top-0 right-0 bg-black/70 text-white p-0.5 rounded-bl">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground/70 mt-2">핀터레스트 링크, 직접 이미지 URL, 또는 파일을 첨부하세요.</p>
               </div>
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-slate-800/40 border border-slate-700/50">
-                <span className="text-muted-foreground text-sm">⏱️ 예상 소요시간:</span>
-                <span className="text-foreground text-sm font-semibold">{coupleScene === "all" ? "약 5~8분" : "약 2~3분"}</span>
+
+              {/* 메인 프롬프트 */}
+              <div>
+                <Label className="text-foreground font-semibold mb-2">메인 프롬프트 (참조 이미지 사용 시 선택사항)</Label>
+                <Textarea placeholder="유럽 정원에서 웨딩 드레스를 입은 로맨틱한 웨딩 사진, 골든아워 조명..." value={promptText} onChange={(e) => setPromptText(e.target.value)} className="bg-slate-800 border-slate-700 text-foreground placeholder-slate-500 min-h-20" />
+              </div>
+
+              {/* 네거티브 프롬프트 */}
+              <div>
+                <Label className="text-foreground font-semibold mb-2">네거티브 프롬프트</Label>
+                <Textarea value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} className="bg-slate-800 border-slate-700 text-foreground placeholder-slate-500 min-h-16 text-xs" />
+              </div>
+
+              {/* 얼굴 고정 모드 */}
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-800/40 border border-slate-700/50">
+                <Lock className="w-4 h-4 text-muted-foreground" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-foreground">얼굴 고정 모드</p>
+                  <p className="text-xs text-muted-foreground">고객 얼굴을 최대한 동일하게 합성 (100% 목표)</p>
+                </div>
+                <button onClick={() => setFaceFixMode(!faceFixMode)} className={`relative w-12 h-6 rounded-full transition-colors ${faceFixMode ? "bg-emerald-600" : "bg-slate-700"}`}>
+                  <div className={`absolute w-5 h-5 bg-white rounded-full transition-transform ${faceFixMode ? "translate-x-6" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+
+              {/* AI 엔진 선택 */}
+              <div>
+                <Label className="text-foreground font-semibold mb-2 flex items-center gap-2"><Zap className="w-4 h-4 text-yellow-400" />AI 엔진 일관성 전략</Label>
+                <AIEngineSelector selectedEngines={selectedEngines} onToggleEngine={handleToggleEngine} />
               </div>
             </CardContent>
           </Card>
 
           {coupleImage && (
             <Button onClick={handleCoupleGenerate} disabled={isCoupleGenerating}
-              className="w-full bg-gradient-to-r from-rose-600 to-pink-500 hover:from-rose-700 hover:to-pink-600 text-white font-semibold py-6 text-lg">
+              className="w-full bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-semibold py-6 text-lg">
               {isCoupleGenerating
-                ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" />배경 합성 중... ({coupleScene === "all" ? "약 5~8분" : "약 2~3분"})</>
-                : <><Heart className="w-5 h-5 mr-2 fill-white" />웨딩 사진 만들기</>
+                ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" />이미지 생성 중...</>
+                : <><Sparkles className="w-5 h-5 mr-2" />커플 이미지 생성</>
               }
             </Button>
           )}
