@@ -79,6 +79,8 @@ export default function Couple() {
   const [currentStep, setCurrentStep] = useState(-1);
   const [results, setResults] = useState<{ url: string; log: string }[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [showAnalysisDetail, setShowAnalysisDetail] = useState(false);
 
   const coupleRef = useRef<HTMLInputElement>(null);
 
@@ -120,6 +122,8 @@ export default function Couple() {
         
         if (analysis.prompt) {
           setPrompt(prev => `${analysis.prompt}, ${prev}`);
+          setAnalysisResult(analysis);
+          setShowAnalysisDetail(false);
           toast.success("배경 분석 완료! 프롬프트가 자동으로 채워졌어요 ✨");
         }
       } catch (err) {
@@ -357,6 +361,57 @@ export default function Couple() {
                 />
               </button>
             </div>
+
+            {/* AI 이미지 정밀 분석 */}
+            {analysisResult && (
+              <div className="space-y-2 p-3 rounded-lg bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20">
+                <div className="flex items-center justify-between">
+                  <label className="text-slate-300 text-sm flex items-center gap-2">
+                    <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+                    AI 이미지 정밀 분석
+                  </label>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Anthropic Claude가 배경, 조명, 분위기, 장소 등을 분석하여 최적화된 프롬프트를 생성했습니다.
+                </p>
+                <div className="p-2 rounded bg-green-500/10 border border-green-500/20 mt-2">
+                  <p className="text-xs text-green-300">✅ 배경 분석 결과가 메인 프롬프트에 자동 입력되었어요</p>
+                </div>
+                <button
+                  onClick={() => setShowAnalysisDetail(!showAnalysisDetail)}
+                  className="w-full gap-1.5 text-xs text-amber-300 hover:bg-amber-500/10 p-2 rounded mt-2 flex items-center justify-center"
+                >
+                  {showAnalysisDetail ? "▲ 분석 결과 접기" : "▼ 분석 결과 펼치기"}
+                </button>
+                {showAnalysisDetail && analysisResult.analysis && (
+                  <div className="grid grid-cols-1 gap-1.5 text-[10px] mt-2">
+                    {[
+                      { icon: "📷", label: "카메라", key: "camera" },
+                      { icon: "💡", label: "조명", key: "lighting" },
+                      { icon: "🔬", label: "피부", key: "skin" },
+                      { icon: "👗", label: "의상", key: "outfit" },
+                      { icon: "🤸", label: "포즈", key: "pose" },
+                      { icon: "👁️", label: "표정", key: "expression" },
+                      { icon: "🌅", label: "배경", key: "background" },
+                      { icon: "✨", label: "분위기", key: "mood" },
+                      { icon: "💨", label: "움직임", key: "movement" },
+                      { icon: "📐", label: "공간감", key: "space" },
+                      { icon: "🕐", label: "시간날씨", key: "time" },
+                      { icon: "🌟", label: "광학효과", key: "optical" },
+                      { icon: "🖼️", label: "구도", key: "composition" },
+                      { icon: "🎨", label: "색보정", key: "colorGrade" },
+                      { icon: "💭", label: "내면감정", key: "innerState" },
+                    ].map(({ icon, label, key }) => (
+                      <div key={key} className="flex gap-1.5 p-1.5 rounded bg-black/20 border border-slate-700">
+                        <span className="shrink-0">{icon}</span>
+                        <span className="text-amber-300 font-medium shrink-0">{label}:</span>
+                        <span className="text-slate-300">{(analysisResult.analysis as any)[key] || "-"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 프롬프트 */}
             <div>

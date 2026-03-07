@@ -42,10 +42,10 @@ export const coupleRouter = router({
       const Anthropic = (await import("@anthropic-ai/sdk")).default;
       const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-      // 배경만 분석 (커플 인물은 분석 안 함)
+      // 15가지 카테고리 분석 (개인촬영과 동일)
       const response = await client.messages.create({
         model: "claude-opus-4-5",
-        max_tokens: 512,
+        max_tokens: 1024,
         messages: [{
           role: "user",
           content: [
@@ -55,15 +55,27 @@ export const coupleRouter = router({
             },
             {
               type: "text",
-              text: `이 커플 사진의 배경만 분석해서 배경 생성에 최적화된 영어 프롬프트를 만들어줘.
-배경의 분위기, 조명, 색감, 장소, 계절, 날씨 등을 분석하세요.
+              text: `이 커플 사진을 분석해서 웨딩 사진 생성에 최적화된 영어 프롬프트를 만들어줘.
+Anthropic Claude가 15가지 카테고리를 분석하여 최적화된 프롬프트를 생성합니다.
 
 JSON 형식으로만 응답해:
 {
-  "backgroundPrompt": "배경 생성용 영어 프롬프트 (50단어 이내, 배경만 설명)",
-  "lighting": "감지된 조명 (한국어)",
-  "atmosphere": "감지된 분위기 (한국어)",
-  "location": "감지된 장소 (한국어)"
+  "prompt": "웨딩 배경 합성에 쓸 영어 프롬프트 (배경, 조명, 분위기 포함, 50단어 이내)",
+  "camera": "카메라 설정 (렌즈, 조리개 등)",
+  "lighting": "조명 (자연광, 스튜디오 조명 등)",
+  "skin": "피부톤 (따뜻한, 차가운 등)",
+  "outfit": "의상 스타일",
+  "pose": "포즈 (자연스러운, 정형적 등)",
+  "expression": "표정 (밝은, 차분한 등)",
+  "background": "배경 (실내, 실외, 자연 등)",
+  "mood": "분위기 (로맨틱, 우아한 등)",
+  "movement": "움직임 (정적, 동적 등)",
+  "space": "공간감 (넓은, 좁은 등)",
+  "time": "시간/날씨 (황금시간, 흐린 날씨 등)",
+  "optical": "광학효과 (보케, 플레어 등)",
+  "composition": "구도 (대칭, 비대칭 등)",
+  "colorGrade": "색감 (따뜻한, 차가운 등)",
+  "innerState": "내면감정 (행복, 차분 등)"
 }`
             }
           ]
@@ -72,15 +84,27 @@ JSON 형식으로만 응답해:
 
       const text = response.content[0].type === "text" ? response.content[0].text : "";
       const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("배경 분석 파싱 실패");
+      if (!jsonMatch) throw new Error("분석 파싱 실패");
       
       const analysis = JSON.parse(jsonMatch[0]);
       return {
-        prompt: analysis.backgroundPrompt || "",
+        prompt: analysis.prompt || "",
         analysis: {
+          camera: analysis.camera,
           lighting: analysis.lighting,
-          atmosphere: analysis.atmosphere,
-          location: analysis.location,
+          skin: analysis.skin,
+          outfit: analysis.outfit,
+          pose: analysis.pose,
+          expression: analysis.expression,
+          background: analysis.background,
+          mood: analysis.mood,
+          movement: analysis.movement,
+          space: analysis.space,
+          time: analysis.time,
+          optical: analysis.optical,
+          composition: analysis.composition,
+          colorGrade: analysis.colorGrade,
+          innerState: analysis.innerState,
         }
       };
     }),
