@@ -257,6 +257,13 @@ export default function Home() {
       color: "from-amber-600/20 to-yellow-800/20",
     },
     {
+      title: "💑 커플 합성",
+      description: "신부·신랑 사진으로 웨딩 커플 사진 생성",
+      icon: Sparkles,
+      href: "/couple",
+      color: "from-rose-600/20 to-pink-800/20",
+    },
+    {
       title: "AI 템플릿 갤러리",
       description: "Flux, Kling, Runway 등 최신 템플릿",
       icon: Sparkles,

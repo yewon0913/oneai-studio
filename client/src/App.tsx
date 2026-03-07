@@ -19,6 +19,7 @@ const ClientPreview = lazy(() => import("./pages/ClientPreview"));
 const Invitation = lazy(() => import("./pages/Invitation"));
 const BeautyPage = lazy(() => import("./pages/Beauty"));
 const MemoryPage = lazy(() => import("./pages/Memory"));
+const CouplePage = lazy(() => import("./pages/Couple"));
 
 function PageLoader() {
   return (
@@ -48,6 +49,7 @@ function Router() {
         <Route path="/invitation/:projectId" component={Invitation} />
         <Route path="/beauty" component={BeautyPage} />
         <Route path="/memory" component={MemoryPage} />
+        <Route path="/couple" component={CouplePage} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

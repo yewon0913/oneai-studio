@@ -13,6 +13,7 @@ import { nanoid } from "nanoid";
 import { MERCHANDISE_FORMATS, type MerchandiseFormatKey } from "../drizzle/schema";
 import { beautyRouter } from "./routers/beauty-router";
 import { memoryRouter } from "./routers/memory-router";
+import { coupleRouter } from "./routers/couple-router";
 
 // ─── 핀터레스트/외부 URL에서 실제 이미지를 다운로드하여 base64로 변환 ───
 async function resolveImageToBase64(url: string): Promise<{ b64Json: string; mimeType: string } | null> {
@@ -797,60 +798,27 @@ IMPORTANT RULES:
       }),
 
     // ─── 커플 전용 파이프라인 (v3.9) ───
-    generateCouple: protectedProcedure
+    generateCouple: publicProcedure
       .input(z.object({
-        projectId: z.number(),
-        promptText: z.string(),
-        brideClientId: z.number(),
-        groomClientId: z.number().nullable(),
-        attempts: z.number().default(3),
+        coupleImageBase64: z.string(),
+        mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]).default("image/jpeg"),
+        scene: z.enum(["cherry_blossom", "chapel", "garden", "beach", "forest", "palace", "all"]).default("cherry_blossom"),
+        aspectRatio: z.enum(["4:3", "16:9", "1:1"]).default("4:3"),
       }))
-      .mutation(async ({ ctx, input }) => {
-        // 신랑 고객 연결 확인
-        if (!input.groomClientId) {
-          throw new Error("신랑 고객을 먼저 연결해주세요");
-        }
-
-        // 신부 사진 (front 우선, 없으면 첫 번째 사진)
-        const bridePhotos = await db.getClientPhotos(input.brideClientId);
-        const bridePhoto = bridePhotos.find(p => p.photoType === "front") || bridePhotos[0];
-        if (!bridePhoto) throw new Error("신부 사진이 없습니다. 사진을 먼저 업로드해주세요.");
-
-        // 신랑 사진 (front 우선, 없으면 첫 번째 사진)
-        const groomPhotos = await db.getClientPhotos(input.groomClientId);
-        const groomPhoto = groomPhotos.find(p => p.photoType === "front") || groomPhotos[0];
-        if (!groomPhoto) throw new Error("신랑 사진이 없습니다. 사진을 먼저 업로드해주세요.");
-
-        // 커플 파이프라인 실행 (3장 생성)
+      .mutation(async ({ input }) => {
+        // 커플 파이프라인 실행 (배경 제거 + 배경 생성)
         const { generateCouplePipeline } = await import(
           './services/couple-pipeline'
         );
         const resultUrls = await generateCouplePipeline(
-          input.promptText,
-          bridePhoto.originalUrl,
-          groomPhoto.originalUrl,
-          input.attempts,
+          input.coupleImageBase64 || '',
+          input.mimeType || 'image/jpeg',
+          input.scene || 'cherry_blossom',
+          input.aspectRatio || '4:3',
         );
 
-        // 각 결과를 generation으로 저장 (단계별 로그 포함)
-        const saved = [];
-        for (const result of resultUrls) {
-          const gen = await db.createGeneration({
-            projectId: input.projectId,
-            promptText: input.promptText,
-            resultImageUrl: result.url,
-            status: "completed",
-            stage: "draft",
-            faceConsistencyScore: 75,
-            reviewNotes: result.log,
-          });
-          saved.push(gen);
-        }
-
         return {
-          count: saved.length,
-          generations: saved,
-          message: `${saved.length}장 생성됨. 가장 잘 나온 걸 선택하세요.`,
+          images: resultUrls.map((r) => ({ url: r.url, log: r.log })),
         };
       }),
 
@@ -1241,6 +1209,7 @@ JSON 배열로만 답해 (다른 텍스트 없이):
   // ─── Beauty Branding Module ───
   beauty: beautyRouter,
   memory: memoryRouter,
+  couple: coupleRouter,
 });
 
 // ─── 영상 생성 비동기 처리 ───

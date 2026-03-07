@@ -281,3 +281,21 @@
 - [x] 프롬프트 정제 로직 추가 (중복 쉼표/공백 제거)
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 75개 통과 확인
+
+## v3.38 ProjectWorkspace 탭 시스템 추가
+- [x] ProjectWorkspace.tsx에 탭 시스템 추가 (생성 결과 / 💑 커플 합성)
+- [x] activeTab 상태 관리 추가 (React.useState)
+- [x] 탭 버튼 UI 구현 (border-bottom 스타일, 호버 효과)
+- [x] 생성 결과 탭: 기존 그리드 레이아웃 유지
+- [x] 커플 합성 탭: Couple.tsx의 모든 UI 콘텐츠 통합
+  - 💑 커플 사진 업로드 카드
+  - 🏞️ 웨딩 배경 선택 (7가지 배경 옵션)
+  - 사진 비율 선택 (4:3, 16:9, 1:1)
+  - 예상 소요시간 표시
+  - 커플 생성 버튼
+  - 처리 진행 상황 표시
+  - 완성된 웨딩 사진 갤러리
+- [x] 커플 합성 상태 관리 (coupleImage, coupleScene, coupleRatio, isCoupleGenerating 등)
+- [x] 커플 합성 핸들러 함수 (handleCoupleImageSelect, handleCoupleGenerate, handleCoupleDownload)
+- [x] TypeScript 에러 0개 확인
+- [x] 브라우저 테스트 완료 (탭 전환 정상 작동)

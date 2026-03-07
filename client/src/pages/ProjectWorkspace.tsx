@@ -14,7 +14,7 @@ import {
   ArrowLeft, Sparkles, Wand2, Download, Check, X,
   RotateCcw, ArrowUpCircle, Loader2, ImageIcon, Lock, Unlock,
   Package, Users, UserCircle, Video, Trash2, Link2, Image as ImageLucide,
-  Upload, Brain, ArrowRight, Plus, Eye, Play, RefreshCw, Zap
+  Upload, Brain, ArrowRight, Plus, Eye, Play, RefreshCw, Zap, Heart, CheckCircle2
 } from "lucide-react";
 import { toast } from "sonner";
 import AIEngineSelector from "@/components/AIEngineSelector";
@@ -73,6 +73,20 @@ export default function ProjectWorkspace() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [showAnalysisDetail, setShowAnalysisDetail] = useState(false);
+  
+  // 탭 시스템
+  const [activeTab, setActiveTab] = useState<"results" | "couple">("results");
+  
+  // 커플 합성 상태
+  const [coupleImage, setCoupleImage] = useState<string | null>(null);
+  const [coupleFileName, setCoupleFileName] = useState("");
+  const [coupleMimeType, setCoupleMimeType] = useState<"image/jpeg"|"image/png"|"image/webp">("image/jpeg");
+  const [coupleScene, setCoupleScene] = useState<"all"|"cherry_blossom"|"chapel"|"garden"|"beach"|"forest"|"palace">("all");
+  const [coupleRatio, setCoupleRatio] = useState<"4:3"|"16:9"|"1:1">("4:3");
+  const [isCoupleGenerating, setIsCoupleGenerating] = useState(false);
+  const [coupleCurrStep, setCoupleCurrStep] = useState(-1);
+  const [coupleResults, setCoupleResults] = useState<{url:string;log:string}[]>([]);
+  const coupleFileInputRef = useRef<HTMLInputElement>(null);
   const handleToggleEngine = (engineId: AIEngineId) => {
     setSelectedEngines(prev =>
       prev.includes(engineId)
@@ -123,12 +137,18 @@ export default function ProjectWorkspace() {
     onError: (err) => toast.error(`생성 실패: ${err.message}`),
   });
 
-  const generateCoupleMutation = trpc.generations.generateCouple.useMutation({
+  const generateCoupleMutation = trpc.couple.generateCouple.useMutation({
     onSuccess: (data) => {
-      utils.generations.list.invalidate();
-      toast.success(data.message);
+      setCoupleCurrStep(4);
+      setCoupleResults(data.images);
+      setIsCoupleGenerating(false);
+      toast.success(`웨딩 사진 ${data.images.length}장 완성! 💑`);
     },
-    onError: (err) => toast.error(`커플 생성 실패: ${err.message}`),
+    onError: (err) => {
+      setCoupleCurrStep(-1);
+      setIsCoupleGenerating(false);
+      toast.error(`커플 생성 실패: ${err.message}`);
+    },
   });
 
   const upscaleMutation = trpc.generations.upscale.useMutation({
@@ -180,6 +200,52 @@ export default function ProjectWorkspace() {
     },
     onError: (err) => toast.error(`영상 삭제 실패: ${err.message}`),
   });
+
+  // 커플 합성 핸들러
+  const handleCoupleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 20*1024*1024) { toast.error("20MB 이하만 가능"); return; }
+    if (!file.type.startsWith("image/")) { toast.error("이미지 파일만 가능"); return; }
+    setCoupleMimeType((file.type as "image/jpeg"|"image/png"|"image/webp") || "image/jpeg");
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setCoupleImage(ev.target?.result as string);
+      setCoupleFileName(file.name);
+      setCoupleResults([]);
+      setCoupleCurrStep(-1);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCoupleGenerate = async () => {
+    if (!coupleImage) { toast.error("커플 사진을 업로드해주세요"); return; }
+    setIsCoupleGenerating(true);
+    setCoupleResults([]);
+    setCoupleCurrStep(0);
+    const t1 = setTimeout(() => setCoupleCurrStep(1), 4000);
+    const t2 = setTimeout(() => setCoupleCurrStep(2), 20000);
+    const t3 = setTimeout(() => setCoupleCurrStep(3), 50000);
+    try {
+      const base64 = coupleImage.includes(",") ? coupleImage.split(",")[1] : coupleImage;
+      await generateCoupleMutation.mutateAsync({
+        coupleImageBase64: base64,
+        mimeType: coupleMimeType,
+        scene: coupleScene,
+        aspectRatio: coupleRatio,
+      });
+      clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
+    } catch (err) {
+      clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
+      console.error(err);
+    }
+  };
+
+  const handleCoupleDownload = (url: string, idx: number) => {
+    const a = document.createElement("a");
+    a.href=url; a.download=`wedding-${idx+1}.jpg`; a.target="_blank";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
 
   // 커플 모드: 파트너 사진 삭제
   const deletePartnerPhotoMutation = trpc.clientPhotos.delete.useMutation({
@@ -466,6 +532,32 @@ export default function ProjectWorkspace() {
           )}
         </div>
 
+        {/* 탭 시스템 */}
+        <div className="flex gap-2 border-b border-border mb-6">
+          <button
+            onClick={() => setActiveTab("results")}
+            className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === "results"
+                ? "border-rose-500 text-rose-400"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            생성 결과
+          </button>
+          <button
+            onClick={() => setActiveTab("couple")}
+            className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors gap-1 flex items-center ${
+              activeTab === "couple"
+                ? "border-rose-500 text-rose-400"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Heart className="h-4 w-4" />💑 커플 합성
+          </button>
+        </div>
+
+        {/* 생성 결과 탭 */}
+        {activeTab === "results" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: Prompt & Controls */}
           <div className="lg:col-span-1 space-y-4">
@@ -919,13 +1011,12 @@ export default function ProjectWorkspace() {
                     </select>
                     <Button
                        onClick={() => generateCoupleMutation.mutate({
-                         projectId: project.id,
-                         promptText: promptText,
-                         brideClientId: project.clientId,
-                         groomClientId: project.partnerClientId ?? null,
-                         attempts: coupleAttempts,
+                         coupleImageBase64: '',
+                         mimeType: 'image/jpeg',
+                         scene: 'cherry_blossom',
+                         aspectRatio: '4:3',
                       })}
-                      disabled={generateCoupleMutation.isPending || !project.partnerClientId}
+                      disabled={generateCoupleMutation.isPending}
                       className="w-full bg-pink-600 hover:bg-pink-700 gap-2 mt-2"
                     >
                       {generateCoupleMutation.isPending ? (
@@ -1316,6 +1407,178 @@ export default function ProjectWorkspace() {
             </Card>
           </div>
         </div>
+        )}
+
+        {/* 커플 합성 탭 */}
+        {activeTab === "couple" && (
+        <div className="max-w-4xl mx-auto space-y-6">
+          {/* 커플 사진 업로드 */}
+          <Card className="bg-card border-border">
+            <CardHeader><CardTitle className="text-foreground flex items-center gap-2"><Heart className="h-5 w-5 text-rose-500 fill-rose-500" />💑 커플 사진 업로드</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              {!coupleImage ? (
+                <div onClick={() => coupleFileInputRef.current?.click()}
+                  className="border-2 border-dashed border-slate-600 rounded-lg p-10 text-center cursor-pointer hover:border-rose-500/50 transition-colors bg-slate-800/30">
+                  <Upload className="w-14 h-14 text-slate-500 mx-auto mb-3" />
+                  <h3 className="font-semibold text-foreground text-lg mb-2">함께 찍은 커플 사진을 올려주세요</h3>
+                  <p className="text-sm text-muted-foreground">JPG · PNG · WebP · 최대 20MB</p>
+                  <p className="text-xs text-muted-foreground/70 mt-2">두 분이 함께 나온 사진 1장이면 충분해요</p>
+                </div>
+              ) : (
+                <div className="relative rounded-lg overflow-hidden border border-rose-500/30">
+                  <img src={coupleImage} alt="커플" className="w-full max-h-80 object-contain bg-slate-800" />
+                  <div className="absolute top-2 right-2 flex gap-2">
+                    <Button onClick={() => coupleFileInputRef.current?.click()} size="sm" className="bg-black/70 hover:bg-black text-white border-0">
+                      <Upload className="w-4 h-4 mr-1" />변경
+                    </Button>
+                    <Button onClick={() => { setCoupleImage(null); setCoupleFileName(""); setCoupleResults([]); }} size="sm" className="bg-black/70 hover:bg-black text-white border-0">
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <div className="absolute bottom-0 inset-x-0 bg-black/60 py-2 px-3">
+                    <p className="text-xs text-slate-300 truncate">{coupleFileName}</p>
+                  </div>
+                </div>
+              )}
+              <input ref={coupleFileInputRef} type="file" accept="image/*" onChange={handleCoupleImageSelect} className="hidden" />
+              <div className="p-3 rounded-lg bg-slate-800/40 border border-slate-700/50">
+                <p className="text-xs text-muted-foreground font-medium mb-1">💡 잘 나오는 사진 조건</p>
+                <div className="grid grid-cols-2 gap-x-4 text-xs text-muted-foreground">
+                  <p>✅ 두 분 얼굴이 잘 보이는 사진</p>
+                  <p>✅ 밝고 선명한 사진</p>
+                  <p>✅ 상반신 이상 나오는 사진</p>
+                  <p>❌ 너무 어둡거나 흐린 사진</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 웨딩 배경 선택 */}
+          <Card className="bg-card border-border">
+            <CardHeader><CardTitle className="text-foreground">🏞️ 웨딩 배경 선택</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {([
+                  { key: "all", emoji: "✨", label: "전체 4장", sub: "모든 배경" },
+                  { key: "cherry_blossom", emoji: "🌸", label: "벚꽃 정원", sub: "로맨틱" },
+                  { key: "chapel", emoji: "⛪", label: "고급 채플", sub: "우아함" },
+                  { key: "garden", emoji: "🌿", label: "야외 정원", sub: "자연" },
+                  { key: "beach", emoji: "🌅", label: "해변 노을", sub: "골든아워" },
+                  { key: "forest", emoji: "🌲", label: "숲속", sub: "동화같은" },
+                  { key: "palace", emoji: "🏰", label: "유럽 궁전", sub: "럭셔리" },
+                ] as const).map((s) => (
+                  <button key={s.key} onClick={() => setCoupleScene(s.key)}
+                    className={`p-3 rounded-lg text-center border transition-all ${
+                      coupleScene === s.key ? "bg-rose-500/20 border-rose-500/60 text-foreground scale-105" : "bg-slate-800 border-slate-700 text-muted-foreground hover:border-slate-600"
+                    }`}>
+                    <div className="text-2xl mb-1">{s.emoji}</div>
+                    <div className="text-xs font-semibold">{s.label}</div>
+                    <div className="text-xs opacity-60 mt-0.5">{s.sub}</div>
+                  </button>
+                ))}
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground mb-2">사진 비율</p>
+                <div className="flex gap-2">
+                  {([
+                    { key: "4:3", label: "4:3", sub: "기본" },
+                    { key: "16:9", label: "16:9", sub: "와이드" },
+                    { key: "1:1", label: "1:1", sub: "정사각" },
+                  ] as const).map((r) => (
+                    <button key={r.key} onClick={() => setCoupleRatio(r.key)}
+                      className={`px-4 py-2 rounded-lg text-sm border transition-all ${
+                        coupleRatio === r.key ? "bg-rose-500/20 border-rose-500/60 text-rose-300" : "bg-slate-800 border-slate-700 text-muted-foreground"
+                      }`}>
+                      {r.label}<span className="block text-xs opacity-60">{r.sub}</span>
+                    </button>
+                  ))}  
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-slate-800/40 border border-slate-700/50">
+                <span className="text-muted-foreground text-sm">⏱️ 예상 소요시간:</span>
+                <span className="text-foreground text-sm font-semibold">{coupleScene === "all" ? "약 5~8분" : "약 2~3분"}</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {coupleImage && (
+            <Button onClick={handleCoupleGenerate} disabled={isCoupleGenerating}
+              className="w-full bg-gradient-to-r from-rose-600 to-pink-500 hover:from-rose-700 hover:to-pink-600 text-white font-semibold py-6 text-lg">
+              {isCoupleGenerating
+                ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" />배경 합성 중... ({coupleScene === "all" ? "약 5~8분" : "약 2~3분"})</>
+                : <><Heart className="w-5 h-5 mr-2 fill-white" />웨딩 사진 만들기</>
+              }
+            </Button>
+          )}
+
+          {isCoupleGenerating && coupleCurrStep >= 0 && (
+            <Card className="bg-card border-border">
+              <CardHeader><CardTitle className="text-foreground">처리 진행 상황</CardTitle></CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-2 p-4 rounded-lg bg-slate-800/60 border border-slate-700">
+                  {[
+                    { label: "사진 업로드", sub: "FAL storage" },
+                    { label: "배경 자동 제거", sub: "BiRefNet AI" },
+                    { label: "새 배경 생성", sub: "FLUX Dev" },
+                    { label: "얼굴 선명도 강화", sub: "CodeFormer" },
+                  ].map((s, i) => {
+                    const isDone = coupleCurrStep > i;
+                    const isActive = coupleCurrStep === i;
+                    return (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          isDone ? "bg-emerald-500" : isActive ? "bg-rose-500" : "bg-slate-700"
+                        }`}>
+                          {isDone ? <CheckCircle2 className="w-4 h-4 text-white" /> :
+                           isActive ? <Loader2 className="w-4 h-4 text-white animate-spin" /> :
+                                      <span className="text-xs text-slate-500">{i + 1}</span>}
+                        </div>
+                        <div>
+                          <p className={`text-sm font-medium ${isDone ? "text-emerald-400" : isActive ? "text-foreground" : "text-muted-foreground"}`}>{s.label}</p>
+                          <p className="text-xs text-muted-foreground/70">{s.sub}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground mt-3 text-center">페이지를 닫지 마세요</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {coupleResults.length > 0 && (
+            <Card className="bg-card border-border">
+              <CardHeader>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <CardTitle className="text-foreground flex items-center gap-2"><Heart className="h-5 w-5 text-rose-500 fill-rose-500" />💑 완성된 웨딩 사진</CardTitle>
+                  <Button onClick={handleCoupleGenerate} variant="outline" size="sm" className="border-slate-600 text-muted-foreground hover:bg-slate-800">
+                    <RefreshCw className="w-4 h-4 mr-1" />다시 생성
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {coupleResults.map((img, idx) => (
+                    <div key={idx} className="relative group rounded-lg overflow-hidden border border-rose-500/30">
+                      <img src={img.url} alt={`웨딩 ${idx+1}`} className="w-full aspect-[4/3] object-cover" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+                        <Button onClick={() => handleCoupleDownload(img.url, idx)} size="sm"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 hover:bg-white text-black font-semibold">
+                          <Download className="w-4 h-4 mr-2" />다운로드
+                        </Button>
+                      </div>
+                      <div className="absolute bottom-0 inset-x-0 bg-black/60 py-1.5 px-3 flex justify-between">
+                        <p className="text-xs text-slate-300">#{idx+1}</p>
+                        <p className="text-xs text-muted-foreground/70 truncate ml-2">{img.log}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+        )}
       </div>
     </DashboardLayout>
   );

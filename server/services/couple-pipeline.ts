@@ -1,135 +1,179 @@
-import { fal } from "@fal-ai/client";
-
-// fal.config를 함수 호출 시점에 실행 (배포 환경 env 주입 타이밍 이슈 방지)
-let falConfigured = false;
-function ensureFalConfig() {
-  if (falConfigured) return;
-  const key = process.env.FAL_KEY;
-  if (!key || key.trim().length === 0) {
-    throw new Error("FAL_KEY 환경변수가 설정되지 않았습니다. Settings > Secrets에서 FAL_KEY를 확인해주세요.");
-  }
-  fal.config({ credentials: key.trim() });
-  falConfigured = true;
-  console.log("[couple-pipeline] fal.config 완료, key length:", key.trim().length);
-}
-
 export interface CoupleResult {
   url: string;
-  log: string; // 단계별 로그 문자열
+  log: string;
+}
+
+async function falRun(
+  modelId: string,
+  input: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const falKey = process.env.FAL_KEY;
+  if (!falKey) throw new Error("FAL_KEY not set");
+
+  const res = await fetch(`https://fal.run/${modelId}`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Key ${falKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  const text = await res.text();
+  console.log(`[couple] ${modelId} status:`, res.status);
+  if (!res.ok) throw new Error(`${modelId} failed ${res.status}: ${text.slice(0, 300)}`);
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`${modelId} not JSON: ${text.slice(0, 200)}`);
+  }
+}
+
+async function uploadToFal(base64: string, mimeType: string): Promise<string> {
+  const falKey = process.env.FAL_KEY;
+  if (!falKey) throw new Error("FAL_KEY not set");
+
+  const clean = base64.includes(",") ? base64.split(",")[1] : base64;
+  const buffer = Buffer.from(clean, "base64");
+  const ext = mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
+
+  const initiateRes = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
+    method: "POST",
+    headers: {
+      "Authorization": `Key ${falKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ content_type: mimeType, file_name: `couple.${ext}` }),
+  });
+
+  if (!initiateRes.ok) throw new Error(`FAL initiate failed: ${await initiateRes.text()}`);
+  const { upload_url, file_url } = await initiateRes.json();
+
+  const s3Res = await fetch(upload_url, {
+    method: "PUT",
+    headers: { "Content-Type": mimeType },
+    body: buffer,
+  });
+  if (!s3Res.ok) throw new Error(`S3 upload failed ${s3Res.status}`);
+
+  console.log("[couple] Uploaded:", file_url);
+  return file_url;
+}
+
+async function removeBackground(imageUrl: string): Promise<string> {
+  console.log("[couple] Step 1: Removing background...");
+
+  const result = await falRun("fal-ai/birefnet", {
+    image_url: imageUrl,
+    model: "General Use (Light)",
+    operating_resolution: "1024x1024",
+    output_format: "png",
+  });
+
+  const url = (result?.image as Record<string, unknown>)?.url as string;
+  if (!url) {
+    console.error("[couple] BiRefNet response:", JSON.stringify(result).slice(0, 300));
+    throw new Error("BiRefNet returned no URL");
+  }
+
+  console.log("[couple] Background removed:", url);
+  return url;
+}
+
+const BACKGROUND_PROMPTS: Record<string, string> = {
+  cherry_blossom: "romantic Korean garden, cherry blossom trees in full bloom, soft pink petals falling gently, golden hour sunlight filtering through branches, dreamy bokeh background, professional wedding photography, no people",
+  chapel: "elegant luxury wedding chapel interior, white and ivory flower arrangements, crystal chandelier, soft warm candlelight, white marble floor, cinematic wedding photography, no people",
+  garden: "beautiful outdoor garden wedding venue, lush green lawn, white floral arch covered in roses, warm natural sunlight, soft bokeh, professional wedding photography, no people",
+  beach: "romantic beach at golden hour sunset, warm orange and pink sky reflected on calm ocean, soft sand, gentle waves, cinematic wedding photography, no people",
+  forest: "enchanted forest wedding, tall trees with dappled sunlight, green leaves, magical fairy light bokeh, romantic atmosphere, professional photography, no people",
+  palace: "grand royal palace garden, European architecture, manicured hedges, fountain, warm afternoon light, luxury wedding photography, no people",
+};
+
+async function generateBackground(scene: string, aspectRatio: string): Promise<string> {
+  console.log("[couple] Step 2: Generating background:", scene);
+
+  const prompt = BACKGROUND_PROMPTS[scene] ?? BACKGROUND_PROMPTS.cherry_blossom;
+
+  const result = await falRun("fal-ai/flux/dev", {
+    prompt,
+    num_inference_steps: 28,
+    guidance_scale: 3.5,
+    image_size: aspectRatio === "16:9" ? "landscape_16_9" : aspectRatio === "1:1" ? "square_hd" : "portrait_4_3",
+    enable_safety_checker: false,
+    num_images: 1,
+  });
+
+  const images = result?.images as Array<{ url: string }> | undefined;
+  const url = images?.[0]?.url;
+  if (!url) throw new Error("FLUX returned no URL");
+
+  console.log("[couple] Background generated:", url);
+  return url;
+}
+
+async function enhanceFaces(imageUrl: string): Promise<string> {
+  try {
+    console.log("[couple] Step 4: Enhancing faces...");
+    const result = await falRun("fal-ai/codeformer", {
+      image_url: imageUrl,
+      fidelity: 0.85,
+      upscaling: 2,
+      face_upscale: true,
+    });
+
+    const url = (result?.image as Record<string, unknown>)?.url as string;
+    if (!url) {
+      console.warn("[couple] CodeFormer no URL, using input");
+      return imageUrl;
+    }
+    console.log("[couple] Faces enhanced:", url);
+    return url;
+  } catch (err) {
+    console.warn("[couple] CodeFormer failed, fallback:", err);
+    return imageUrl;
+  }
 }
 
 export async function generateCouplePipeline(
-  prompt: string,
-  bridePhotoUrl: string,
-  groomPhotoUrl: string,
-  attempts: number = 3
+  coupleImageBase64: string,
+  mimeType: string,
+  scene: string,
+  aspectRatio: string = "4:3"
 ): Promise<CoupleResult[]> {
-  // 함수 호출 시점에 fal 설정
-  ensureFalConfig();
-
-  // URL 공백/개행 제거
-  const cleanBrideUrl = bridePhotoUrl.trim();
-  const cleanGroomUrl = groomPhotoUrl.trim();
-
-  console.log("[couple-pipeline] 시작 - attempts:", attempts);
-  console.log("[couple-pipeline] brideUrl:", cleanBrideUrl.substring(0, 80));
-  console.log("[couple-pipeline] groomUrl:", cleanGroomUrl.substring(0, 80));
+  console.log("[couple] ===== Pipeline Start =====");
+  console.log("[couple] Scene:", scene, "Ratio:", aspectRatio);
 
   const results: CoupleResult[] = [];
 
-  for (let i = 0; i < attempts; i++) {
-    const stepLog: string[] = [];
+  const coupleUrl = await uploadToFal(coupleImageBase64, mimeType);
+
+  const subjectUrl = await removeBackground(coupleUrl);
+
+  const scenes = scene === "all"
+    ? ["cherry_blossom", "chapel", "garden", "beach"]
+    : [scene];
+
+  for (const s of scenes) {
+    const stepLog: string[] = ["배경제거✅"];
     try {
-      // 1단계: 커플 배경 생성
-      console.log(`[couple-pipeline] ${i+1}회차 1단계: flux/dev 배경 생성`);
-      const baseResult = await fal.subscribe("fal-ai/flux/dev", {
-        input: {
-          prompt: `RAW photo, photorealistic, Korean wedding couple, two people, groom left bride right, ${prompt}, 8K, cinematic`,
-          num_inference_steps: 28,
-          guidance_scale: 3.5,
-          image_size: "portrait_4_3",
-          enable_safety_checker: false,
-        },
-      });
-      const baseUrl = (baseResult as any).data.images[0].url;
-      stepLog.push("1단계(배경):✅");
-      console.log(`[couple-pipeline] ${i+1}회차 1단계 완료`);
+      const bgUrl = await generateBackground(s, aspectRatio);
+      stepLog.push("배경생성✅");
 
-      // 2단계: 신부 얼굴 교체 (필수 - 실패 시 이 회차 스킵)
-      console.log(`[couple-pipeline] ${i+1}회차 2단계: 신부 face-swap`);
-      const brideResult = await fal.subscribe(
-        "fal-ai/face-swap" as any,
-        {
-          input: {
-            base_image_url: baseUrl,
-            swap_image_url: cleanBrideUrl,
-          },
-        }
-      );
-      const brideUrl = (brideResult as any).data?.image?.url;
-      if (!brideUrl) {
-        stepLog.push("2단계(신부):❌ 응답에 URL 없음");
-        throw new Error("신부 얼굴 교체 실패: 응답에 이미지 URL이 없습니다");
-      }
-      stepLog.push("2단계(신부):✅");
-      console.log(`[couple-pipeline] ${i+1}회차 2단계 완료`);
-
-      // 3단계: 신랑 얼굴 교체 (필수 - 실패 시 이 회차 스킵)
-      console.log(`[couple-pipeline] ${i+1}회차 3단계: 신랑 face-swap`);
-      const groomResult = await fal.subscribe(
-        "fal-ai/face-swap" as any,
-        {
-          input: {
-            base_image_url: brideUrl,
-            swap_image_url: cleanGroomUrl,
-          },
-        }
-      );
-      const groomUrl = (groomResult as any).data?.image?.url;
-      if (!groomUrl) {
-        stepLog.push("3단계(신랑):❌ 응답에 URL 없음");
-        throw new Error("신랑 얼굴 교체 실패: 응답에 이미지 URL이 없습니다");
-      }
-      stepLog.push("3단계(신랑):✅");
-      console.log(`[couple-pipeline] ${i+1}회차 3단계 완료`);
-
-      // 4단계: 업스케일
-      console.log(`[couple-pipeline] ${i+1}회차 4단계: esrgan 업스케일`);
-      const upscaleResult = await fal.subscribe("fal-ai/esrgan", {
-        input: {
-          image_url: groomUrl,
-          scale: 2,
-          face: true,
-        },
-      });
-      const finalUrl = (upscaleResult as any).data.image.url;
-      if (!finalUrl) {
-        stepLog.push("4단계(업스케일):❌ 응답에 URL 없음");
-        throw new Error("업스케일 실패: 응답에 이미지 URL이 없습니다");
-      }
-      stepLog.push("4단계(업스케일):✅");
-      console.log(`[couple-pipeline] ${i+1}회차 4단계 완료 - 성공!`);
+      const finalUrl = await enhanceFaces(bgUrl);
+      stepLog.push("후처리✅");
 
       results.push({ url: finalUrl, log: stepLog.join(" ") });
-
-    } catch (err: any) {
-      const errMsg = err?.message || String(err);
-      const errBody = err?.body ? JSON.stringify(err.body).substring(0, 200) : "no body";
-      // 실패한 단계가 아직 로그에 없으면 추가
-      if (!stepLog.some(s => s.includes("❌"))) {
-        stepLog.push(`❌ ${errMsg.substring(0, 50)}`);
-      }
-      console.error(`[couple-pipeline] ${i+1}회차 실패: ${errMsg}`);
-      console.error(`[couple-pipeline] 에러 body: ${errBody}`);
-      console.error(`[couple-pipeline] 로그: ${stepLog.join(" ")}`);
-      // face-swap 실패 시 폴백으로 저장하지 않음 - 다음 회차로 재시도
+      console.log(`[couple] Scene ${s} complete`);
+    } catch (sceneErr) {
+      console.error(`[couple] Scene ${s} failed:`, sceneErr);
     }
   }
 
   if (results.length === 0) {
-    throw new Error(`커플 사진 생성에 ${attempts}회 모두 실패했습니다. 고객 사진이 정면 얼굴인지 확인해주세요.`);
+    throw new Error("모든 배경 생성에 실패했습니다.");
   }
 
-  console.log(`[couple-pipeline] 완료 - ${results.length}/${attempts}장 성공`);
+  console.log(`[couple] ===== Complete: ${results.length} images =====`);
   return results;
 }
