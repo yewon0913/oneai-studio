@@ -224,7 +224,8 @@ export async function generateCouplePipeline(
   customPrompt?: string,
   customNegativePrompt?: string,
   engine?: string,
-  faceLock?: boolean
+  faceLock?: boolean,
+  comparisonMode?: boolean
 ): Promise<CoupleResult[]> {
   console.log("[couple] ===== Pipeline Start =====");
   console.log("[couple] Scene:", scene, "Ratio:", aspectRatio, "Engine:", engine, "FaceLock:", faceLock);

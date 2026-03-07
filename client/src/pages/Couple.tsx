@@ -164,12 +164,13 @@ export default function Couple() {
       const result = await mutation.mutateAsync({
         coupleImageBase64: base64,
         mimeType,
-        scene: "all",
+        scene: "cherry_blossom",
         aspectRatio: ratio,
-        prompt,
+        promptText: prompt,
         negativePrompt,
-        engine,
-        faceLock,
+        coupleEngine: engine,
+        faceFixMode: faceLock,
+        coupleComparisonMode: false,
       });
 
       clearTimeout(t1);

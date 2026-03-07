@@ -238,6 +238,11 @@ export default function ProjectWorkspace() {
         mimeType: coupleMimeType,
         scene: coupleScene,
         aspectRatio: coupleRatio,
+        promptText: promptText.trim() || undefined,
+        negativePrompt: negativePrompt.trim() || undefined,
+        faceFixMode: faceFixMode,
+        coupleEngine: coupleEngine,
+        coupleComparisonMode: coupleComparisonMode,
       });
       clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
     } catch (err) {

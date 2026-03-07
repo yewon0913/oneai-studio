@@ -450,3 +450,13 @@
 - [x] 수동 배경 선택만 유지 (cherry_blossom, chapel)
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 75/75 통과 확인
+
+
+## v3.51 커플 탭 얼굴 일관성 및 프롬프트 적용 버그 수정
+- [x] handleCoupleGenerate 함수에서 promptText/negativePrompt 전달 로직 추가
+- [x] 얼굴 고정 모드(faceFixMode) 활성화 시 생성 요청에 포함
+- [x] couple-router.ts 스키마 업데이트 (모든 새 파라미터 추가)
+- [x] 중복 generateCouple 제거 (routers.ts에서)
+- [x] Couple.tsx 파라미터명 업데이트
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75/75 통과 확인

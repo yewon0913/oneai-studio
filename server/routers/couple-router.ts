@@ -9,10 +9,11 @@ export const coupleRouter = router({
       mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]).default("image/jpeg"),
       scene: z.enum(["cherry_blossom", "chapel", "garden", "beach", "forest", "palace", "all"]).default("cherry_blossom"),
       aspectRatio: z.enum(["4:3", "16:9", "1:1"]).default("4:3"),
-      prompt: z.string().optional(),
+      promptText: z.string().optional(),
       negativePrompt: z.string().optional(),
-      engine: z.string().optional(),
-      faceLock: z.boolean().optional(),
+      faceFixMode: z.boolean().default(true),
+      coupleEngine: z.enum(["flux-dev", "flux-pro"]).default("flux-dev"),
+      coupleComparisonMode: z.boolean().default(false),
     }))
     .mutation(async ({ input }) => {
       console.log("[couple-router] Starting...");
@@ -21,10 +22,11 @@ export const coupleRouter = router({
         input.mimeType,
         input.scene,
         input.aspectRatio,
-        input.prompt,
+        input.promptText,
         input.negativePrompt,
-        input.engine,
-        input.faceLock,
+        input.coupleEngine,
+        input.faceFixMode,
+        input.coupleComparisonMode,
       );
       return { images: results.map((r) => ({ url: r.url, log: r.log })) };
     }),

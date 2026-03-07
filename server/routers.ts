@@ -797,30 +797,6 @@ IMPORTANT RULES:
         }
       }),
 
-    // ─── 커플 전용 파이프라인 (v3.9) ───
-    generateCouple: publicProcedure
-      .input(z.object({
-        coupleImageBase64: z.string(),
-        mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]).default("image/jpeg"),
-        scene: z.enum(["cherry_blossom", "chapel", "garden", "beach", "forest", "palace", "all"]).default("cherry_blossom"),
-        aspectRatio: z.enum(["4:3", "16:9", "1:1"]).default("4:3"),
-      }))
-      .mutation(async ({ input }) => {
-        // 커플 파이프라인 실행 (배경 제거 + 배경 생성)
-        const { generateCouplePipeline } = await import(
-          './services/couple-pipeline'
-        );
-        const resultUrls = await generateCouplePipeline(
-          input.coupleImageBase64 || '',
-          input.mimeType || 'image/jpeg',
-          input.scene || 'cherry_blossom',
-          input.aspectRatio || '4:3',
-        );
-
-        return {
-          images: resultUrls.map((r) => ({ url: r.url, log: r.log })),
-        };
-      }),
 
     analyzeImage: protectedProcedure
       .input(z.object({
