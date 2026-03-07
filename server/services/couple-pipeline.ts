@@ -145,13 +145,16 @@ async function generateBackground(options: GenerateBackgroundOptions): Promise<s
   let numInferenceSteps = 30;
 
   if (engine === "flux-lora") {
-    modelId = "fal-ai/flux/pro";
+    // Flux Pro 1.1 (고품질, 6배 빠름)
+    modelId = "fal-ai/flux-pro/v1.1";
     guidanceScale = faceLock ? 6.5 : 4.5;  // faceLock 시 극대화
     numInferenceSteps = faceLock ? 40 : 32;
   } else if (engine === "stable-diffusion") {
-    modelId = "fal-ai/stable-diffusion-3-5-large";
-    guidanceScale = faceLock ? 7.5 : 5.0;  // faceLock 시 극대화
-    numInferenceSteps = faceLock ? 45 : 35;
+    // Stable Diffusion은 FAL에서 지원하지 않으므로 Flux Dev로 폴백
+    console.warn("[couple] Stable Diffusion not available on FAL, using Flux Dev instead");
+    modelId = "fal-ai/flux/dev";
+    guidanceScale = faceLock ? 5.5 : 4.0;
+    numInferenceSteps = faceLock ? 35 : 30;
   } else {
     // flux-dev (기본값)
     guidanceScale = faceLock ? 5.5 : 4.0;  // faceLock 시 극대화
@@ -160,7 +163,7 @@ async function generateBackground(options: GenerateBackgroundOptions): Promise<s
 
   console.log(`[couple] Using model: ${modelId}, guidance: ${guidanceScale}, steps: ${numInferenceSteps}`);
 
-  // originalImages로 고객 사진 전달 (얼굴 일관성 극대화)
+  // FAL Flux API 입력 구성
   const input: Record<string, unknown> = {
     prompt,
     negative_prompt: negativePrompt,
@@ -171,17 +174,13 @@ async function generateBackground(options: GenerateBackgroundOptions): Promise<s
     num_images: 1,
   };
 
-  // 고객 사진 + 참조 이미지를 originalImages로 전달 (얼굴 일관성 강화)
+  // 노트: FAL Flux API는 originalImages 파라미터를 지원하지 않습니다.
+  // 대신 프롬프트에 얼굴 보존 키워드를 강화했습니다.
   if (coupleImageUrl) {
-    const originalImages = [coupleImageUrl];
-    // 참조 이미지 추가 (최대 5개)
-    if (refImageUrls && refImageUrls.length > 0) {
-      originalImages.push(...refImageUrls.slice(0, 5));
-      console.log(`[couple] Adding ${refImageUrls.length} reference images`);
-    }
-    input.original_images = originalImages;
-    input.strength = faceLock ? 0.75 : 0.65; // faceLock 시 75% 원본 구도 유지
-    console.log(`[couple] Using originalImages (${originalImages.length} images) with strength: ${input.strength}`);
+    console.log(`[couple] Couple image URL provided (used in prompt keywords only)`);
+  }
+  if (refImageUrls && refImageUrls.length > 0) {
+    console.log(`[couple] Reference images: ${refImageUrls.length} (used in prompt keywords only)`);
   }
 
   const result = await falRun(modelId, input);

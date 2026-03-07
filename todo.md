@@ -383,3 +383,15 @@
 - [x] 에러 핸들링 (분석 실패 시 토스트 메시지)
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 75/75 통과
+
+
+## v3.45 FAL API 모델 수정 및 얼굴 일관성 개선
+- [x] Flux LoRA → Flux Pro 1.1 (fal-ai/flux-pro/v1.1) 변경
+- [x] Stable Diffusion 제거 (FAL에서 지원 안 함) → Flux Dev 폴백
+- [x] originalImages 파라미터 제거 (FAL Flux API 미지원)
+- [x] 프롬프트에 얼굴 보존 키워드 강화로 대체
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75/75 통과
+- [ ] 수동 테스트: Flux Dev + faceLock ON으로 생성 후 얼굴 일치도 확인
+- [ ] 수동 테스트: Flux Pro 1.1로 생성 후 품질 비교
+- [ ] 수동 테스트: 에러 메시지 없는지 확인
