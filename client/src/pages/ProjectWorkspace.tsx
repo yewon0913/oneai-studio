@@ -86,8 +86,6 @@ export default function ProjectWorkspace() {
   const [isCoupleGenerating, setIsCoupleGenerating] = useState(false);
   const [coupleCurrStep, setCoupleCurrStep] = useState(-1);
   const [coupleResults, setCoupleResults] = useState<{url:string;log:string}[]>([]);
-  const [coupleAnalysisResult, setCoupleAnalysisResult] = useState<any>(null);
-  const [isCoupleAnalyzing, setIsCoupleAnalyzing] = useState(false);
   const coupleFileInputRef = useRef<HTMLInputElement>(null);
   const handleToggleEngine = (engineId: AIEngineId) => {
     setSelectedEngines(prev =>
@@ -138,11 +136,6 @@ export default function ProjectWorkspace() {
     },
     onError: (err) => toast.error(`생성 실패: ${err.message}`),
   });
-
-  const analyzeCoupleMutation = trpc.couple.analyzeImage.useQuery(
-    { imageBase64: coupleImage?.split(",")[1] || "", mimeType: coupleMimeType },
-    { enabled: false }
-  );
 
   const generateCoupleMutation = trpc.couple.generateCouple.useMutation({
     onSuccess: (data) => {
@@ -252,26 +245,6 @@ export default function ProjectWorkspace() {
     const a = document.createElement("a");
     a.href=url; a.download=`wedding-${idx+1}.jpg`; a.target="_blank";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  };
-
-  const handleCoupleAnalyze = async () => {
-    if (!coupleImage) { toast.error("커플 사진을 업로드해주세요"); return; }
-    setIsCoupleAnalyzing(true);
-    try {
-      const base64 = coupleImage.includes(",") ? coupleImage.split(",")[1] : coupleImage;
-      const result = await analyzeCoupleMutation.refetch();
-      if (result.data) {
-        setCoupleAnalysisResult(result.data);
-        setPromptText(result.data.prompt);
-        setNegativePrompt(result.data.negativePrompt);
-        toast.success("🔍 AI가 커플 사진을 분석했습니다!");
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("분석 실패: " + (err instanceof Error ? err.message : "알 수 없는 오류"));
-    } finally {
-      setIsCoupleAnalyzing(false);
-    }
   };
 
   // 커플 모드: 파트너 사진 삭제
@@ -1510,41 +1483,6 @@ export default function ProjectWorkspace() {
                 )}
                 <p className="text-xs text-muted-foreground/70 mt-2">핀터레스트 링크, 직접 이미지 URL, 또는 파일을 첨부하세요.</p>
               </div>
-
-              {/* AI 정밀이미지분석 버튼 */}
-              {coupleImage && (
-                <Button onClick={handleCoupleAnalyze} disabled={isCoupleAnalyzing} variant="outline" className="w-full border-slate-600 text-muted-foreground hover:bg-slate-800">
-                  {isCoupleAnalyzing
-                    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />분석 중...</>
-                    : <><Brain className="w-4 h-4 mr-2" />🔍 AI 정밀이미지분석</>
-                  }
-                </Button>
-              )}
-
-              {/* 분석 결과 표시 */}
-              {coupleAnalysisResult && (
-                <Card className="bg-slate-800/40 border-slate-700/50">
-                  <CardHeader><CardTitle className="text-sm text-foreground">분석 결과</CardTitle></CardHeader>
-                  <CardContent className="space-y-3 text-xs">
-                    <div>
-                      <p className="text-muted-foreground font-medium mb-1">피부톤</p>
-                      <p className="text-foreground">{coupleAnalysisResult.analysis?.skinTone}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground font-medium mb-1">조명</p>
-                      <p className="text-foreground">{coupleAnalysisResult.analysis?.lighting}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground font-medium mb-1">배경</p>
-                      <p className="text-foreground">{coupleAnalysisResult.analysis?.background}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground font-medium mb-1">분위기</p>
-                      <p className="text-foreground">{coupleAnalysisResult.analysis?.mood}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
 
               {/* 메인 프롬프트 */}
               <div>
