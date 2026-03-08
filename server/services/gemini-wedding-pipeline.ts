@@ -27,36 +27,71 @@ async function callGeminiImageGeneration(
     },
   };
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+  // 모델 순서대로 시도
+  const models = [
+    "gemini-2.0-flash-preview-image-generation",
+    "gemini-2.0-flash-exp-image-generation",
+    "imagen-3.0-generate-002",
+  ];
+
+  for (const model of models) {
+    console.log("[gemini] trying model:", model);
+    try {
+      const endpoint = model.startsWith("imagen")
+        ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${apiKey}`
+        : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+      const requestBody = model.startsWith("imagen")
+        ? {
+            instances: [{ prompt }],
+            parameters: { sampleCount: 1, aspectRatio: "3:4" },
+          }
+        : body;
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+
+      const text = await res.text();
+      console.log("[gemini] model:", model, "status:", res.status);
+
+      if (!res.ok) {
+        console.warn("[gemini] model failed:", model, text.slice(0, 200));
+        continue;
+      }
+
+      const data = JSON.parse(text);
+
+      // Imagen 응답 파싱
+      if (model.startsWith("imagen")) {
+        const imgData = data?.predictions?.[0]?.bytesBase64Encoded;
+        if (imgData) {
+          return `data:image/png;base64,${imgData}`;
+        }
+        continue;
+      }
+
+      // Gemini Flash 응답 파싱
+      const resParts = data?.candidates?.[0]?.content?.parts ?? [];
+      console.log("[gemini] parts count:", resParts.length);
+      for (const p of resParts) {
+        const imgData = p.inline_data || p.inlineData;
+        if (imgData?.data) {
+          const mime = imgData.mimeType || imgData.mime_type || "image/png";
+          console.log("[gemini] image found, mime:", mime);
+          return `data:${mime};base64,${imgData.data}`;
+        }
+      }
+
+      console.warn("[gemini] no image in response, parts:", JSON.stringify(resParts).slice(0, 300));
+    } catch (err) {
+      console.warn("[gemini] model error:", model, err);
     }
-  );
-
-  const text = await res.text();
-  console.log("[gemini] status:", res.status, "text:", text.slice(0, 500));
-  if (!res.ok) throw new Error(`Gemini API failed ${res.status}: ${text.slice(0, 500)}`);
-
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch (e) {
-    throw new Error(`Failed to parse Gemini response: ${text.slice(0, 200)}`);
-  }
-  const parts2 = data?.candidates?.[0]?.content?.parts ?? [];
-
-  for (const p of parts2) {
-    if (p.inline_data?.data) {
-      const mime = p.inline_data.mime_type || "image/png";
-      return `data:${mime};base64,${p.inline_data.data}`;
-    }
   }
 
-  console.error("[gemini] No image in response. Parts:", JSON.stringify(parts2, null, 2));
-  throw new Error(`Gemini returned no image. Response: ${JSON.stringify(data).slice(0, 300)}`);
+  throw new Error("모든 Gemini 모델 시도 실패");
 }
 
 const SCENE_PROMPTS: Record<string, string> = {
