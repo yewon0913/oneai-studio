@@ -28,7 +28,7 @@ async function callGeminiImageGeneration(
   };
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -37,10 +37,15 @@ async function callGeminiImageGeneration(
   );
 
   const text = await res.text();
-  console.log("[gemini] status:", res.status);
-  if (!res.ok) throw new Error(`Gemini API failed ${res.status}: ${text.slice(0, 300)}`);
+  console.log("[gemini] status:", res.status, "text:", text.slice(0, 500));
+  if (!res.ok) throw new Error(`Gemini API failed ${res.status}: ${text.slice(0, 500)}`);
 
-  const data = JSON.parse(text);
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Failed to parse Gemini response: ${text.slice(0, 200)}`);
+  }
   const parts2 = data?.candidates?.[0]?.content?.parts ?? [];
 
   for (const p of parts2) {
@@ -50,7 +55,8 @@ async function callGeminiImageGeneration(
     }
   }
 
-  throw new Error("Gemini returned no image");
+  console.error("[gemini] No image in response. Parts:", JSON.stringify(parts2, null, 2));
+  throw new Error(`Gemini returned no image. Response: ${JSON.stringify(data).slice(0, 300)}`);
 }
 
 const SCENE_PROMPTS: Record<string, string> = {
@@ -91,7 +97,9 @@ The couple is standing close together, looking at the camera with natural smiles
       results.push({ url: dataUrl, log: "Gemini생성✅" });
       console.log(`[gemini-wedding] ${i + 1} done`);
     } catch (err) {
-      console.error(`[gemini-wedding] ${i + 1} failed:`, err);
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[gemini-wedding] ${i + 1} failed:`, errorMsg);
+      results.push({ url: "", log: `실패: ${errorMsg.slice(0, 100)}` });
     }
   }
 
