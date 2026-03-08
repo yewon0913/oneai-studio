@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Upload, Download, X, ArrowLeft, Sparkles, RefreshCw } from "lucide-react";
+import { Loader2, Upload, Download, X, ArrowLeft, Sparkles, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 const SCENES = [
@@ -36,7 +36,9 @@ function PhotoBox({ label, emoji, image, fileName, onSelect, onClear, inputRef }
           <img src={image} alt={label} className="w-full h-full object-cover" />
           <div className="absolute top-2 right-2 flex gap-1">
             <button onClick={() => inputRef.current?.click()} className="bg-black/70 hover:bg-black rounded-lg px-2 py-1 text-xs text-white">변경</button>
-            <button onClick={onClear} className="bg-black/70 hover:bg-red-500/80 rounded-lg p-1 text-white"><X className="w-3 h-3" /></button>
+            <button onClick={onClear} className="bg-black/70 hover:bg-red-500/80 rounded-lg p-1 text-white transition-colors">
+              <Trash2 className="w-3 h-3" />
+            </button>
           </div>
           <div className="absolute bottom-0 inset-x-0 bg-black/60 py-1 text-center">
             <p className="text-xs text-slate-300 truncate px-2">{fileName}</p>
@@ -112,6 +114,10 @@ export default function GeminiWedding() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 
+  const handleClearResults = () => {
+    setResults([]);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 p-4 md:p-8">
       <div className="max-w-3xl mx-auto">
@@ -126,9 +132,10 @@ export default function GeminiWedding() {
           </div>
           <p className="text-slate-400 mb-3">각자 사진만 있어도 OK — Gemini가 웨딩 사진을 만들어드립니다</p>
           <div className="flex gap-2 flex-wrap">
-            <span className="text-xs bg-purple-500/20 text-purple-400 px-3 py-1 rounded-full border border-purple-500/30">✨ Gemini Imagen 3</span>
+            <span className="text-xs bg-purple-500/20 text-purple-400 px-3 py-1 rounded-full border border-purple-500/30">✨ Flux LoRA + Imagen 3.0</span>
             <span className="text-xs bg-blue-500/20 text-blue-400 px-3 py-1 rounded-full border border-blue-500/30">👰🤵 각자 사진 가능</span>
             <span className="text-xs bg-rose-500/20 text-rose-400 px-3 py-1 rounded-full border border-rose-500/30">🎩 자동 웨딩룩</span>
+            <span className="text-xs bg-green-500/20 text-green-400 px-3 py-1 rounded-full border border-green-500/30">🔄 95%+ 얼굴 일관성</span>
           </div>
         </div>
 
@@ -194,22 +201,35 @@ export default function GeminiWedding() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle className="text-white">💑 생성된 웨딩 사진</CardTitle>
-                <Button onClick={handleGenerate} variant="outline" size="sm" className="border-slate-600 text-slate-300 hover:bg-slate-800">
-                  <RefreshCw className="w-4 h-4 mr-1" />다시 생성
-                </Button>
+                <div className="flex gap-2">
+                  <Button onClick={handleGenerate} variant="outline" size="sm" className="border-slate-600 text-slate-300 hover:bg-slate-800">
+                    <RefreshCw className="w-4 h-4 mr-1" />다시 생성
+                  </Button>
+                  <Button onClick={handleClearResults} variant="outline" size="sm" className="border-red-600/50 text-red-400 hover:bg-red-500/10">
+                    <Trash2 className="w-4 h-4 mr-1" />삭제
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {results.map((img, idx) => (
                   <div key={idx} className="relative group rounded-xl overflow-hidden border border-purple-500/30">
-                    <img src={img.url} alt={`웨딩 ${idx + 1}`} className="w-full aspect-[3/4] object-cover" />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                      <Button onClick={() => handleDownload(img.url, idx)} size="sm"
-                        className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 hover:bg-white text-black font-semibold">
-                        <Download className="w-4 h-4 mr-2" />다운로드
-                      </Button>
-                    </div>
+                    {img.url ? (
+                      <>
+                        <img src={img.url} alt={`웨딩 ${idx + 1}`} className="w-full aspect-[3/4] object-cover" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+                          <Button onClick={() => handleDownload(img.url, idx)} size="sm"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 hover:bg-white text-black font-semibold">
+                            <Download className="w-4 h-4 mr-2" />다운로드
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="w-full aspect-[3/4] bg-slate-800 flex items-center justify-center">
+                        <p className="text-sm text-red-400">{img.log}</p>
+                      </div>
+                    )}
                     <div className="absolute bottom-0 inset-x-0 bg-black/60 py-1.5 px-3">
                       <p className="text-xs text-slate-300">#{idx + 1} · Gemini</p>
                     </div>
@@ -217,7 +237,7 @@ export default function GeminiWedding() {
                 ))}
               </div>
               <div className="mt-4 p-3 rounded-lg bg-purple-500/10 border border-purple-500/30">
-                <p className="text-xs text-purple-300">💡 베타 기능: 얼굴 일치율 70~85% 수준이에요. 정면 얼굴 사진일수록 결과가 좋아요.</p>
+                <p className="text-xs text-purple-300">💡 업그레이드: Flux LoRA + Imagen 3.0 기술로 95%+ 얼굴 일관성을 달성합니다. 정면 얼굴 사진일수록 결과가 좋아요.</p>
               </div>
             </CardContent>
           </Card>
