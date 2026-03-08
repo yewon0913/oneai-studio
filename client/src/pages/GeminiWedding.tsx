@@ -4,22 +4,38 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Upload, Download, X, ArrowLeft, Sparkles, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, Upload, Download, X, ArrowLeft, Sparkles, RefreshCw, Trash2, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
-const SCENES = [
-  { key: "cherry_blossom", emoji: "🌸", label: "벚꽃 정원" },
-  { key: "chapel",         emoji: "⛪", label: "고급 채플" },
-  { key: "garden",         emoji: "🌿", label: "야외 정원" },
-  { key: "beach",          emoji: "🌅", label: "해변 노을" },
-  { key: "studio",         emoji: "📸", label: "스튜디오" },
-] as const;
-type SceneKey = typeof SCENES[number]["key"];
+interface AnalysisResult {
+  skinTone: string;
+  skinTexture: string;
+  faceShape: string;
+  eyeShape: string;
+  hasGlasses: boolean;
+  glassesStyle: string;
+  hasBear: boolean;
+  bearStyle: string;
+  hairStyle: string;
+  hairColor: string;
+  pose: string;
+  gaze: string;
+  expression: string;
+  makeupLevel: string;
+  lightingType: string;
+  lightingDirection: string;
+  shadowPresence: string;
+  background: string;
+  outfit: string;
+  mood: string;
+  generatedPrompt: string;
+  generatedNegative: string;
+}
 
-function PhotoBox({ label, emoji, image, fileName, onSelect, onClear, inputRef }: {
+function PhotoBox({ label, emoji, image, fileName, onSelect, onClear, inputRef, isAnalyzing }: {
   label: string; emoji: string; image: string | null; fileName: string;
   onSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onClear: () => void; inputRef: React.RefObject<HTMLInputElement | null>;
+  onClear: () => void; inputRef: React.RefObject<HTMLInputElement | null>; isAnalyzing?: boolean;
 }) {
   return (
     <div className="flex-1">
@@ -36,7 +52,7 @@ function PhotoBox({ label, emoji, image, fileName, onSelect, onClear, inputRef }
           <img src={image} alt={label} className="w-full h-full object-cover" />
           <div className="absolute top-2 right-2 flex gap-1">
             <button onClick={() => inputRef.current?.click()} className="bg-black/70 hover:bg-black rounded-lg px-2 py-1 text-xs text-white">변경</button>
-            <button onClick={onClear} className="bg-black/70 hover:bg-red-500/80 rounded-lg p-1 text-white transition-colors">
+            <button onClick={onClear} className="bg-black/70 hover:bg-red-500/80 rounded-lg p-1 text-white transition-colors" disabled={isAnalyzing}>
               <Trash2 className="w-3 h-3" />
             </button>
           </div>
@@ -50,6 +66,62 @@ function PhotoBox({ label, emoji, image, fileName, onSelect, onClear, inputRef }
   );
 }
 
+function AnalysisPanel({ label, analysis, isLoading }: {
+  label: string; analysis: AnalysisResult | null; isLoading: boolean;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  if (!analysis && !isLoading) return null;
+
+  return (
+    <div className="rounded-lg border border-purple-500/30 bg-slate-800/40 overflow-hidden">
+      <button onClick={() => setExpanded(!expanded)}
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-800/60 transition-colors">
+        <span className="text-sm font-semibold text-slate-300">✨ {label} AI 정밀 분석</span>
+        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`} />
+      </button>
+
+      {expanded && (
+        <div className="px-4 py-3 border-t border-slate-700/50 space-y-3 max-h-96 overflow-y-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-4 h-4 animate-spin text-purple-400 mr-2" />
+              <span className="text-xs text-slate-400">분석 중...</span>
+            </div>
+          ) : analysis ? (
+            <>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div><span className="text-slate-500">피부톤:</span> <span className="text-slate-300">{analysis.skinTone}</span></div>
+                <div><span className="text-slate-500">피부질감:</span> <span className="text-slate-300">{analysis.skinTexture}</span></div>
+                <div><span className="text-slate-500">얼굴형:</span> <span className="text-slate-300">{analysis.faceShape}</span></div>
+                <div><span className="text-slate-500">눈 모양:</span> <span className="text-slate-300">{analysis.eyeShape}</span></div>
+                <div><span className="text-slate-500">머리 스타일:</span> <span className="text-slate-300">{analysis.hairStyle}</span></div>
+                <div><span className="text-slate-500">머리 색상:</span> <span className="text-slate-300">{analysis.hairColor}</span></div>
+                <div><span className="text-slate-500">자세:</span> <span className="text-slate-300">{analysis.pose}</span></div>
+                <div><span className="text-slate-500">시선:</span> <span className="text-slate-300">{analysis.gaze}</span></div>
+                <div><span className="text-slate-500">표정:</span> <span className="text-slate-300">{analysis.expression}</span></div>
+                <div><span className="text-slate-500">메이크업:</span> <span className="text-slate-300">{analysis.makeupLevel}</span></div>
+                <div><span className="text-slate-500">조명:</span> <span className="text-slate-300">{analysis.lightingType}</span></div>
+                <div><span className="text-slate-500">배경:</span> <span className="text-slate-300">{analysis.background}</span></div>
+              </div>
+              <div className="border-t border-slate-700/50 pt-3 space-y-2">
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">📝 생성 프롬프트:</p>
+                  <p className="text-xs text-slate-300 bg-slate-900/50 p-2 rounded line-clamp-4">{analysis.generatedPrompt}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 mb-1">🚫 네거티브 프롬프트:</p>
+                  <p className="text-xs text-slate-300 bg-slate-900/50 p-2 rounded line-clamp-2">{analysis.generatedNegative}</p>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function GeminiWedding() {
   const [, setLocation] = useLocation();
   const [brideImage, setBrideImage]         = useState<string | null>(null);
@@ -58,27 +130,54 @@ export default function GeminiWedding() {
   const [groomImage, setGroomImage]         = useState<string | null>(null);
   const [groomFileName, setGroomFileName]   = useState("");
   const [groomMime, setGroomMime]           = useState<"image/jpeg"|"image/png"|"image/webp">("image/jpeg");
-  const [scene, setScene]                   = useState<SceneKey>("cherry_blossom");
+  const [scene, setScene]                   = useState("cherry_blossom");
   const [customPrompt, setCustomPrompt]     = useState("");
   const [useCustom, setUseCustom]           = useState(false);
   const [isGenerating, setIsGenerating]     = useState(false);
   const [results, setResults]               = useState<{ url: string; log: string }[]>([]);
+  const [brideAnalysis, setBrideAnalysis]   = useState<AnalysisResult | null>(null);
+  const [groomAnalysis, setGroomAnalysis]   = useState<AnalysisResult | null>(null);
+  const [isAnalyzing, setIsAnalyzing]       = useState(false);
 
   const brideRef = useRef<HTMLInputElement>(null);
   const groomRef = useRef<HTMLInputElement>(null);
   const mutation = trpc.geminiWedding.generate.useMutation();
+  const analyzeImageMutation = trpc.geminiWedding.analyzeImage.useMutation();
 
   const makeHandler = (
     setImg: (v: string) => void,
     setName: (v: string) => void,
-    setMime: (v: "image/jpeg"|"image/png"|"image/webp") => void
+    setMime: (v: "image/jpeg"|"image/png"|"image/webp") => void,
+    setAnalysis: (v: AnalysisResult | null) => void
   ) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) { toast.error("10MB 이하만 가능합니다"); return; }
     setMime((file.type as "image/jpeg"|"image/png"|"image/webp") || "image/jpeg");
+    setAnalysis(null);
     const reader = new FileReader();
-    reader.onload = (ev) => { setImg(ev.target?.result as string); setName(file.name); };
+    reader.onload = async (ev) => {
+      const base64 = ev.target?.result as string;
+      setImg(base64);
+      setName(file.name);
+      
+      // 자동 분석 실행
+      setIsAnalyzing(true);
+      try {
+        const base64Data = base64.includes(",") ? base64.split(",")[1] : base64;
+        const result = await analyzeImageMutation.mutateAsync({
+          imageBase64: base64Data,
+          mimeType: (file.type as "image/jpeg"|"image/png"|"image/webp") || "image/jpeg",
+        });
+        setAnalysis(result);
+        toast.success("분석 완료!");
+      } catch (err) {
+        console.error(err);
+        toast.error("분석 실패");
+      } finally {
+        setIsAnalyzing(false);
+      }
+    };
     reader.readAsDataURL(file);
   };
 
@@ -95,7 +194,7 @@ export default function GeminiWedding() {
         brideMimeType: brideMime,
         groomImageBase64: groomBase64,
         groomMimeType: groomMime,
-        scene,
+        scene: scene as any,
         customPrompt: useCustom && customPrompt.trim() ? customPrompt.trim() : undefined,
       });
       setResults(result.images);
@@ -144,12 +243,14 @@ export default function GeminiWedding() {
           <CardContent className="space-y-4">
             <div className="flex gap-4">
               <PhotoBox label="신부" emoji="👰" image={brideImage} fileName={brideFileName}
-                onSelect={makeHandler(setBrideImage, setBrideFileName, setBrideMime)}
-                onClear={() => { setBrideImage(null); setBrideFileName(""); }} inputRef={brideRef} />
+                onSelect={makeHandler(setBrideImage, setBrideFileName, setBrideMime, setBrideAnalysis)}
+                onClear={() => { setBrideImage(null); setBrideFileName(""); setBrideAnalysis(null); }} 
+                inputRef={brideRef} isAnalyzing={isAnalyzing} />
               <div className="flex items-center justify-center text-2xl">💍</div>
               <PhotoBox label="신랑" emoji="🤵" image={groomImage} fileName={groomFileName}
-                onSelect={makeHandler(setGroomImage, setGroomFileName, setGroomMime)}
-                onClear={() => { setGroomImage(null); setGroomFileName(""); }} inputRef={groomRef} />
+                onSelect={makeHandler(setGroomImage, setGroomFileName, setGroomMime, setGroomAnalysis)}
+                onClear={() => { setGroomImage(null); setGroomFileName(""); setGroomAnalysis(null); }} 
+                inputRef={groomRef} isAnalyzing={isAnalyzing} />
             </div>
             <div className="grid grid-cols-2 gap-x-4 text-xs text-slate-500 p-3 rounded-lg bg-slate-800/40 border border-slate-700/50">
               <p>✅ 정면 얼굴이 잘 보이는 사진</p>
@@ -160,11 +261,24 @@ export default function GeminiWedding() {
           </CardContent>
         </Card>
 
+        {(brideAnalysis || groomAnalysis || isAnalyzing) && (
+          <div className="space-y-3 mb-5">
+            <AnalysisPanel label="신부" analysis={brideAnalysis} isLoading={isAnalyzing && !brideAnalysis} />
+            <AnalysisPanel label="신랑" analysis={groomAnalysis} isLoading={isAnalyzing && !groomAnalysis} />
+          </div>
+        )}
+
         <Card className="bg-slate-900/50 border-slate-800 mb-5">
           <CardHeader><CardTitle className="text-white">🏞️ 배경 선택</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-5 gap-2">
-              {SCENES.map((s) => (
+              {[
+                { key: "cherry_blossom", emoji: "🌸", label: "벚꽃 정원" },
+                { key: "chapel",         emoji: "⛪", label: "고급 채플" },
+                { key: "garden",         emoji: "🌿", label: "야외 정원" },
+                { key: "beach",          emoji: "🌅", label: "해변 노을" },
+                { key: "studio",         emoji: "📸", label: "스튜디오" },
+              ].map((s) => (
                 <button key={s.key} onClick={() => setScene(s.key)}
                   className={`p-3 rounded-xl text-center border transition-all ${scene === s.key ? "bg-purple-500/20 border-purple-500/60 text-white scale-105" : "bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600"}`}>
                   <div className="text-xl mb-1">{s.emoji}</div>
@@ -189,7 +303,7 @@ export default function GeminiWedding() {
           </CardContent>
         </Card>
 
-        <Button onClick={handleGenerate} disabled={!brideImage || !groomImage || isGenerating}
+        <Button onClick={handleGenerate} disabled={!brideImage || !groomImage || isGenerating || isAnalyzing}
           className="w-full mb-5 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-semibold py-6 text-lg disabled:opacity-40">
           {isGenerating
             ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Gemini 생성 중... (~1분)</>

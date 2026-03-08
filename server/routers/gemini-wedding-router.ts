@@ -1,8 +1,23 @@
 import { z } from "zod";
 import { router, publicProcedure } from "../_core/trpc";
 import { generateGeminiWedding } from "../services/gemini-wedding-pipeline";
+import { analyzeImageWithClaude } from "../services/shared-analyzer";
 
 export const geminiWeddingRouter = router({
+  analyzeImage: publicProcedure
+    .input(z.object({
+      imageBase64: z.string(),
+      mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]).default("image/jpeg"),
+    }))
+    .mutation(async ({ input }) => {
+      const analysis = await analyzeImageWithClaude(
+        input.imageBase64,
+        input.mimeType,
+        "wedding"
+      );
+      return analysis;
+    }),
+
   generate: publicProcedure
     .input(z.object({
       brideImageBase64: z.string(),
