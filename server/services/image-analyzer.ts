@@ -26,13 +26,15 @@ const ANALYSIS_PROMPT = `이 사진을 전문 사진작가와 AI 프롬프트 �
 
 아래 15가지 카테고리를 전부 분석해서 AI 이미지 생성에 최적화된 영어 프롬프트 키워드로 변환해줘.
 
+**CRITICAL: outfit과 background는 반드시 프롬프트의 최상단에 명시되어야 함!**
+
 1. camera: 카메라 바디, 렌즈(mm), 조리개(f값), 촬영거리, 아웃포커싱 정도
 2. lighting: 조명 유형, 방향, 색온도(K), 그림자 방향, 대비
 3. skin: 피부톤, 색감, 혈색, 질감, 윤기, 모공, 핏줄
-4. outfit: 의상 종류, 소재, 색상, 액세서리, 디테일
+4. outfit: 의상 종류, 소재, 색상, 액세서리, 디테일 [최우선]
 5. pose: 전체 자세, 몸 방향, 손 위치, 제스처
 6. expression: 표정, 눈빛, 시선 방향, 얼굴 방향
-7. background: 배경 종류, 색상, 거리감, 전경 요소
+7. background: 배경 종류, 색상, 거리감, 전경 요소 [최우선]
 8. mood: 전체 분위기, 감성, 스타일
 9. movement: 정지/동적, 바람, 드레스/머리 움직임
 10. space: 공간감, 깊이감, 전/중/후경 레이어
@@ -61,8 +63,8 @@ JSON만 응답 (다른 텍스트 없이):
     "colorGrade": "영어 키워드",
     "innerState": "영어 키워드"
   },
-  "prompt": "15가지 통합 영어 프롬프트 300단어 이내",
-  "negativePrompt": "피해야 할 요소들 150단어 이내"
+  "prompt": "15가지 통합 영어 프롬프트 300단어 이내. CRITICAL: outfit과 background는 반드시 처음에 명시되어야 함!",
+  "negativePrompt": "피해야 할 요소들 150단어 이내. 포함: 다른 의류, 다른 배경, 다른 조명, 다른 색상"
 }`;
 
 function parseResponse(text: string): AnalysisResult {

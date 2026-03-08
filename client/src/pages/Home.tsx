@@ -264,6 +264,13 @@ export default function Home() {
       color: "from-rose-600/20 to-pink-800/20",
     },
     {
+      title: "✨ Gemini 웨딩 (Beta)",
+      description: "각자 사진으로 Gemini AI 웨딩 사진 생성",
+      icon: Sparkles,
+      href: "/gemini-wedding",
+      color: "from-purple-600/20 to-purple-800/20",
+    },
+    {
       title: "AI 템플릿 갤러리",
       description: "Flux, Kling, Runway 등 최신 템플릿",
       icon: Sparkles,

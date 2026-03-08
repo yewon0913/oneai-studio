@@ -14,6 +14,7 @@ import { MERCHANDISE_FORMATS, type MerchandiseFormatKey } from "../drizzle/schem
 import { beautyRouter } from "./routers/beauty-router";
 import { memoryRouter } from "./routers/memory-router";
 import { coupleRouter } from "./routers/couple-router";
+import { geminiWeddingRouter } from "./routers/gemini-wedding-router";
 
 // ─── 핀터레스트/외부 URL에서 실제 이미지를 다운로드하여 base64로 변환 ───
 async function resolveImageToBase64(url: string): Promise<{ b64Json: string; mimeType: string } | null> {
@@ -104,14 +105,18 @@ function buildFacePreservationPrompt(opts: {
   merchandiseFormat?: string;
   hasReferenceImage?: boolean;
   referenceMode?: "face_swap" | "background_composite" | "style_transfer" | "direct_apply";
+  glassesFixMode?: boolean;
 }): string {
-  const { basePrompt, gender, isCouple, partnerGender, category, concept, merchandiseFormat, hasReferenceImage, referenceMode } = opts;
+  const { basePrompt, gender, isCouple, partnerGender, category, concept, merchandiseFormat, hasReferenceImage, referenceMode, glassesFixMode } = opts;
 
   const genderDesc = gender === "male" ? "man" : "woman";
   const partnerDesc = partnerGender === "male" ? "man" : "woman";
 
   // 핵심 지시문 (간결하게)
-  const faceCore = "Preserve EXACT facial features from reference photo with 100% accuracy. Same face, same person.";
+  let faceCore = "Preserve EXACT facial features from reference photo with 100% accuracy. Same face, same person.";
+  if (glassesFixMode) {
+    faceCore += " Keep glasses with same style and color exactly as in reference.";
+  }
 
   const styles: Record<string, string> = {
     wedding: "luxury wedding photo, golden hour, cinematic",
@@ -445,6 +450,7 @@ export const appRouter = router({
         parameters: z.record(z.string(), z.unknown()).optional(),
         referenceImageUrl: z.string().optional(),
         faceFixMode: z.boolean().optional(),
+        glassesFixMode: z.boolean().optional(),
         merchandiseFormat: z.string().optional(),
         referenceMode: z.enum(["face_swap", "background_composite", "style_transfer", "direct_apply"]).optional(),
       }))
@@ -470,6 +476,7 @@ export const appRouter = router({
           parameters: { 
             ...input.parameters, 
             faceFixMode: input.faceFixMode,
+            glassesFixMode: input.glassesFixMode,
             merchandiseFormat: input.merchandiseFormat,
             referenceMode: input.referenceMode,
           },
@@ -515,6 +522,7 @@ export const appRouter = router({
             merchandiseFormat: input.merchandiseFormat,
             hasReferenceImage: !!refBase64,
             referenceMode: refMode,
+            glassesFixMode: input.glassesFixMode,
           });
 
           // 4. originalImages 구성 (최대 2개 - API 제한)
@@ -1186,6 +1194,7 @@ JSON 배열로만 답해 (다른 텍스트 없이):
   beauty: beautyRouter,
   memory: memoryRouter,
   couple: coupleRouter,
+  geminiWedding: geminiWeddingRouter,
 });
 
 // ─── 영상 생성 비동기 처리 ───
@@ -1274,6 +1283,7 @@ async function processBatchAsync(batchJobId: number, userId: number) {
           category: project.category,
           concept: project.concept || undefined,
           merchandiseFormat: batch.batchConfig?.merchandiseFormat,
+          glassesFixMode: batch.batchConfig?.glassesFixMode,
         });
 
         const originalImages: Array<{ b64Json?: string; url?: string; mimeType?: string }> = [];

@@ -41,7 +41,7 @@ export type InsertClient = typeof clients.$inferInsert;
 export const clientPhotos = mysqlTable("client_photos", {
   id: int("id").autoincrement().primaryKey(),
   clientId: int("clientId").notNull(),
-  photoType: mysqlEnum("photoType", ["front", "side", "additional"]).notNull(),
+  photoType: mysqlEnum("photoType", ["front", "side", "additional", "face_reference"]).notNull(),
   originalUrl: text("originalUrl").notNull(),
   fileKey: varchar("fileKey", { length: 512 }).notNull(),
   fileName: varchar("fileName", { length: 255 }),
@@ -141,6 +141,7 @@ export const batchJobs = mysqlTable("batch_jobs", {
   // 배치 설정
   batchConfig: json("batchConfig").$type<{
     faceFixMode?: boolean;
+    glassesFixMode?: boolean;
     merchandiseFormat?: string;
     concepts?: string[];
   }>(),

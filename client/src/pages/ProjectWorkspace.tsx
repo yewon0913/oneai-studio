@@ -52,6 +52,7 @@ export default function ProjectWorkspace() {
   const [referenceMode, setReferenceMode] = useState<"background_composite" | "style_transfer" | "face_swap" | "direct_apply">("background_composite");
   const [selectedGenId, setSelectedGenId] = useState<number | null>(null);
   const [faceFixMode, setFaceFixMode] = useState(true);
+  const [glassesFixMode, setGlassesFixMode] = useState(false);
   const [merchandiseFormat, setMerchandiseFormat] = useState<string>("");
   const [videoMotion, setVideoMotion] = useState("cinematic");
   const [videoDuration, setVideoDuration] = useState(5);
@@ -435,6 +436,7 @@ export default function ProjectWorkspace() {
       negativePrompt: negativePrompt.trim() || undefined,
       referenceImageUrl: refUrl,
       faceFixMode,
+      glassesFixMode,
       merchandiseFormat: merchandiseFormat && merchandiseFormat !== "none" ? merchandiseFormat : undefined,
       referenceMode: refUrl ? effectiveMode : undefined,
     });
@@ -937,6 +939,25 @@ export default function ProjectWorkspace() {
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${faceFixMode ? "bg-green-600" : "bg-gray-600"}`}
                   >
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${faceFixMode ? "translate-x-6" : "translate-x-1"}`} />
+                  </button>
+                </div>
+
+                {/* 안경 착용 고정 모드 */}
+                <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 border border-border">
+                  <div className="flex items-center gap-2">
+                    {glassesFixMode ? <Lock className="h-4 w-4 text-blue-500" /> : <Unlock className="h-4 w-4 text-muted-foreground" />}
+                    <div>
+                      <p className="text-sm font-medium text-foreground">안경 착용 고정</p>
+                      <p className="text-xs text-muted-foreground">
+                        {glassesFixMode ? "안경 스타일 동일하게 유지" : "안경 착용 여부 자유"}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setGlassesFixMode(!glassesFixMode)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${glassesFixMode ? "bg-blue-600" : "bg-gray-600"}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${glassesFixMode ? "translate-x-6" : "translate-x-1"}`} />
                   </button>
                 </div>
 
