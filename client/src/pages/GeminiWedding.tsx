@@ -46,13 +46,24 @@ function PhotoBox({ label, emoji, image, fileName, onSelect, onClear, inputRef, 
           <Upload className="w-8 h-8 text-slate-500 mb-2" />
           <p className="text-xs text-slate-500">얼굴 사진 업로드</p>
           <p className="text-xs text-slate-600 mt-1">정면 사진 권장</p>
+          <p className="text-xs text-purple-500/70 mt-1">분석 후 자동 삭제</p>
         </div>
       ) : (
         <div className="relative rounded-xl overflow-hidden border border-purple-500/30 aspect-[3/4]">
           <img src={image} alt={label} className="w-full h-full object-cover" />
+          {isAnalyzing && (
+            <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center">
+              <Loader2 className="w-6 h-6 animate-spin text-purple-400 mb-2" />
+              <p className="text-xs text-purple-300">AI 분석 중...</p>
+            </div>
+          )}
           <div className="absolute top-2 right-2 flex gap-1">
-            <button onClick={() => inputRef.current?.click()} className="bg-black/70 hover:bg-black rounded-lg px-2 py-1 text-xs text-white">변경</button>
-            <button onClick={onClear} className="bg-black/70 hover:bg-red-500/80 rounded-lg p-1 text-white transition-colors" disabled={isAnalyzing}>
+            <button onClick={() => inputRef.current?.click()}
+              className="bg-black/70 hover:bg-black rounded-lg px-2 py-1 text-xs text-white"
+              disabled={isAnalyzing}>변경</button>
+            <button onClick={onClear}
+              className="bg-black/70 hover:bg-red-500/80 rounded-lg p-1 text-white transition-colors"
+              disabled={isAnalyzing}>
               <Trash2 className="w-3 h-3" />
             </button>
           </div>
@@ -70,7 +81,6 @@ function AnalysisPanel({ label, analysis, isLoading }: {
   label: string; analysis: AnalysisResult | null; isLoading: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
-
   if (!analysis && !isLoading) return null;
 
   return (
@@ -80,41 +90,28 @@ function AnalysisPanel({ label, analysis, isLoading }: {
         <span className="text-sm font-semibold text-slate-300">✨ {label} AI 정밀 분석</span>
         <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`} />
       </button>
-
       {expanded && (
-        <div className="px-4 py-3 border-t border-slate-700/50 space-y-3 max-h-96 overflow-y-auto">
+        <div className="px-4 py-3 border-t border-slate-700/50 space-y-3 max-h-80 overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center py-4">
               <Loader2 className="w-4 h-4 animate-spin text-purple-400 mr-2" />
-              <span className="text-xs text-slate-400">분석 중...</span>
+              <span className="text-xs text-slate-400">Claude Vision 분석 중...</span>
             </div>
           ) : analysis ? (
-            <>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div><span className="text-slate-500">피부톤:</span> <span className="text-slate-300">{analysis.skinTone}</span></div>
-                <div><span className="text-slate-500">피부질감:</span> <span className="text-slate-300">{analysis.skinTexture}</span></div>
-                <div><span className="text-slate-500">얼굴형:</span> <span className="text-slate-300">{analysis.faceShape}</span></div>
-                <div><span className="text-slate-500">눈 모양:</span> <span className="text-slate-300">{analysis.eyeShape}</span></div>
-                <div><span className="text-slate-500">머리 스타일:</span> <span className="text-slate-300">{analysis.hairStyle}</span></div>
-                <div><span className="text-slate-500">머리 색상:</span> <span className="text-slate-300">{analysis.hairColor}</span></div>
-                <div><span className="text-slate-500">자세:</span> <span className="text-slate-300">{analysis.pose}</span></div>
-                <div><span className="text-slate-500">시선:</span> <span className="text-slate-300">{analysis.gaze}</span></div>
-                <div><span className="text-slate-500">표정:</span> <span className="text-slate-300">{analysis.expression}</span></div>
-                <div><span className="text-slate-500">메이크업:</span> <span className="text-slate-300">{analysis.makeupLevel}</span></div>
-                <div><span className="text-slate-500">조명:</span> <span className="text-slate-300">{analysis.lightingType}</span></div>
-                <div><span className="text-slate-500">배경:</span> <span className="text-slate-300">{analysis.background}</span></div>
-              </div>
-              <div className="border-t border-slate-700/50 pt-3 space-y-2">
-                <div>
-                  <p className="text-xs text-slate-500 mb-1">📝 생성 프롬프트:</p>
-                  <p className="text-xs text-slate-300 bg-slate-900/50 p-2 rounded line-clamp-4">{analysis.generatedPrompt}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 mb-1">🚫 네거티브 프롬프트:</p>
-                  <p className="text-xs text-slate-300 bg-slate-900/50 p-2 rounded line-clamp-2">{analysis.generatedNegative}</p>
-                </div>
-              </div>
-            </>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div><span className="text-slate-500">피부톤:</span> <span className="text-slate-300">{analysis.skinTone}</span></div>
+              <div><span className="text-slate-500">얼굴형:</span> <span className="text-slate-300">{analysis.faceShape}</span></div>
+              <div><span className="text-slate-500">눈 모양:</span> <span className="text-slate-300">{analysis.eyeShape}</span></div>
+              <div><span className="text-slate-500">헤어:</span> <span className="text-slate-300">{analysis.hairStyle}</span></div>
+              <div><span className="text-slate-500">표정:</span> <span className="text-slate-300">{analysis.expression}</span></div>
+              <div><span className="text-slate-500">분위기:</span> <span className="text-slate-300">{analysis.mood}</span></div>
+              {analysis.hasGlasses && (
+                <div className="col-span-2 text-yellow-400">👓 안경 감지 → 자동 고정</div>
+              )}
+              {analysis.hasBear && (
+                <div className="col-span-2 text-yellow-400">🧔 수염 감지 → 자동 유지</div>
+              )}
+            </div>
           ) : null}
         </div>
       )}
@@ -124,84 +121,117 @@ function AnalysisPanel({ label, analysis, isLoading }: {
 
 export default function GeminiWedding() {
   const [, setLocation] = useLocation();
+
   const [brideImage, setBrideImage]         = useState<string | null>(null);
   const [brideFileName, setBrideFileName]   = useState("");
   const [brideMime, setBrideMime]           = useState<"image/jpeg"|"image/png"|"image/webp">("image/jpeg");
   const [groomImage, setGroomImage]         = useState<string | null>(null);
   const [groomFileName, setGroomFileName]   = useState("");
   const [groomMime, setGroomMime]           = useState<"image/jpeg"|"image/png"|"image/webp">("image/jpeg");
-  const [scene, setScene]                   = useState("cherry_blossom");
-  const [customPrompt, setCustomPrompt]     = useState("");
-  const [useCustom, setUseCustom]           = useState(false);
-  const [isGenerating, setIsGenerating]     = useState(false);
-  const [results, setResults]               = useState<{ url: string; log: string }[]>([]);
+
   const [brideAnalysis, setBrideAnalysis]   = useState<AnalysisResult | null>(null);
   const [groomAnalysis, setGroomAnalysis]   = useState<AnalysisResult | null>(null);
-  const [isAnalyzing, setIsAnalyzing]       = useState(false);
+  const [isAnalyzingBride, setIsAnalyzingBride] = useState(false);
+  const [isAnalyzingGroom, setIsAnalyzingGroom] = useState(false);
+
+  const [mainPrompt, setMainPrompt]         = useState("");
+  const [negativePrompt, setNegativePrompt] = useState("");
+  const [promptEdited, setPromptEdited]     = useState(false);
+
+  const [isGenerating, setIsGenerating]     = useState(false);
+  const [results, setResults]               = useState<{ url: string; log: string }[]>([]);
+
+  const brideReady = !!brideAnalysis;
+  const groomReady = !!groomAnalysis;
+  const bothReady  = brideReady && groomReady;
 
   const brideRef = useRef<HTMLInputElement>(null);
   const groomRef = useRef<HTMLInputElement>(null);
-  const mutation = trpc.geminiWedding.generate.useMutation();
+
+  const mutation             = trpc.geminiWedding.generate.useMutation();
   const analyzeImageMutation = trpc.geminiWedding.analyzeImage.useMutation();
 
+  const mergePrompts = (bride: AnalysisResult, groom: AnalysisResult) => {
+    const merged = `Photorealistic professional Korean wedding photography.
+Bride: ${bride.skinTone} skin, ${bride.faceShape} face, ${bride.eyeShape} eyes, ${bride.hairStyle}, ${bride.makeupLevel} makeup${bride.hasGlasses ? `, wearing ${bride.glassesStyle} glasses preserved` : ""}.
+Groom: ${groom.skinTone} skin, ${groom.faceShape} face, ${groom.eyeShape} eyes, ${groom.hairStyle}${groom.hasBear ? `, ${groom.bearStyle} beard preserved` : ""}.
+Both wearing elegant white wedding dress and black tuxedo.
+Natural candid pose, slight body turn 15 degrees, relaxed shoulders, genuine smiles, eyes slightly off-camera.
+${bride.lightingType.includes("outdoor") ? "Outdoor natural lighting, hard sunlight casting directional shadows, sun catchlight in eyes, ambient occlusion" : "Studio lighting, Rembrandt triangle on cheek, visible key light in eyes, hair light separation"}.
+Skin pores visible, natural skin texture, subsurface scattering, film grain ISO 400.
+Shot on Canon EOS R5, 85mm f/2.8, RAW photo, photorealistic, 8K.
+NOT illustration, NOT digital art, NOT AI generated.`;
+    setMainPrompt(merged);
+    setNegativePrompt(bride.generatedNegative);
+    setPromptEdited(false);
+  };
+
   const makeHandler = (
-    setImg: (v: string) => void,
+    setImg: (v: string | null) => void,
     setName: (v: string) => void,
     setMime: (v: "image/jpeg"|"image/png"|"image/webp") => void,
-    setAnalysis: (v: AnalysisResult | null) => void
+    setAnalysis: (v: AnalysisResult | null) => void,
+    setAnalyzing: (v: boolean) => void,
+    otherAnalysis: AnalysisResult | null,
+    isBride: boolean
   ) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) { toast.error("10MB 이하만 가능합니다"); return; }
-    setMime((file.type as "image/jpeg"|"image/png"|"image/webp") || "image/jpeg");
+    const mime = (file.type as "image/jpeg"|"image/png"|"image/webp") || "image/jpeg";
+    setMime(mime);
     setAnalysis(null);
     const reader = new FileReader();
     reader.onload = async (ev) => {
-      const base64 = ev.target?.result as string;
-      setImg(base64);
+      const base64Full = ev.target?.result as string;
+      setImg(base64Full);
       setName(file.name);
-      
-      // 자동 분석 실행
-      setIsAnalyzing(true);
+      setAnalyzing(true);
       try {
-        const base64Data = base64.includes(",") ? base64.split(",")[1] : base64;
+        const base64Data = base64Full.includes(",") ? base64Full.split(",")[1] : base64Full;
         const result = await analyzeImageMutation.mutateAsync({
           imageBase64: base64Data,
-          mimeType: (file.type as "image/jpeg"|"image/png"|"image/webp") || "image/jpeg",
+          mimeType: mime,
         });
-        setAnalysis(result);
-        toast.success("분석 완료!");
+        setAnalysis(result as AnalysisResult);
+        setImg(null);
+        setName("");
+        toast.success(`${isBride ? "신부" : "신랑"} 분석 완료 ✨ (이미지 보안 삭제됨)`);
+        const bride = isBride ? (result as AnalysisResult) : otherAnalysis;
+        const groom = isBride ? otherAnalysis : (result as AnalysisResult);
+        if (bride && groom && !promptEdited) {
+          mergePrompts(bride, groom);
+          toast.success("메인/네거티브 프롬프트 자동 적용 완료 ✅");
+        }
       } catch (err) {
         console.error(err);
-        toast.error("분석 실패");
+        toast.error("분석 실패. 정면 얼굴 사진으로 다시 시도해주세요.");
+        setImg(null);
+        setName("");
       } finally {
-        setIsAnalyzing(false);
+        setAnalyzing(false);
       }
     };
     reader.readAsDataURL(file);
   };
 
   const handleGenerate = async () => {
-    if (!brideImage) { toast.error("신부 사진을 업로드해주세요"); return; }
-    if (!groomImage) { toast.error("신랑 사진을 업로드해주세요"); return; }
+    if (!bothReady) { toast.error("신부/신랑 사진을 먼저 업로드하고 분석을 완료해주세요"); return; }
+    if (!mainPrompt.trim()) { toast.error("프롬프트가 비어있어요"); return; }
     setIsGenerating(true);
     setResults([]);
     try {
-      const brideBase64 = brideImage.includes(",") ? brideImage.split(",")[1] : brideImage;
-      const groomBase64 = groomImage.includes(",") ? groomImage.split(",")[1] : groomImage;
       const result = await mutation.mutateAsync({
-        brideImageBase64: brideBase64,
-        brideMimeType: brideMime,
-        groomImageBase64: groomBase64,
-        groomMimeType: groomMime,
-        scene: scene as any,
-        customPrompt: useCustom && customPrompt.trim() ? customPrompt.trim() : undefined,
+        brideAnalysis: brideAnalysis!,
+        groomAnalysis: groomAnalysis!,
+        mainPrompt: mainPrompt.trim(),
+        negativePrompt: negativePrompt.trim(),
       });
       setResults(result.images);
       toast.success(`웨딩 사진 ${result.images.length}장 완성! 💑`);
     } catch (err) {
       console.error(err);
-      toast.error("생성 실패. 사진을 확인하고 다시 시도해주세요.");
+      toast.error("생성 실패. 다시 시도해주세요.");
     } finally {
       setIsGenerating(false);
     }
@@ -209,152 +239,160 @@ export default function GeminiWedding() {
 
   const handleDownload = (url: string, idx: number) => {
     const a = document.createElement("a");
-    a.href = url; a.download = `gemini-wedding-${idx + 1}.png`; a.target = "_blank";
+    a.href = url; a.download = `gemini-wedding-${idx + 1}.png`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  };
-
-  const handleClearResults = () => {
-    setResults([]);
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 p-4 md:p-8">
       <div className="max-w-3xl mx-auto">
-        <div className="mb-8">
-          <Button variant="ghost" size="sm" onClick={() => setLocation("/")} className="mb-4 gap-2 text-slate-400 hover:text-white">
-            <ArrowLeft className="w-4 h-4" />돌아가기
-          </Button>
-          <div className="flex items-center gap-3 mb-2">
+        <div className="flex items-center gap-3 mb-8">
+          <button onClick={() => setLocation("/")} className="text-slate-400 hover:text-slate-200">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="text-3xl font-bold text-white flex items-center gap-2">
             <Sparkles className="w-8 h-8 text-purple-400" />
-            <h1 className="text-3xl font-bold text-white">Gemini AI 웨딩</h1>
-            <span className="text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full border border-purple-500/30">BETA</span>
-          </div>
-          <p className="text-slate-400 mb-3">각자 사진만 있어도 OK — Gemini가 웨딩 사진을 만들어드립니다</p>
-          <div className="flex gap-2 flex-wrap">
-            <span className="text-xs bg-purple-500/20 text-purple-400 px-3 py-1 rounded-full border border-purple-500/30">✨ Flux LoRA + Imagen 3.0</span>
-            <span className="text-xs bg-blue-500/20 text-blue-400 px-3 py-1 rounded-full border border-blue-500/30">👰🤵 각자 사진 가능</span>
-            <span className="text-xs bg-rose-500/20 text-rose-400 px-3 py-1 rounded-full border border-rose-500/30">🎩 자동 웨딩룩</span>
-            <span className="text-xs bg-green-500/20 text-green-400 px-3 py-1 rounded-full border border-green-500/30">🔄 95%+ 얼굴 일관성</span>
-          </div>
+            Gemini AI 웨딩
+            <span className="text-xs bg-purple-600/30 text-purple-300 px-2 py-1 rounded-full">BETA</span>
+          </h1>
         </div>
 
-        <Card className="bg-slate-900/50 border-slate-800 mb-5">
-          <CardHeader><CardTitle className="text-white">👰🤵 신부 · 신랑 사진 업로드</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-4">
-              <PhotoBox label="신부" emoji="👰" image={brideImage} fileName={brideFileName}
-                onSelect={makeHandler(setBrideImage, setBrideFileName, setBrideMime, setBrideAnalysis)}
-                onClear={() => { setBrideImage(null); setBrideFileName(""); setBrideAnalysis(null); }} 
-                inputRef={brideRef} isAnalyzing={isAnalyzing} />
-              <div className="flex items-center justify-center text-2xl">💍</div>
-              <PhotoBox label="신랑" emoji="🤵" image={groomImage} fileName={groomFileName}
-                onSelect={makeHandler(setGroomImage, setGroomFileName, setGroomMime, setGroomAnalysis)}
-                onClear={() => { setGroomImage(null); setGroomFileName(""); setGroomAnalysis(null); }} 
-                inputRef={groomRef} isAnalyzing={isAnalyzing} />
+        <p className="text-slate-400 mb-6">각자 사진만 있어도 OK — Gemini가 웨딩 사진을 만들어 드립니다</p>
+
+        {/* 사진 업로드 섹션 */}
+        <Card className="border-slate-700 bg-slate-800/40 mb-6">
+          <CardHeader>
+            <CardTitle className="text-lg">👰 👨 신부·신랑 사진 업로드</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-4 mb-4">
+              <PhotoBox
+                label="신부"
+                emoji="👰"
+                image={brideImage}
+                fileName={brideFileName}
+                onSelect={makeHandler(setBrideImage, setBrideFileName, setBrideMime, setBrideAnalysis, setIsAnalyzingBride, groomAnalysis, true)}
+                onClear={() => { setBrideImage(null); setBrideFileName(""); setBrideAnalysis(null); }}
+                inputRef={brideRef}
+                isAnalyzing={isAnalyzingBride}
+              />
+              <div className="flex items-center justify-center">
+                <div className="text-4xl">💍</div>
+              </div>
+              <PhotoBox
+                label="신랑"
+                emoji="👨"
+                image={groomImage}
+                fileName={groomFileName}
+                onSelect={makeHandler(setGroomImage, setGroomFileName, setGroomMime, setGroomAnalysis, setIsAnalyzingGroom, brideAnalysis, false)}
+                onClear={() => { setGroomImage(null); setGroomFileName(""); setGroomAnalysis(null); }}
+                inputRef={groomRef}
+                isAnalyzing={isAnalyzingGroom}
+              />
             </div>
-            <div className="grid grid-cols-2 gap-x-4 text-xs text-slate-500 p-3 rounded-lg bg-slate-800/40 border border-slate-700/50">
-              <p>✅ 정면 얼굴이 잘 보이는 사진</p>
-              <p>✅ 밝고 선명한 사진</p>
-              <p>✅ 드레스/턱시도 없어도 OK</p>
-              <p>❌ 측면·뒷모습 사진</p>
+
+            {/* 체크리스트 */}
+            <div className="rounded-lg bg-slate-900/50 p-3 text-xs space-y-1">
+              <div className={`flex items-center gap-2 ${brideReady ? "text-green-400" : "text-slate-500"}`}>
+                <span>{brideReady ? "✅" : "⭕"}</span> 정면 얼굴이 잘 보이는 사진
+              </div>
+              <div className={`flex items-center gap-2 ${groomReady ? "text-green-400" : "text-slate-500"}`}>
+                <span>{groomReady ? "✅" : "⭕"}</span> 밝고 선명한 사진
+              </div>
+              <div className={`flex items-center gap-2 ${bothReady ? "text-green-400" : "text-slate-500"}`}>
+                <span>{bothReady ? "✅" : "❌"}</span> 즉면·뒷모습 사진
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        {(brideAnalysis || groomAnalysis || isAnalyzing) && (
-          <div className="space-y-3 mb-5">
-            <AnalysisPanel label="신부" analysis={brideAnalysis} isLoading={isAnalyzing && !brideAnalysis} />
-            <AnalysisPanel label="신랑" analysis={groomAnalysis} isLoading={isAnalyzing && !groomAnalysis} />
-          </div>
+        {/* 분석 결과 */}
+        {(brideAnalysis || isAnalyzingBride) && (
+          <AnalysisPanel label="신부" analysis={brideAnalysis} isLoading={isAnalyzingBride} />
+        )}
+        {(groomAnalysis || isAnalyzingGroom) && (
+          <AnalysisPanel label="신랑" analysis={groomAnalysis} isLoading={isAnalyzingGroom} />
         )}
 
-        <Card className="bg-slate-900/50 border-slate-800 mb-5">
-          <CardHeader><CardTitle className="text-white">🏞️ 배경 선택</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-5 gap-2">
-              {[
-                { key: "cherry_blossom", emoji: "🌸", label: "벚꽃 정원" },
-                { key: "chapel",         emoji: "⛪", label: "고급 채플" },
-                { key: "garden",         emoji: "🌿", label: "야외 정원" },
-                { key: "beach",          emoji: "🌅", label: "해변 노을" },
-                { key: "studio",         emoji: "📸", label: "스튜디오" },
-              ].map((s) => (
-                <button key={s.key} onClick={() => setScene(s.key)}
-                  className={`p-3 rounded-xl text-center border transition-all ${scene === s.key ? "bg-purple-500/20 border-purple-500/60 text-white scale-105" : "bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600"}`}>
-                  <div className="text-xl mb-1">{s.emoji}</div>
-                  <div className="text-xs font-semibold">{s.label}</div>
-                </button>
-              ))}
-            </div>
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <button onClick={() => setUseCustom(!useCustom)}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${useCustom ? "bg-purple-500" : "bg-slate-600"}`}>
-                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${useCustom ? "left-5" : "left-0.5"}`} />
-                </button>
-                <span className="text-sm text-slate-400">직접 프롬프트 입력</span>
-              </div>
-              {useCustom && (
-                <Textarea value={customPrompt} onChange={(e) => setCustomPrompt(e.target.value)}
-                  placeholder="예) Create a photorealistic wedding photo, Eiffel Tower background..."
-                  rows={3} className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-600 resize-none text-sm" />
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Button onClick={handleGenerate} disabled={!brideImage || !groomImage || isGenerating || isAnalyzing}
-          className="w-full mb-5 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-semibold py-6 text-lg disabled:opacity-40">
-          {isGenerating
-            ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Gemini 생성 중... (~1분)</>
-            : <><Sparkles className="w-5 h-5 mr-2" />Gemini로 웨딩 사진 만들기 (2장)</>}
-        </Button>
-
-        {results.length > 0 && (
-          <Card className="bg-slate-900/50 border-slate-800">
+        {/* 프롬프트 섹션 */}
+        {bothReady && (
+          <Card className="border-slate-700 bg-slate-800/40 my-6">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-white">💑 생성된 웨딩 사진</CardTitle>
-                <div className="flex gap-2">
-                  <Button onClick={handleGenerate} variant="outline" size="sm" className="border-slate-600 text-slate-300 hover:bg-slate-800">
-                    <RefreshCw className="w-4 h-4 mr-1" />다시 생성
-                  </Button>
-                  <Button onClick={handleClearResults} variant="outline" size="sm" className="border-red-600/50 text-red-400 hover:bg-red-500/10">
-                    <Trash2 className="w-4 h-4 mr-1" />삭제
-                  </Button>
-                </div>
-              </div>
+              <CardTitle className="text-lg">📝 생성 프롬프트</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {results.map((img, idx) => (
-                  <div key={idx} className="relative group rounded-xl overflow-hidden border border-purple-500/30">
-                    {img.url ? (
-                      <>
-                        <img src={img.url} alt={`웨딩 ${idx + 1}`} className="w-full aspect-[3/4] object-cover" />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                          <Button onClick={() => handleDownload(img.url, idx)} size="sm"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 hover:bg-white text-black font-semibold">
-                            <Download className="w-4 h-4 mr-2" />다운로드
-                          </Button>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="w-full aspect-[3/4] bg-slate-800 flex items-center justify-center">
-                        <p className="text-sm text-red-400">{img.log}</p>
-                      </div>
-                    )}
-                    <div className="absolute bottom-0 inset-x-0 bg-black/60 py-1.5 px-3">
-                      <p className="text-xs text-slate-300">#{idx + 1} · Gemini</p>
-                    </div>
-                  </div>
-                ))}
+            <CardContent className="space-y-4">
+              <div>
+                <label className="text-xs text-slate-400 mb-2 block">메인 프롬프트</label>
+                <Textarea
+                  value={mainPrompt}
+                  onChange={(e) => { setMainPrompt(e.target.value); setPromptEdited(true); }}
+                  className="bg-slate-900 border-slate-700 text-slate-200 text-xs h-24"
+                />
               </div>
-              <div className="mt-4 p-3 rounded-lg bg-purple-500/10 border border-purple-500/30">
-                <p className="text-xs text-purple-300">💡 업그레이드: Flux LoRA + Imagen 3.0 기술로 95%+ 얼굴 일관성을 달성합니다. 정면 얼굴 사진일수록 결과가 좋아요.</p>
+              <div>
+                <label className="text-xs text-slate-400 mb-2 block">네거티브 프롬프트</label>
+                <Textarea
+                  value={negativePrompt}
+                  onChange={(e) => setNegativePrompt(e.target.value)}
+                  className="bg-slate-900 border-slate-700 text-slate-200 text-xs h-16"
+                />
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* 생성 버튼 */}
+        {bothReady && (
+          <Button
+            onClick={handleGenerate}
+            disabled={isGenerating || !mainPrompt.trim()}
+            className="w-full bg-purple-600 hover:bg-purple-700 text-white mb-6 h-12 text-base"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                생성 중... (약 1분)
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 mr-2" />
+                Gemini로 웨딩 사진 만들기 (2장)
+              </>
+            )}
+          </Button>
+        )}
+
+        {/* 결과 */}
+        {results.length > 0 && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold text-white">✨ 생성 결과</h2>
+            {results.map((result, idx) => (
+              <Card key={idx} className="border-slate-700 bg-slate-800/40 overflow-hidden">
+                <CardContent className="p-0">
+                  {result.url ? (
+                    <>
+                      <img src={result.url} alt={`Result ${idx + 1}`} className="w-full h-auto" />
+                      <div className="p-4 flex items-center justify-between bg-slate-900/50">
+                        <span className="text-xs text-slate-400">#{idx + 1} · {result.log}</span>
+                        <Button
+                          onClick={() => handleDownload(result.url, idx)}
+                          size="sm"
+                          className="bg-purple-600 hover:bg-purple-700"
+                        >
+                          <Download className="w-3 h-3 mr-1" />
+                          다운로드
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-8 text-center text-slate-400">
+                      <p className="text-sm">{result.log}</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         )}
       </div>
     </div>
