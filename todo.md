@@ -460,3 +460,12 @@
 - [x] Couple.tsx 파라미터명 업데이트
 - [x] TypeScript 에러 0개 확인
 - [x] 테스트 75/75 통과 확인
+
+
+## v3.52 커플 탭 생성 품질 개선 - 프롬프트 병합 로직 및 얼굴 고정 최적화
+- [x] negativePrompt 적용 로직 이미 실스로 사용 중
+- [x] 프롬프트 병합 로직 개선 - 커스타링 프롬프트 우선 조정
+- [x] 얼굴 고정 키워드 최적화 - 과도한 키워드 80% 제거
+- [x] guidance scale과 inference steps 미세 조정 (faceLock 시 최적화)
+- [x] TypeScript 에러 0개 확인
+- [x] 테스트 75/75 통과 확인

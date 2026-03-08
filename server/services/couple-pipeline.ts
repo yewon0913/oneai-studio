@@ -109,20 +109,23 @@ async function generateBackground(options: GenerateBackgroundOptions): Promise<s
   console.log(`[couple] Step 2: Generating background for ${scene}...`);
   console.log(`[couple] Engine: ${engine || "flux-dev"}, FaceLock: ${faceLock}`);
 
-  // 배경 프롬프트 구성
-  let prompt = BACKGROUND_PROMPTS[scene] ?? BACKGROUND_PROMPTS.cherry_blossom;
+  // 배경 프롬프트 구성 (기본값)
+  let backgroundPrompt = BACKGROUND_PROMPTS[scene] ?? BACKGROUND_PROMPTS.cherry_blossom;
   
-  // 커스텀 프롬프트가 있으면 병합
-  if (customPrompt) {
-    prompt = `${prompt}, ${customPrompt}`;
+  // 프롬프트 병합 (커스텀 프롬프트 우선)
+  let prompt = customPrompt ? customPrompt : backgroundPrompt;
+  
+  // 커스텀 프롬프트가 있으면 배경 정보 추가
+  if (customPrompt && customPrompt.trim()) {
+    prompt = `${customPrompt}, ${backgroundPrompt}`;
   }
 
-  // 얼굴 일관성 강화 키워드 추가 (극대화)
-  prompt += ", couple posing together, beautiful faces clearly visible, natural skin texture, maintain exact facial features, preserve face appearance, identical face, same face, exact same person, face consistency, facial identity preserved, professional wedding photography";
+  // 얼굴 일관성 강화 키워드 추가 (최적화)
+  prompt += ", couple, professional wedding photography, natural skin, clear faces, facial identity preserved";
 
-  // faceLock 활성화 시 추가 강화
+  // faceLock 활성화 시 강화 (중복 제거)
   if (faceLock) {
-    prompt += ", CRITICAL: face consistency, MUST preserve exact facial features, identical facial identity, exact same face appearance, face identity locked, no face changes, face fidelity maximum, facial recognition match 100%";
+    prompt += ", face consistency locked, preserve exact facial features, identical faces";
   }
 
   // 네거티브 프롬프트 (극대화)
@@ -147,18 +150,18 @@ async function generateBackground(options: GenerateBackgroundOptions): Promise<s
   if (engine === "flux-lora") {
     // Flux Pro 1.1 (고품질, 6배 빠름)
     modelId = "fal-ai/flux-pro/v1.1";
-    guidanceScale = faceLock ? 6.5 : 4.5;  // faceLock 시 극대화
+    guidanceScale = faceLock ? 5.5 : 4.0;  // faceLock 시 최적화
     numInferenceSteps = faceLock ? 40 : 32;
   } else if (engine === "stable-diffusion") {
     // Stable Diffusion은 FAL에서 지원하지 않으므로 Flux Dev로 폴백
     console.warn("[couple] Stable Diffusion not available on FAL, using Flux Dev instead");
     modelId = "fal-ai/flux/dev";
-    guidanceScale = faceLock ? 5.5 : 4.0;
-    numInferenceSteps = faceLock ? 35 : 30;
+    guidanceScale = faceLock ? 5.0 : 3.5;  // 최적화
+    numInferenceSteps = faceLock ? 35 : 28;
   } else {
     // flux-dev (기본값)
-    guidanceScale = faceLock ? 5.5 : 4.0;  // faceLock 시 극대화
-    numInferenceSteps = faceLock ? 35 : 30;
+    guidanceScale = faceLock ? 5.0 : 3.5;  // 최적화
+    numInferenceSteps = faceLock ? 35 : 28;
   }
 
   console.log(`[couple] Using model: ${modelId}, guidance: ${guidanceScale}, steps: ${numInferenceSteps}`);
