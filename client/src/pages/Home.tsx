@@ -271,13 +271,6 @@ export default function Home() {
       color: "from-purple-600/20 to-purple-800/20",
     },
     {
-      title: "AI 템플릿 갤러리",
-      description: "Flux, Kling, Runway 등 최신 템플릿",
-      icon: Sparkles,
-      href: "#templates",
-      color: "from-amber-600/20 to-amber-800/20",
-    },
-    {
       title: "최종 검수",
       description: "생성된 이미지를 검수하고 전달합니다",
       icon: CheckCircle2,
