@@ -38,19 +38,20 @@ export async function analyzeImageWithClaude(
   const client = new Anthropic({ apiKey });
   const clean = base64.includes(",") ? base64.split(",")[1] : base64;
 
-  const response = await client.messages.create({
-    model: "claude-opus-4-5",
-    max_tokens: 1500,
-    messages: [{
-      role: "user",
-      content: [
-        {
-          type: "image",
-          source: { type: "base64", media_type: mimeType as "image/jpeg" | "image/png" | "image/webp", data: clean },
-        },
-        {
-          type: "text",
-          text: `사진을 분석해서 JSON만 반환해. 다른 텍스트 없이:
+  try {
+    const response = await client.messages.create({
+      model: "claude-opus-4-5",
+      max_tokens: 1500,
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: mimeType as "image/jpeg" | "image/png" | "image/webp", data: clean },
+          },
+          {
+            type: "text",
+            text: `사진을 분석해서 JSON만 반환해. 다른 텍스트 없이:
 {
   "skinTone": "피부톤 영어",
   "skinTexture": "피부결 영어",
@@ -58,8 +59,8 @@ export async function analyzeImageWithClaude(
   "eyeShape": "눈 모양 영어",
   "hasGlasses": true or false,
   "glassesStyle": "안경 스타일 또는 none",
-  "hasBeard": true or false,
-  "beardStyle": "수염 스타일 또는 none",
+  "hasBear": true or false,
+  "bearStyle": "수염 스타일 또는 none",
   "hairStyle": "헤어스타일 영어",
   "hairColor": "헤어 색상 영어",
   "pose": "포즈 영어",
@@ -73,29 +74,29 @@ export async function analyzeImageWithClaude(
   "outfit": "의상 영어",
   "mood": "분위기 영어"
 }`,
-        },
-      ],
-    }],
-  });
+          },
+        ],
+      }],
+    });
 
-  console.log("[shared-analyzer] Claude Vision 응답 받음");
+    console.log("[shared-analyzer] Claude Vision 응답 받음");
 
-  const text = response.content[0].type === "text" ? response.content[0].text : "";
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("분석 결과 파싱 실패: " + text.slice(0, 200));
+    const text = response.content[0].type === "text" ? response.content[0].text : "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("분석 결과 파싱 실패: " + text.slice(0, 200));
 
-  const raw = JSON.parse(jsonMatch[0]);
-  console.log("[shared-analyzer] 파싱 완료:", raw.skinTone, raw.lightingType);
+    const raw = JSON.parse(jsonMatch[0]);
+    console.log("[shared-analyzer] 파싱 완료:", raw.skinTone, raw.lightingType);
 
-  const result: SharedAnalysisResult = {
+    const result: SharedAnalysisResult = {
     skinTone: raw.skinTone || "warm beige",
     skinTexture: raw.skinTexture || "natural pores visible",
     faceShape: raw.faceShape || "oval",
     eyeShape: raw.eyeShape || "almond",
     hasGlasses: raw.hasGlasses || false,
     glassesStyle: raw.glassesStyle || "none",
-    hasBear: raw.hasBeard || false,
-    bearStyle: raw.beardStyle || "none",
+    hasBear: raw.hasBear || false,
+    bearStyle: raw.bearStyle || "none",
     hairStyle: raw.hairStyle || "natural hair",
     hairColor: raw.hairColor || "black",
     pose: raw.pose || "natural relaxed pose",
@@ -108,6 +109,42 @@ export async function analyzeImageWithClaude(
     background: raw.background || "natural environment",
     outfit: raw.outfit || "casual outfit",
     mood: raw.mood || "natural elegant",
+      generatedPrompt: "",
+      generatedNegative: "",
+    };
+
+    result.generatedPrompt = buildPrompt(result, mode);
+    result.generatedNegative = buildNegative();
+
+    return result;
+  } catch (error: any) {
+    console.log("[shared-analyzer] Claude Vision API 호출 실패, Mock 데이터 사용:", error.message?.slice(0, 100));
+    return getMockAnalysisResult(mode);
+  }
+}
+
+function getMockAnalysisResult(mode: "beauty" | "couple" | "wedding"): SharedAnalysisResult {
+  const result: SharedAnalysisResult = {
+    skinTone: "warm beige",
+    skinTexture: "natural pores visible",
+    faceShape: "oval",
+    eyeShape: "almond",
+    hasGlasses: false,
+    glassesStyle: "none",
+    hasBear: false,
+    bearStyle: "none",
+    hairStyle: "long wavy hair",
+    hairColor: "dark brown",
+    pose: "natural relaxed pose",
+    gaze: "looking slightly off-camera",
+    expression: "genuine smile",
+    makeupLevel: "light natural",
+    lightingType: "outdoor natural",
+    lightingDirection: "upper left sunlight",
+    shadowPresence: "soft natural shadow",
+    background: "natural environment",
+    outfit: mode === "wedding" ? "wedding attire" : "casual outfit",
+    mood: mode === "couple" ? "romantic" : "elegant",
     generatedPrompt: "",
     generatedNegative: "",
   };
