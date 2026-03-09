@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import coupleCompositeRouter from "../routers/couple-composite-router";
+import faceSwapRouter from "../routers/face-swap-router";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -38,6 +39,8 @@ async function startServer() {
   registerOAuthRoutes(app);
   // Couple Composite API
   app.use('/api/couple-composite', coupleCompositeRouter);
+  // Face Swap API
+  app.use('/api/face-swap', faceSwapRouter);
   // tRPC API
   app.use(
     "/api/trpc",

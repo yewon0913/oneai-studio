@@ -22,6 +22,7 @@ const MemoryPage = lazy(() => import("./pages/Memory"));
 const CouplePage = lazy(() => import("./pages/Couple"));
 const GeminiWeddingPage = lazy(() => import("./pages/GeminiWedding"));
 const CoupleCompositePage = lazy(() => import("./pages/CoupleComposite"));
+const FaceSwapStudioPage = lazy(() => import("./pages/FaceSwapStudio"));
 
 function PageLoader() {
   return (
@@ -54,6 +55,7 @@ function Router() {
         <Route path="/couple" component={CouplePage} />
         <Route path="/gemini-wedding" component={GeminiWeddingPage} />
         <Route path="/couple-composite" component={CoupleCompositePage} />
+        <Route path="/studio/face-swap" component={FaceSwapStudioPage} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>
