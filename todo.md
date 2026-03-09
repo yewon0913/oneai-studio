@@ -492,3 +492,6 @@
 - [ ] 안경 착용 고객 사진으로 생성 테스트
 - [ ] TypeScript 에러 0개 확인
 - [ ] 테스트 75/75 통과 확인
+
+## v3.60 Gemini API 400 에러 수정 - 이미지 전처리
+- [x] gemini-wedding-pipeline.ts callGeminiWithImages에 이미지 전처리 추가 (PNG→JPEG 변환, 512x512 리사이즈)

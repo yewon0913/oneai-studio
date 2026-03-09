@@ -5,6 +5,7 @@
  */
 
 import { buildWeddingPromptPair } from "./wedding-prompt-engine";
+import sharp from "sharp";
 
 export interface GeminiWeddingResult {
   url: string;
@@ -85,6 +86,22 @@ JSON만 반환해. 다른 텍스트 없이:
   };
 }
 
+// ─── 이미지 전처리: PNG→JPEG 변환 + 512x512 리사이즈 ───────────────────────
+
+async function preprocessImageForGemini(
+  base64: string,
+  mimeType: string
+): Promise<{ base64: string; mimeType: string }> {
+  const clean = base64.includes(",") ? base64.split(",")[1] : base64;
+  const buf = Buffer.from(clean, "base64");
+  // JPEG로 변환 + 512x512 리사이즈 (Gemini 요구사항)
+  const jpegBuf = await sharp(buf)
+    .resize(512, 512, { fit: "cover", position: "center" })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+  return { base64: jpegBuf.toString("base64"), mimeType: "image/jpeg" };
+}
+
 // ─── Gemini 이미지 직접 전송 방식 ───────────────────────
 
 async function callGeminiWithImages(
@@ -94,13 +111,18 @@ async function callGeminiWithImages(
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY not set");
 
+  // 이미지 전처리: PNG→JPEG 변환 + 512x512 리사이즈
+  const processedImages = await Promise.all(
+    images.map(img => preprocessImageForGemini(img.base64, img.mimeType))
+  );
+  console.log("[gemini] 이미지 전처리 완료 (JPEG 512x512)");
+
   // parts: 이미지들 먼저, 프롬프트 마지막
   const parts: Record<string, unknown>[] = [];
 
-  for (const img of images) {
-    const clean = img.base64.includes(",") ? img.base64.split(",")[1] : img.base64;
+  for (const img of processedImages) {
     parts.push({
-      inline_data: { mime_type: img.mimeType, data: clean },
+      inline_data: { mime_type: img.mimeType, data: img.base64 },
     });
   }
   parts.push({ text: prompt });
