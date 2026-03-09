@@ -128,7 +128,12 @@ export async function analyzeImageWithClaude(
   expressionVariantOverride?: number
 ): Promise<SharedAnalysisResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
+
+  // API 키 없으면 즉시 폴백 (에러 던지지 않음)
+  if (!apiKey) {
+    console.warn("[shared-analyzer] ANTHROPIC_API_KEY 없음 → 폴백 반환");
+    return getMockAnalysisResult(mode, expressionVariantOverride);
+  }
 
   const client = new Anthropic({ apiKey });
   const clean = base64.includes(",") ? base64.split(",")[1] : base64;
@@ -230,7 +235,18 @@ export async function analyzeImageWithClaude(
 
     return result;
   } catch (err: any) {
-    console.warn("[shared-analyzer] Claude Vision API 호출 실패, Mock 데이터 사용:", err.message?.slice(0, 100));
+    // 크레딧 부족, 인증 실패, 네트워크 오류 모두 폴백 처리
+    const msg = err?.message ?? '';
+    const status = err?.status ?? err?.statusCode ?? 0;
+
+    if (msg.includes('credit balance') || status === 400) {
+      console.warn('[shared-analyzer] ⚠️  Anthropic 크레딧 부족 → 폴백 반환');
+    } else if (status === 401 || status === 403) {
+      console.warn('[shared-analyzer] ⚠️  Anthropic 인증 실패 → 폴백 반환');
+    } else {
+      console.warn('[shared-analyzer] ⚠️  Claude Vision 실패:', msg.slice(0, 120), '→ 폴백 반환');
+    }
+
     return getMockAnalysisResult(mode, expressionVariantOverride);
   }
 }
@@ -449,4 +465,37 @@ function buildNegative(a: SharedAnalysisResult): string {
   }
 
   return base.join(", ");
+}
+
+// ─── Anthropic 크레딧 상태 확인 ─────────────────────────
+// system-router.ts /api/system/health 에서 사용
+
+export async function checkAnthropicCredits(): Promise<{
+  available: boolean;
+  message: string;
+}> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return { available: false, message: 'ANTHROPIC_API_KEY 미등록' };
+  }
+
+  try {
+    const client = new Anthropic({ apiKey });
+    // 최소 토큰으로 테스트 호출
+    await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1,
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    return { available: true, message: '정상' };
+  } catch (err: any) {
+    const msg = err?.message ?? '';
+    if (msg.includes('credit balance')) {
+      return { available: false, message: '크레딧 부족' };
+    }
+    if (err?.status === 401 || err?.status === 403) {
+      return { available: false, message: '인증 실패' };
+    }
+    return { available: false, message: msg.slice(0, 80) || '알 수 없는 에러' };
+  }
 }

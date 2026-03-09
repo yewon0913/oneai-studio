@@ -4,21 +4,30 @@
 
 import { Router } from "express";
 import { checkFalKey } from "../services/fal-key-check";
+import { checkAnthropicCredits } from "../services/shared-analyzer";
 
 const router = Router();
 
-// GET /api/system/health - 서버 상태 확인
-router.get("/health", (_req, res) => {
+// GET /api/system/health - 서버 상태 확인 (Anthropic 크레딧 포함)
+router.get("/health", async (_req, res) => {
+  const [falStatus, anthropicStatus] = await Promise.all([
+    checkFalKey().catch(() => ({ isValid: false, keyPrefix: '', message: '확인 실패' })),
+    checkAnthropicCredits().catch(() => ({ available: false, message: '확인 실패' })),
+  ]);
+
   res.json({
     status: "ok",
     timestamp: new Date().toISOString(),
     version: "1.0.0",
     services: {
-      anthropic: !!process.env.ANTHROPIC_API_KEY,
+      anthropic: anthropicStatus.available,
+      anthropicMessage: anthropicStatus.message,
       gemini: !!process.env.GEMINI_API_KEY,
-      fal: !!process.env.FAL_KEY,
+      fal: falStatus.isValid,
       piapi: !!process.env.PIAPI_API_KEY,
     },
+    claudeVisionEnabled: anthropicStatus.available,
+    faceSwapEnabled: falStatus.isValid,
   });
 });
 
