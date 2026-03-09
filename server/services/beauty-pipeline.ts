@@ -1,6 +1,9 @@
 /**
  * Beauty Pipeline v3.0 - 90점 달성 버전
  *
+ * ⚠️  beauty-analyzer-standalone.ts 사용 — shared-analyzer.ts와 완전 분리
+ * 웨딩/gemini 파이프라인 수정이 이 파일에 영향을 주지 않습니다.
+ *
  * 개선사항:
  * 1. 연령대 자동 감지 → 피부 과보정 방지
  * 2. 표정 6가지 변주 → 반복 패턴 제거
@@ -9,7 +12,7 @@
  * 5. 선글라스 착용 시 안정성 강화
  */
 
-import { analyzeImageWithClaude } from "./shared-analyzer";
+import { analyzeBeautyImage } from "./beauty-analyzer-standalone";
 
 export interface BeautyGenerateInput {
   imageBase64: string;
@@ -91,11 +94,10 @@ export async function generateBeautyImages(
 ): Promise<BeautyGenerateOutput> {
   console.log("[beauty-v3] 시작...");
 
-  // 1. Claude Vision으로 실제 분석
-  const analysis = await analyzeImageWithClaude(
+  // 1. Claude Vision으로 실제 분석 (beauty-analyzer-standalone 전용)
+  const analysis = await analyzeBeautyImage(
     input.imageBase64,
     input.mimeType || "image/jpeg",
-    "beauty",
     input.expressionVariant
   );
 

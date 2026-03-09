@@ -1,4 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// sharp 모킹: 테스트 환경에서 실제 이미지 처리 없이 통과
+vi.mock("sharp", () => {
+  const mockSharp = vi.fn(() => ({
+    resize: vi.fn().mockReturnThis(),
+    jpeg: vi.fn().mockReturnThis(),
+    toBuffer: vi.fn().mockResolvedValue(
+      Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64")
+    ),
+  }));
+  return { default: mockSharp };
+});
+
 import { generateGeminiWedding } from "./gemini-wedding-pipeline";
 
 // Mock fetch

@@ -495,3 +495,10 @@
 
 ## v3.60 Gemini API 400 에러 수정 - 이미지 전처리
 - [x] gemini-wedding-pipeline.ts callGeminiWithImages에 이미지 전처리 추가 (PNG→JPEG 변환, 512x512 리사이즈)
+
+## v3.61 beauty-analyzer-standalone.ts 완전 분리
+- [x] beauty-analyzer-standalone.ts 신규 생성 (beauty 전용, wedding/gemini 코드 완전 독립)
+- [x] beauty-pipeline.ts import를 shared-analyzer → beauty-analyzer-standalone으로 교체
+- [x] gemini-wedding-pipeline.test.ts에 sharp 모킹 추가 (테스트 환경 안정화)
+- [x] 테스트 79/79 전체 통과 확인
+- [x] TypeScript 에러 0개 확인
