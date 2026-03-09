@@ -24,6 +24,7 @@
 
 import sharp from 'sharp';
 import * as fal from '@fal-ai/serverless-client';
+import { storagePut } from '../storage';
 
 fal.config({ credentials: process.env.FAL_KEY ?? '' });
 
@@ -63,15 +64,19 @@ export interface FaceSwapOutput {
   falJobs: string[];
 }
 
-// ── Buffer → Data URI ─────────────────────────────────────────────────────────
-
-function toDataUri(buf: Buffer, mime: string = 'image/jpeg'): string {
-  return `data:${mime};base64,${buf.toString('base64')}`;
-}
+// ── Buffer → S3 URL ───────────────────────────────────────────────────────────────
 
 async function urlToBuffer(url: string): Promise<Buffer> {
   const res = await fetch(url);
   return Buffer.from(await res.arrayBuffer());
+}
+
+// FAL AI는 data: URI 불가 → S3 공개 URL로 변환
+async function uploadBufToS3(buf: Buffer, ext: string = 'jpg'): Promise<string> {
+  const key = `faceswap-tmp/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+  const { url } = await storagePut(key, buf, mime);
+  return url;
 }
 
 // ── Step 1: FAL Reactor — 얼굴 교체 ──────────────────────────────────────────
@@ -91,14 +96,23 @@ async function runReactor(
   const targetJpeg = await sharp(targetBuffer).jpeg({ quality: 95 }).toBuffer();
   const sourceJpeg = await sharp(sourceBuffer).jpeg({ quality: 95 }).toBuffer();
 
-  // ✅ HOTFIX v2: fal-ai/reactor → fal-ai/face-swap, 파라미터명 변경
+  // FAL AI는 data: URI 불가 → S3 공개 URL로 변환
+  console.log('[face-swap] S3 업로드 중...');
+  const [targetUrl, sourceUrl] = await Promise.all([
+    uploadBufToS3(targetJpeg, 'jpg'),
+    uploadBufToS3(sourceJpeg, 'jpg'),
+  ]);
+  console.log(`[face-swap] target: ${targetUrl.slice(0, 60)}...`);
+  console.log(`[face-swap] source: ${sourceUrl.slice(0, 60)}...`);
+
   const result = await fal.run('fal-ai/face-swap', {
     input: {
-      base_image_url: toDataUri(targetJpeg),   // ✅ 수정 (구: image_url)
-      swap_image_url: toDataUri(sourceJpeg),   // ✅ 수정 (구: reference_image_url)
+      base_image_url: targetUrl,
+      swap_image_url: sourceUrl,
     },
   }) as { image: { url: string } };
 
+  console.log(`[face-swap] ✅ 완료: ${result.image.url.slice(0, 60)}...`);
   return urlToBuffer(result.image.url);
 }
 
@@ -110,9 +124,13 @@ async function runCodeFormer(
 ): Promise<Buffer> {
   const jpeg = await sharp(imageBuffer).jpeg({ quality: 95 }).toBuffer();
 
+  // FAL AI는 data: URI 불가 → S3 공개 URL로 변환
+  const imageUrl = await uploadBufToS3(jpeg, 'jpg');
+  console.log(`[codeformer] image: ${imageUrl.slice(0, 60)}...`);
+
   const result = await fal.run('fal-ai/codeformer', {
     input: {
-      image_url: toDataUri(jpeg),
+      image_url: imageUrl,
       fidelity,
       upscale: 2,
       face_upsample: true,
@@ -120,6 +138,7 @@ async function runCodeFormer(
     },
   }) as { image: { url: string } };
 
+  console.log(`[codeformer] ✅ 완료: ${result.image.url.slice(0, 60)}...`);
   return urlToBuffer(result.image.url);
 }
 
