@@ -128,7 +128,12 @@ export default function GeminiWedding() {
 
   // 생성
   const [isGenerating, setIsGenerating]   = useState(false);
+  const [generatingStep, setGeneratingStep] = useState("");
   const [results, setResults]             = useState<{ url: string; log: string }[]>([]);
+  const [originalGeminiImages, setOriginalGeminiImages] = useState<string[]>([]);
+  const [showOriginal, setShowOriginal]   = useState(false);
+  const [faceSwapSteps, setFaceSwapSteps] = useState<string[]>([]);
+  const [faceSwapSuccess, setFaceSwapSuccess] = useState(false);
 
   const brideRef = useRef<HTMLInputElement>(null);
   const groomRef = useRef<HTMLInputElement>(null);
@@ -197,26 +202,57 @@ export default function GeminiWedding() {
 
     setIsGenerating(true);
     setResults([]);
+    setOriginalGeminiImages([]);
+    setFaceSwapSteps([]);
+    setFaceSwapSuccess(false);
+    setShowOriginal(false);
+
     try {
-      const brideBase64 = brideImage.includes(",") ? brideImage.split(",")[1] : brideImage;
-      const groomBase64 = groomImage.includes(",") ? groomImage.split(",")[1] : groomImage;
+      setGeneratingStep("1단계: Gemini 웨딩 이미지 생성 중...");
 
-      const result = await mutation.mutateAsync({
-        brideImageBase64: brideBase64,
-        brideMimeType: brideMime,
-        groomImageBase64: groomBase64,
-        groomMimeType: groomMime,
-        backgroundAnalysis: bgAnalysis,
-        customPrompt: useCustom && customPrompt.trim() ? customPrompt.trim() : undefined,
+      const formData = new FormData();
+      const brideDataUrl = brideImage.startsWith("data:") ? brideImage : `data:${brideMime};base64,${brideImage}`;
+      const groomDataUrl = groomImage.startsWith("data:") ? groomImage : `data:${groomMime};base64,${groomImage}`;
+      const brideBlob = await fetch(brideDataUrl).then(r => r.blob());
+      const groomBlob = await fetch(groomDataUrl).then(r => r.blob());
+      formData.append("bride", brideBlob, "bride.jpg");
+      formData.append("groom", groomBlob, "groom.jpg");
+      if (useCustom && customPrompt.trim()) {
+        formData.append("customPrompt", customPrompt.trim());
+      }
+      formData.append("faceStrength", "0.85");
+      formData.append("restoreFidelity", "0.75");
+      formData.append("useCodeFormer", "true");
+      formData.append("autoFaceSwap", "true");
+
+      setGeneratingStep("2단계: 얼굴 교체 중... (FAL Reactor)");
+      const res = await fetch("/api/gemini-faceswap/run", {
+        method: "POST",
+        body: formData,
       });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText);
+      }
+      const data = await res.json();
 
-      setResults(result.images);
-      toast.success(`웨딩 사진 ${result.images.length}장 완성! 💑`);
+      setGeneratingStep("3단계: 얼굴 선명화 완료!");
+
+      const images = (data.images || []).map((url: string, i: number) => ({
+        url: url.startsWith("data:") ? url : `data:image/jpeg;base64,${url}`,
+        log: data.faceSwapSuccess ? `v4.0 ✅ face-swap` : `v4.0 (Gemini only)`,
+      }));
+      setResults(images);
+      setOriginalGeminiImages(data.originalGeminiImages || []);
+      setFaceSwapSteps(data.faceSwapSteps || []);
+      setFaceSwapSuccess(!!data.faceSwapSuccess);
+      toast.success(`웨딩 사진 ${images.length}장 완성! 💑`);
     } catch (err) {
       console.error(err);
       toast.error("생성 실패. 다시 시도해주세요.");
     } finally {
       setIsGenerating(false);
+      setGeneratingStep("");
     }
   };
 
@@ -364,7 +400,7 @@ export default function GeminiWedding() {
           disabled={!bothReady || isGenerating}
           className="w-full mb-6 h-12 text-base font-semibold bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:opacity-50">
           {isGenerating
-            ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />생성 중... (약 30초)</>
+            ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />{generatingStep || "생성 중... (약 60초)"}</>
             : !bothReady
             ? <><Upload className="w-4 h-4 mr-2" />신부 · 신랑 사진을 업로드해주세요</>
             : <><Sparkles className="w-4 h-4 mr-2" />✨ Gemini로 웨딩 사진 만들기 (2장)</>}
@@ -406,8 +442,43 @@ export default function GeminiWedding() {
                   </div>
                 ))}
               </div>
+              {/* Face-Swap 단계 로그 */}
+              {faceSwapSteps.length > 0 && (
+                <div className="mt-4 p-3 rounded-lg bg-slate-900/60 border border-slate-700">
+                  <p className="text-xs font-semibold text-slate-400 mb-2">🔄 처리 단계</p>
+                  <div className="space-y-1">
+                    {faceSwapSteps.map((step, i) => (
+                      <p key={i} className="text-xs text-slate-500">{step}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* 원본 Gemini 이미지 비교 토글 */}
+              {originalGeminiImages.length > 0 && (
+                <div className="mt-3">
+                  <button onClick={() => setShowOriginal(!showOriginal)}
+                    className="text-xs text-slate-500 hover:text-slate-300 underline">
+                    {showOriginal ? "▲ Gemini 원본 숨기기" : "▼ Gemini 원본 보기 (face-swap 전)"}
+                  </button>
+                  {showOriginal && (
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {originalGeminiImages.map((url, i) => (
+                        <div key={i} className="rounded-lg overflow-hidden border border-slate-700/50">
+                          <img src={url.startsWith("data:") ? url : `data:image/jpeg;base64,${url}`}
+                            alt={`Gemini original ${i + 1}`} className="w-full h-auto" />
+                          <p className="text-xs text-center text-slate-600 py-1">Gemini 원본 #{i + 1}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="mt-4 p-3 rounded-lg bg-purple-500/10 border border-purple-500/30">
-                <p className="text-xs text-purple-300">💡 원본 이미지 직접 전송 방식 — 얼굴 일관성 최대화. 정면 사진일수록 더 좋아요.</p>
+                <p className="text-xs text-purple-300">
+                  {faceSwapSuccess
+                    ? "✅ Gemini 생성 → FAL Reactor 얼굴 교체 완료. 정면 사진일수록 더 좋아요."
+                    : "💡 Gemini 생성 완료 (FAL KEY 미설정 시 face-swap 스킵). 정면 사진일수록 더 좋아요."}
+                </p>
               </div>
             </CardContent>
           </Card>
