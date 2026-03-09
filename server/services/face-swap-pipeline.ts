@@ -85,21 +85,17 @@ async function urlToBuffer(url: string): Promise<Buffer> {
 async function runReactor(
   targetBuffer: Buffer,
   sourceBuffer: Buffer,
-  faceStrength: number = 0.9
+  _faceStrength: number = 0.9
 ): Promise<Buffer> {
-  // JPEG로 통일 (reactor는 JPEG 입력 권장)
+  // JPEG로 통일
   const targetJpeg = await sharp(targetBuffer).jpeg({ quality: 95 }).toBuffer();
   const sourceJpeg = await sharp(sourceBuffer).jpeg({ quality: 95 }).toBuffer();
 
-  const result = await fal.run('fal-ai/reactor', {
+  // ✅ HOTFIX v2: fal-ai/reactor → fal-ai/face-swap, 파라미터명 변경
+  const result = await fal.run('fal-ai/face-swap', {
     input: {
-      image_url: toDataUri(targetJpeg),
-      reference_image_url: toDataUri(sourceJpeg),
-      face_restore_fidelity: faceStrength,
-      enable_nsfw_filter: false,
-      upscale: false,           // CodeFormer에서 별도 처리
-      det_thresh: 0.35,         // 얼굴 감지 임계값 (낮을수록 작은 얼굴도 감지)
-      det_maxnum: 2,            // 최대 감지 얼굴 수
+      base_image_url: toDataUri(targetJpeg),   // ✅ 수정 (구: image_url)
+      swap_image_url: toDataUri(sourceJpeg),   // ✅ 수정 (구: reference_image_url)
     },
   }) as { image: { url: string } };
 
@@ -174,18 +170,18 @@ export async function runFaceSwapPipeline(
 
     // 신랑 먼저
     if (groom) {
-      steps.push('[reactor] 신랑 얼굴 교체 중...');
+      steps.push('[face-swap] 신랑 얼굴 교체 중...');
       current = await runReactor(current, groom.imageBuffer, faceStrength);
-      falJobs.push('reactor-groom');
-      steps.push('[reactor] 신랑 얼굴 교체 완료 ✓');
+      falJobs.push('face-swap-groom');
+      steps.push('[face-swap] 신랑 얼굴 교체 완료 ✓');
     }
 
     // 신부 후
     if (bride) {
-      steps.push('[reactor] 신부 얼굴 교체 중...');
+      steps.push('[face-swap] 신부 얼굴 교체 중...');
       current = await runReactor(current, bride.imageBuffer, faceStrength);
-      falJobs.push('reactor-bride');
-      steps.push('[reactor] 신부 얼굴 교체 완료 ✓');
+      falJobs.push('face-swap-bride');
+      steps.push('[face-swap] 신부 얼굴 교체 완료 ✓');
     }
 
   } else {
@@ -194,10 +190,10 @@ export async function runFaceSwapPipeline(
     if (!source) throw new Error('faceSources가 비어 있습니다.');
 
     const label = source.role === 'bride' ? '신부' : '신랑';
-    steps.push(`[reactor] ${label} 얼굴 교체 중...`);
+    steps.push(`[face-swap] ${label} 얼굴 교체 중...`);
     current = await runReactor(current, source.imageBuffer, faceStrength);
-    falJobs.push(`reactor-${source.role}`);
-    steps.push(`[reactor] ${label} 얼굴 교체 완료 ✓`);
+    falJobs.push(`face-swap-${source.role}`);
+    steps.push(`[face-swap] ${label} 얼굴 교체 완료 ✓`);
   }
 
   // reactor 직후 중간 결과 저장

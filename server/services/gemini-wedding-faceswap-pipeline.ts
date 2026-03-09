@@ -80,20 +80,16 @@ async function urlToBuffer(url: string): Promise<Buffer> {
 async function runReactor(
   targetBase64: string,
   sourceBuffer: Buffer,
-  faceStrength: number
+  _faceStrength: number
 ): Promise<Buffer> {
   const targetDataUri = base64ToDataUri(targetBase64);
   const sourceDataUri = toDataUri(sourceBuffer);
 
-  const result = await fal.run('fal-ai/reactor', {
+  // ✅ HOTFIX v2: fal-ai/reactor → fal-ai/face-swap, 파라미터명 변경
+  const result = await fal.run('fal-ai/face-swap', {
     input: {
-      image_url: targetDataUri,
-      reference_image_url: sourceDataUri,
-      face_restore_fidelity: faceStrength,
-      enable_nsfw_filter: false,
-      upscale: false,
-      det_thresh: 0.35,
-      det_maxnum: 2,
+      base_image_url: targetDataUri,   // ✅ 수정 (구: image_url)
+      swap_image_url: sourceDataUri,   // ✅ 수정 (구: reference_image_url)
     },
   }) as { image: { url: string } };
 
