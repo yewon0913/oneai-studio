@@ -23,6 +23,7 @@ const CouplePage = lazy(() => import("./pages/Couple"));
 const GeminiWeddingPage = lazy(() => import("./pages/GeminiWedding"));
 const CoupleCompositePage = lazy(() => import("./pages/CoupleComposite"));
 const FaceSwapStudioPage = lazy(() => import("./pages/FaceSwapStudio"));
+const ExistingImageFaceSwapPage = lazy(() => import("./pages/ExistingImageFaceSwap"));
 
 function PageLoader() {
   return (
@@ -56,6 +57,7 @@ function Router() {
         <Route path="/gemini-wedding" component={GeminiWeddingPage} />
         <Route path="/couple-composite" component={CoupleCompositePage} />
         <Route path="/studio/face-swap" component={FaceSwapStudioPage} />
+        <Route path="/studio/face-swap/existing" component={ExistingImageFaceSwapPage} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

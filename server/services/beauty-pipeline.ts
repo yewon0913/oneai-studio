@@ -1,7 +1,12 @@
 /**
- * Beauty Pipeline v2 - 실사감 극대화
- * Claude Vision 실제 분석 + 프롬프트 엔진 적용
- * 기존 파일 교체용
+ * Beauty Pipeline v3.0 - 90점 달성 버전
+ *
+ * 개선사항:
+ * 1. 연령대 자동 감지 → 피부 과보정 방지
+ * 2. 표정 6가지 변주 → 반복 패턴 제거
+ * 3. 헤어 자연스러움 강화
+ * 4. 얼굴 유사도 최대화
+ * 5. 선글라스 착용 시 안정성 강화
  */
 
 import { analyzeImageWithClaude } from "./shared-analyzer";
@@ -13,6 +18,7 @@ export interface BeautyGenerateInput {
   customPrompt?: string;
   customNegative?: string;
   outputCount?: number;
+  expressionVariant?: number; // 0~5 지정 가능, 없으면 랜덤
 }
 
 export interface BeautyGenerateOutput {
@@ -44,40 +50,69 @@ async function falRun(
   return JSON.parse(text);
 }
 
-// 카테고리별 추가 프롬프트
+// 카테고리별 추가 프롬프트 (v3: 실사감 강화)
 const CATEGORY_EXTRA: Record<string, string> = {
-  skincare: "glass skin, dewy fresh, hydrated luminous complexion, Laneige Sulwhasoo campaign style, water droplets on skin",
-  makeup:   "flawless foundation with visible pores, Korean beauty style, 3CE Romand editorial, precise eyeliner, defined brows",
-  luxury:   "luxury beauty brand campaign, Chanel Dior editorial, high fashion, dramatic sophisticated, jewelry accessories",
-  natural:  "fresh no-makeup glow, vitamin skin, clean beauty, organic minimal, sun-kissed healthy skin",
+  skincare: [
+    "glass skin with visible pores",
+    "dewy fresh hydrated complexion",
+    "Laneige Sulwhasoo campaign style",
+    "natural skin luminosity",
+    "NOT airbrushed NOT filtered",
+  ].join(", "),
+
+  makeup: [
+    "professional makeup with visible skin texture",
+    "Korean beauty editorial style",
+    "3CE Romand campaign",
+    "precise eyeliner defined brows",
+    "foundation with natural skin showing through",
+  ].join(", "),
+
+  luxury: [
+    "luxury beauty brand campaign",
+    "Chanel Dior editorial quality",
+    "high fashion sophisticated",
+    "dramatic luxury lighting",
+    "premium jewelry accessories",
+    "Vogue Korea cover quality",
+  ].join(", "),
+
+  natural: [
+    "fresh no-makeup-makeup look",
+    "vitamin skin healthy glow",
+    "clean beauty organic minimal",
+    "sun-kissed natural radiance",
+    "skin texture completely preserved",
+  ].join(", "),
 };
 
 export async function generateBeautyImages(
   input: BeautyGenerateInput
 ): Promise<BeautyGenerateOutput> {
-  console.log("[beauty-v2] Starting analysis...");
+  console.log("[beauty-v3] 시작...");
 
   // 1. Claude Vision으로 실제 분석
   const analysis = await analyzeImageWithClaude(
     input.imageBase64,
     input.mimeType || "image/jpeg",
-    "beauty"
+    "beauty",
+    input.expressionVariant
   );
 
-  console.log("[beauty-v2] Analysis done:", {
+  console.log("[beauty-v3] 분석 완료:", {
     skinTone: analysis.skinTone,
+    estimatedAge: analysis.estimatedAge,
     hasGlasses: analysis.hasGlasses,
-    pose: analysis.pose,
+    expressionVariant: analysis.expressionVariant,
     lightingType: analysis.lightingType,
   });
 
-  // 2. 최종 프롬프트 (커스텀 or 분석 기반)
+  // 2. 최종 프롬프트
   const categoryExtra = CATEGORY_EXTRA[input.category] || CATEGORY_EXTRA.natural;
-  const finalPrompt = input.customPrompt ||
-    `${analysis.generatedPrompt}, ${categoryExtra}`;
+  const finalPrompt   = input.customPrompt || `${analysis.generatedPrompt}, ${categoryExtra}`;
   const finalNegative = input.customNegative || analysis.generatedNegative;
 
-  // 3. 이미지 데이터 URL
+  // 3. 이미지 URL
   const imageDataUrl = input.imageBase64.startsWith("data:")
     ? input.imageBase64
     : `data:${input.mimeType || "image/jpeg"};base64,${input.imageBase64}`;
@@ -85,67 +120,83 @@ export async function generateBeautyImages(
   const outputCount = input.outputCount || 2;
   const images: string[] = [];
 
-  console.log("[beauty-v2] Generating", outputCount, "images...");
+  console.log("[beauty-v3]", outputCount, "장 생성 시작...");
 
   for (let i = 0; i < outputCount; i++) {
+    // 2장 이상일 때 두 번째부터 표정 변주 다르게
+    let currentPrompt = finalPrompt;
+    if (i > 0 && !input.customPrompt) {
+      const nextVariant = (analysis.expressionVariant + i) % 6;
+      const EXPRESSION_VARIANTS = [
+        "genuine natural smile, soft eyes with warmth, relaxed jaw, authentic joy",
+        "confident direct gaze, subtle smirk, strong eyebrows, composed expression",
+        "thoughtful introspective look, slightly downward gaze, serene neutral expression",
+        "mid-laugh natural expression, eyes slightly crinkled, open mouth smile, candid joy",
+        "elegant side profile gaze, slight chin tilt, graceful composure",
+        "fresh casual expression, relaxed mouth, friendly approachable energy",
+      ];
+      // 표정 부분만 교체
+      currentPrompt = finalPrompt + `, ${EXPRESSION_VARIANTS[nextVariant]}`;
+    }
+
     try {
-      console.log(`[beauty-v2] Image ${i + 1}/${outputCount}...`);
+      console.log(`[beauty-v3] ${i + 1}/${outputCount} 생성 중...`);
 
       const result = await falRun("fal-ai/flux/dev/image-to-image", {
-        prompt: finalPrompt,
-        image_url: imageDataUrl,
-        // strength 낮춤 → 원본 보존 강화 (포즈/얼굴 자연스럽게)
-        strength: 0.55,
-        num_inference_steps: 35,
-        guidance_scale: 6.0,
+        prompt:                currentPrompt,
+        image_url:             imageDataUrl,
+        strength:              0.55,         // 원본 보존 강화
+        num_inference_steps:   35,
+        guidance_scale:        6.0,
         enable_safety_checker: false,
-        width: 832,
-        height: 1216,
-        negative_prompt: finalNegative,
-        seed: Math.floor(Math.random() * 999999),
+        width:                 832,
+        height:                1216,
+        negative_prompt:       finalNegative,
+        seed:                  Math.floor(Math.random() * 999999),
       });
 
       const imageUrl = (result?.images as Array<{ url: string }>)?.[0]?.url;
 
       if (imageUrl) {
-        // base64로 저장 (URL 만료 방지)
         try {
-          const res = await fetch(imageUrl);
+          const res    = await fetch(imageUrl);
           const buffer = await res.arrayBuffer();
-          const b64 = Buffer.from(buffer).toString("base64");
+          const b64    = Buffer.from(buffer).toString("base64");
           images.push(`data:image/jpeg;base64,${b64}`);
-          console.log(`[beauty-v2] Image ${i + 1} saved as base64`);
+          console.log(`[beauty-v3] ${i + 1}번 base64 저장 완료`);
         } catch {
           images.push(imageUrl);
-          console.log(`[beauty-v2] Image ${i + 1} saved as URL (fallback)`);
+          console.log(`[beauty-v3] ${i + 1}번 URL 저장 (fallback)`);
         }
       } else {
-        console.warn(`[beauty-v2] Image ${i + 1} no URL in response`);
+        console.warn(`[beauty-v3] ${i + 1}번 이미지 없음`);
       }
     } catch (err) {
-      console.error(`[beauty-v2] Image ${i + 1} error:`, err);
+      console.error(`[beauty-v3] ${i + 1}번 에러:`, err);
     }
   }
 
   if (images.length === 0) throw new Error("모든 이미지 생성 실패");
 
-  console.log(`[beauty-v2] Done: ${images.length}/${outputCount}`);
+  console.log(`[beauty-v3] 완료: ${images.length}/${outputCount}`);
 
   return {
     images,
-    prompt: finalPrompt,
+    prompt:        finalPrompt,
     negativePrompt: finalNegative,
-    category: input.category,
+    category:      input.category,
     analysis: {
-      skinTone: analysis.skinTone,
-      hasGlasses: analysis.hasGlasses,
-      glassesStyle: analysis.glassesStyle,
-      hasBeard: analysis.hasBear,
-      hairStyle: analysis.hairStyle,
-      pose: analysis.pose,
-      expression: analysis.expression,
-      lightingType: analysis.lightingType,
-      mood: analysis.mood,
+      skinTone:          analysis.skinTone,
+      estimatedAge:      analysis.estimatedAge,
+      skinAgingFeatures: analysis.skinAgingFeatures,
+      hasGlasses:        analysis.hasGlasses,
+      glassesStyle:      analysis.glassesStyle,
+      hasBeard:          analysis.hasBear,
+      hairStyle:         analysis.hairStyle,
+      expressionVariant: analysis.expressionVariant,
+      pose:              analysis.pose,
+      lightingType:      analysis.lightingType,
+      mood:              analysis.mood,
     },
   };
 }

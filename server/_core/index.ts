@@ -10,6 +10,7 @@ import { serveStatic, setupVite } from "./vite";
 import coupleCompositeRouter from "../routers/couple-composite-router";
 import faceSwapRouter from "../routers/face-swap-router";
 import geminiFaceSwapRouter from "../routers/gemini-faceswap-router";
+import systemRouter from "../routers/system-router";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -44,6 +45,8 @@ async function startServer() {
   app.use('/api/face-swap', faceSwapRouter);
   // Gemini Wedding + Face Swap API
   app.use('/api/gemini-faceswap', geminiFaceSwapRouter);
+  // System API (health, key check)
+  app.use('/api/system', systemRouter);
   // tRPC API
   app.use(
     "/api/trpc",
