@@ -9,12 +9,20 @@ interface AnalysisResult {
   skinTexture: string;
   faceShape: string;
   eyeShape: string;
+  eyeColor?: string;
+  eyeSize?: string;
+  eyebrowShape?: string;
+  noseShape?: string;
+  mouthShape?: string;
+  cheekbones?: string;
   hasGlasses: boolean;
   glassesStyle: string;
   hasBear: boolean;
   bearStyle: string;
   hairStyle: string;
   hairColor: string;
+  hairLength?: string;
+  hairTexture?: string;
   pose: string;
   gaze: string;
   expression: string;
@@ -177,22 +185,40 @@ export function buildWeddingPrompt(
   const camera     = CAMERA_SETUPS[options?.cameraIdx ?? Math.floor(Math.random() * CAMERA_SETUPS.length)];
   const lighting   = getLightingForSkin(bride.skinTone);
 
-  // 신부 특징
+  // 신부 특징 - 매우 상세한 설명
   const brideDesc = [
     `${bride.skinTone} skin tone`,
+    `${bride.skinTexture}`,
     `${bride.faceShape} face shape`,
     `${bride.eyeShape} eyes`,
-    `${bride.hairStyle} in ${bride.hairColor}`,
+    bride.eyeColor ? `${bride.eyeColor} eye color` : "",
+    bride.eyeSize ? `${bride.eyeSize} eye size` : "",
+    bride.eyebrowShape ? `${bride.eyebrowShape} eyebrows` : "",
+    bride.noseShape ? `${bride.noseShape} nose` : "",
+    bride.mouthShape ? `${bride.mouthShape}` : "",
+    bride.cheekbones ? `${bride.cheekbones} cheekbones` : "",
+    bride.hairLength ? `${bride.hairLength} hair` : "",
+    bride.hairTexture ? `${bride.hairTexture}` : "",
+    `${bride.hairColor} hair color`,
     bride.hasGlasses ? `wearing ${bride.glassesStyle} glasses (PRESERVE EXACTLY)` : "",
     `${bride.makeupLevel} bridal makeup with dewy finish`,
   ].filter(Boolean).join(", ");
 
-  // 신랑 특징
+  // 신랑 특징 - 매우 상세한 설명
   const groomDesc = [
     `${groom.skinTone} skin tone`,
+    `${groom.skinTexture}`,
     `${groom.faceShape} face shape`,
     `${groom.eyeShape} eyes`,
-    `${groom.hairStyle} in ${groom.hairColor}`,
+    groom.eyeColor ? `${groom.eyeColor} eye color` : "",
+    groom.eyeSize ? `${groom.eyeSize} eye size` : "",
+    groom.eyebrowShape ? `${groom.eyebrowShape} eyebrows` : "",
+    groom.noseShape ? `${groom.noseShape} nose` : "",
+    groom.mouthShape ? `${groom.mouthShape}` : "",
+    groom.cheekbones ? `${groom.cheekbones} cheekbones` : "",
+    groom.hairLength ? `${groom.hairLength} hair` : "",
+    groom.hairTexture ? `${groom.hairTexture}` : "",
+    `${groom.hairColor} hair color`,
     groom.hasGlasses ? `wearing ${groom.glassesStyle} glasses (PRESERVE EXACTLY)` : "",
     groom.hasBear ? `${groom.bearStyle} beard (PRESERVE EXACTLY)` : "clean-shaven",
   ].filter(Boolean).join(", ");

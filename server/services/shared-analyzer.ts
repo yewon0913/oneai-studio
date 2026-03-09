@@ -5,12 +5,20 @@ export interface SharedAnalysisResult {
   skinTexture: string;
   faceShape: string;
   eyeShape: string;
+  eyeColor?: string;
+  eyeSize?: string;
+  eyebrowShape?: string;
+  noseShape?: string;
+  mouthShape?: string;
+  cheekbones?: string;
   hasGlasses: boolean;
   glassesStyle: string;
   hasBear: boolean;
   bearStyle: string;
   hairStyle: string;
   hairColor: string;
+  hairLength?: string;
+  hairTexture?: string;
   pose: string;
   gaze: string;
   expression: string;
@@ -41,7 +49,7 @@ export async function analyzeImageWithClaude(
   try {
     const response = await client.messages.create({
       model: "claude-opus-4-5",
-      max_tokens: 1500,
+      max_tokens: 2000,
       messages: [{
         role: "user",
         content: [
@@ -51,18 +59,26 @@ export async function analyzeImageWithClaude(
           },
           {
             type: "text",
-            text: `사진을 분석해서 JSON만 반환해. 다른 텍스트 없이:
+            text: `사진을 매우 상세하게 분석해서 JSON만 반환해. 다른 텍스트 없이. 얼굴 특징을 최대한 구체적으로:
 {
-  "skinTone": "피부톤 영어",
-  "skinTexture": "피부결 영어",
-  "faceShape": "얼굴형 영어",
-  "eyeShape": "눈 모양 영어",
+  "skinTone": "피부톤 (예: warm ivory, cool beige, golden tan)",
+  "skinTexture": "피부결 상세 설명 (예: fine pores visible, smooth with subtle texture)",
+  "faceShape": "얼굴형 (예: oval, round, square, heart-shaped)",
+  "eyeShape": "눈 모양 상세 (예: almond-shaped with slight upturned corners, large round eyes, hooded eyelids)",
+  "eyeColor": "눈 색상 (예: dark brown, black)",
+  "eyeSize": "눈 크기 (예: large, medium, small)",
+  "eyebrowShape": "눈썹 모양 (예: straight, slightly arched, thick, thin)",
+  "noseShape": "코 모양 (예: straight, slightly bulbous tip, refined)",
+  "mouthShape": "입 모양 (예: full lips, thin lips, pouty, natural)",
+  "cheekbones": "광대뼈 (예: prominent, soft, defined)",
   "hasGlasses": true or false,
   "glassesStyle": "안경 스타일 또는 none",
   "hasBear": true or false,
   "bearStyle": "수염 스타일 또는 none",
-  "hairStyle": "헤어스타일 영어",
-  "hairColor": "헤어 색상 영어",
+  "hairStyle": "헤어스타일 상세 (예: shoulder-length bob with layers, long wavy, short pixie cut, shoulder-length straight)",
+  "hairColor": "헤어 색상 상세 (예: dark brown, jet black, light brown with highlights)",
+  "hairLength": "머리 길이 (예: short at ear level, shoulder-length, long past shoulders)",
+  "hairTexture": "머리 질감 (예: straight, wavy, curly, layered)",
   "pose": "포즈 영어",
   "gaze": "시선 영어",
   "expression": "표정 영어",
@@ -93,12 +109,20 @@ export async function analyzeImageWithClaude(
     skinTexture: raw.skinTexture || "natural pores visible",
     faceShape: raw.faceShape || "oval",
     eyeShape: raw.eyeShape || "almond",
+    eyeColor: raw.eyeColor || "dark brown",
+    eyeSize: raw.eyeSize || "medium",
+    eyebrowShape: raw.eyebrowShape || "naturally arched",
+    noseShape: raw.noseShape || "refined",
+    mouthShape: raw.mouthShape || "natural full lips",
+    cheekbones: raw.cheekbones || "defined",
     hasGlasses: raw.hasGlasses || false,
     glassesStyle: raw.glassesStyle || "none",
     hasBear: raw.hasBear || false,
     bearStyle: raw.bearStyle || "none",
     hairStyle: raw.hairStyle || "natural hair",
     hairColor: raw.hairColor || "black",
+    hairLength: raw.hairLength || "shoulder-length",
+    hairTexture: raw.hairTexture || "straight",
     pose: raw.pose || "natural relaxed pose",
     gaze: raw.gaze || "looking slightly off-camera",
     expression: raw.expression || "genuine smile",
@@ -128,13 +152,21 @@ function getMockAnalysisResult(mode: "beauty" | "couple" | "wedding"): SharedAna
     skinTone: "warm beige",
     skinTexture: "natural pores visible",
     faceShape: "oval",
-    eyeShape: "almond",
+    eyeShape: "almond with slight upturned corners",
+    eyeColor: "dark brown",
+    eyeSize: "medium",
+    eyebrowShape: "naturally arched and defined",
+    noseShape: "refined and straight",
+    mouthShape: "natural full lips",
+    cheekbones: "defined and prominent",
     hasGlasses: false,
     glassesStyle: "none",
     hasBear: false,
     bearStyle: "none",
-    hairStyle: "long wavy hair",
+    hairStyle: "shoulder-length with subtle layers",
     hairColor: "dark brown",
+    hairLength: "shoulder-length",
+    hairTexture: "wavy with natural texture",
     pose: "natural relaxed pose",
     gaze: "looking slightly off-camera",
     expression: "genuine smile",
@@ -163,11 +195,19 @@ function buildPrompt(a: SharedAnalysisResult, mode: "beauty" | "couple" | "weddi
   const skinFace = [
     `${a.skinTone}`,
     `${a.skinTexture}`,
-    `${a.faceShape} face`,
+    `${a.faceShape} face shape`,
     `${a.eyeShape} eyes`,
+    a.eyeColor ? `${a.eyeColor} eye color` : "",
+    a.eyeSize ? `${a.eyeSize} eye size` : "",
+    a.eyebrowShape ? `${a.eyebrowShape} eyebrows` : "",
+    a.noseShape ? `${a.noseShape} nose` : "",
+    a.mouthShape ? `${a.mouthShape}` : "",
+    a.cheekbones ? `${a.cheekbones} cheekbones` : "",
     a.hasGlasses ? `wearing ${a.glassesStyle} glasses, glasses preserved` : "",
     a.hasBear ? `${a.bearStyle} beard preserved` : "",
-    `${a.hairStyle}`,
+    a.hairLength ? `${a.hairLength} hair` : "",
+    a.hairTexture ? `${a.hairTexture}` : "",
+    `${a.hairColor} color`,
   ].filter(Boolean).join(", ");
 
   const poseExpression = [
