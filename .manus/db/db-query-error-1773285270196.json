@@ -1,0 +1,25 @@
+{
+  "query": "SELECT * FROM clients; SELECT * FROM projects; SELECT * FROM images;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwpsvKFx5LRFYeB.2be5db1eb4d7 --database XqpmVNg2gXVc63dygihuzB --execute SELECT * FROM clients; SELECT * FROM projects; SELECT * FROM images;",
+  "returncode": 1,
+  "logs": [
+    "id\tuserId\tname\tphone\temail\tconsultationNotes\tpreferredConcept\tstatus\ttags\tcreatedAt\tupdatedAt\tgender\tpartnerId",
+    "2\t1\t최주용\t\t\t\t\tconsulting\tNULL\t2026-02-15 11:13:01\t2026-03-07 02:27:35\tmale\tNULL",
+    "60001\t1\t문정원\t\t\t\t\tconsulting\tNULL\t2026-02-24 05:11:44\t2026-03-07 02:27:35\tfemale\tNULL",
+    "270001\t1\t한진화\t\t\t\t\tconsulting\tNULL\t2026-03-05 08:30:18\t2026-03-05 08:30:18\tfemale\tNULL",
+    "270002\t1\t최숙희\t\t\t\t\tconsulting\tNULL\t2026-03-05 09:17:05\t2026-03-05 09:17:05\tfemale\tNULL",
+    "330001\t1\t주영규\t\t\t\t\tconsulting\tNULL\t2026-03-08 03:00:39\t2026-03-08 03:00:39\tmale\tNULL",
+    "390001\t1\t문혜진\t\t\t\t\tconsulting\tNULL\t2026-03-10 04:25:54\t2026-03-10 04:25:54\tfemale\tNULL",
+    "420001\t1\t최예원\t\t\t\tkids\tconsulting\tNULL\t2026-03-11 02:46:27\t2026-03-11 02:46:27\tfemale\tNULL",
+    "id\tclientId\tuserId\ttitle\tcategory\tconcept\tstatus\treferenceImageUrl\treferenceImageKey\tpinterestUrl\tnotes\tpriority\tcreatedAt\tupdatedAt\tpartnerClientId\tprojectMode\troleReferenceImages\tfamilyMembers",
+    "210001\t60001\t1\t문정원 프로필\tprofile\t\treview\tNULL\tNULL\tNULL\t\tnormal\t2026-03-03 16:44:54\t2026-03-03 16:46:24\tNULL\tsingle\tNULL\tNULL",
+    "210004\t2\t1\t최주용 프로필\tprofile\t\treview\tNULL\tNULL\tNULL\t\tnormal\t2026-03-03 17:05:59\t2026-03-03 17:06:52\tNULL\tsingle\tNULL\tNULL",
+    "360001\t270001\t1\t한진화 프로필사진\twedding\t\treview\tNULL\tNULL\tNULL\t\tnormal\t2026-03-05 08:33:38\t2026-03-05 08:34:48\tNULL\tsingle\tNULL\tNULL",
+    "360002\t270002\t1\t최숙희 프로필\tprofile\t\treview\tNULL\tNULL\tNULL\t\tnormal\t2026-03-05 09:18:44\t2026-03-05 09:19:33\tNULL\tsingle\tNULL\tNULL",
+    "420001\t60001\t1\t문정원 고객님 프로필사진\tprofile\t\treview\tNULL\tNULL\tNULL\t\tnormal\t2026-03-06 05:59:58\t2026-03-06 06:04:33\tNULL\tsingle\tNULL\tNULL",
+    "450001\t330001\t1\t주영규 프로필\tprofile\t\treview\tNULL\tNULL\tNULL\t\tnormal\t2026-03-08 03:01:12\t2026-03-08 03:05:58\tNULL\tsingle\tNULL\tNULL",
+    "510001\t390001\t1\t문혜진\tprofile\t\treview\tNULL\tNULL\tNULL\t\tnormal\t2026-03-10 04:35:26\t2026-03-10 04:48:02\tNULL\tsingle\tNULL\tNULL",
+    "540001\t420001\t1\t최예원\tkids\t\treview\tNULL\tNULL\tNULL\t\tnormal\t2026-03-11 02:47:03\t2026-03-11 02:51:28\tNULL\tsingle\tNULL\tNULL",
+    "ERROR 1146 (42S02) at line 1: Table 'xqpmvng2gxvc63dygihuzb.images' doesn't exist"
+  ]
+}

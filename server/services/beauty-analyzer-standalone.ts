@@ -1,5 +1,5 @@
 /**
- * Beauty Analyzer Standalone v1.0
+ * Beauty Analyzer Standalone v2.0
  *
  * ⚠️  완전 독립 파일 — wedding/gemini 코드와 절대 공유하지 않음
  *
@@ -9,37 +9,109 @@
  *
  * 웨딩 파이프라인 수정이 이 파일에 영향을 주지 않습니다.
  * 이 파일 수정이 웨딩 파이프라인에 영향을 주지 않습니다.
+ *
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * v2.0 개선사항: 얼굴 유사도 최대화
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 1. Claude Vision 분석 항목 확장
+ *    - 눈 형태 상세 분석 (크기, 모양, 쌍꺼풀)
+ *    - 턱선 분석 (둥근형/V라인/각진형)
+ *    - 얼굴형 정밀 분석
+ *    - 특이사항 자동 감지 (안경, 수염, 눈 형태 등)
+ *
+ * 2. 네거티브 프롬프트 강화
+ *    - (different person:2.0) ← 최우선 가중치
+ *    - 얼굴 특징 변화 방지 (1.8~1.9)
+ *    - 피부 보정 방지 (1.7~1.8)
+ *
+ * 3. 포지티브 프롬프트 강화
+ *    - "preserve exact facial features" 필수
+ *    - "same person, identical face" 필수
+ *    - 눈/얼굴 구조 유지 명시
+ *
+ * 4. 연령대별 처리 정밀화
+ *    - 20대: natural youthful skin
+ *    - 30대: natural skin, mature features
+ *    - 40대: subtle fine lines preserved
+ *    - 50대+: natural wrinkles preserved (weight 1.9)
+ *    - 60대+: age-appropriate appearance (weight 2.0)
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 
-// ─── Beauty 전용 분석 결과 인터페이스 ────────────────────
+// ─── Beauty 전용 분석 결과 인터페이스 (v2.0 확장) ────────────────────
 
 export interface BeautyAnalysisResult {
+  // 기본 정보
+  estimatedAge: string;
   skinTone: string;
   skinTexture: string;
-  faceShape: string;
-  eyeShape: string;
+
+  // 얼굴 형태 (확장)
+  faceShape: string; // 계란형, 둥근형, 각진형, 역삼각형
+  jawlineType: string; // 둥근형, V라인, 각진형
+  jawlineDescription: string;
+
+  // 눈 (상세 분석)
+  eyeShape: string; // 크고 둥근, 가늘고 긴, 일반형
+  eyeSize: string; // 큼, 중간, 작음
+  eyeOpenness: string; // 크게 뜸, 자연스러움, 가늘게 뜸
+  doubleEyelidPresence: string; // 쌍꺼풀 있음/없음
+  eyeColorDescription: string;
+
+  // 코
+  noseShape: string; // 높음, 보통, 낮음
+  noseWidth: string; // 좁음, 보통, 넓음
+  noseDescription: string;
+
+  // 입
+  lipShape: string; // 두꺼움, 보통, 얇음
+  lipColor: string;
+  lipDescription: string;
+
+  // 특이사항
   hasGlasses: boolean;
   glassesStyle: string;
+  glassesDescription: string;
   hasBear: boolean;
   bearStyle: string;
+  bearDescription: string;
+  hasDistinctiveMarks: boolean; // 점, 흉터, 주근깨 등
+  distinctiveMarksDescription: string;
+
+  // 헤어
   hairStyle: string;
   hairColor: string;
+  hairLength: string; // 초단발, 단발, 중간, 롱, 매우 긴
+  hairTexture: string; // 직모, 웨이브, 곱슬머리
+  hairDescription: string;
+
+  // 피부
+  skinAgingFeatures: string;
+  visibleWrinkles: string; // 없음, 미세, 보통, 뚜렷함
+  skinCondition: string; // 맑음, 여드름, 흡집, 기타
+
+  // 표정 및 자세
   pose: string;
   gaze: string;
   expression: string;
   makeupLevel: string;
+
+  // 조명 및 배경
   lightingType: string;
   lightingDirection: string;
   shadowPresence: string;
   background: string;
   outfit: string;
   mood: string;
-  estimatedAge: string;
-  skinAgingFeatures: string;
+
+  // 얼굴 특징 상세
   faceFeatureDetails: string;
+
+  // 표정 변주
   expressionVariant: number;
+
+  // 생성된 프롬프트
   generatedPrompt: string;
   generatedNegative: string;
 }
@@ -61,107 +133,207 @@ const BEAUTY_EXPRESSION_VARIANTS = [
   "fresh casual expression, relaxed mouth, friendly approachable energy",
 ];
 
-// ─── Beauty 전용 연령대별 피부 처리 ─────────────────────
+// ─── 얼굴 유사도 최대화: 공통 필수 포지티브 프롬프트 ─────────────────
 
-function buildBeautyAgeAppropriateSkin(estimatedAge: string, skinAgingFeatures: string): string {
+function buildFaceLikenessCore(): string {
+  return [
+    "preserve exact facial features",
+    "same person, identical face",
+    "maintain original eye shape exactly",
+    "maintain original face structure",
+    "maintain original facial proportions",
+    "original facial identity preserved",
+    "realistic face likeness, NOT over-handsome, NOT beautified",
+    "NOT changed facial features",
+  ].join(", ");
+}
+
+// ─── 얼굴 유사도 최대화: 공통 필수 네거티브 프롬프트 ─────────────────
+
+function buildFaceLikenessNegative(): string {
+  return [
+    "(different person:2.0)",
+    "(changing facial features:1.9)",
+    "(different eye shape:1.8)",
+    "(different face structure:1.8)",
+    "(plastic surgery look:1.8)",
+    "(airbrushed skin:1.7)",
+    "(smooth poreless skin:1.7)",
+  ].join(", ");
+}
+
+// ─── 연령대별 피부 처리 (v2.0 정밀화) ─────────────────────
+
+function buildAgeAppropriatePrompt(estimatedAge: string, skinAgingFeatures: string): string {
   const age = parseInt(estimatedAge) || 30;
 
-  if (age >= 50) {
+  if (age >= 60) {
+    // 60대+: 최강 나이 보존
     return [
-      "age-appropriate natural skin",
-      "preserve natural aging features gracefully",
+      "mature Korean woman in her 60s",
+      "age-appropriate appearance (weight:2.0)",
+      "natural wrinkles preserved (weight:2.0)",
+      "NOT de-aged (weight:2.0)",
+      "natural aging features preserved gracefully",
+      "distinguished mature beauty",
+      "real skin character maintained",
+      "subtle laugh lines visible",
+      "natural skin texture with character",
+      skinAgingFeatures,
+    ].filter(Boolean).join(", ");
+  }
+
+  if (age >= 50) {
+    // 50대: 나이 보존
+    return [
+      "mature Korean woman",
+      "natural wrinkles preserved (weight:1.9)",
+      "NOT de-aged (weight:1.9)",
+      "age-appropriate appearance",
+      "natural aging features preserved",
       "subtle laugh lines preserved",
       "natural skin texture with character",
       "distinguished mature beauty",
-      "NOT over-smoothed, NOT de-aged",
+      "real skin character maintained",
       skinAgingFeatures,
     ].filter(Boolean).join(", ");
   }
 
   if (age >= 40) {
+    // 40대: 미세한 라인 보존
     return [
       "natural skin texture preserved",
-      "minimal retouching aesthetic",
       "subtle fine lines preserved",
       "real skin character maintained",
+      "minimal retouching aesthetic",
+      "natural mid-40s appearance",
+      "mature features preserved",
       "NOT airbrushed, NOT plastic",
       skinAgingFeatures,
     ].filter(Boolean).join(", ");
   }
 
-  // 20~39
+  if (age >= 30) {
+    // 30대: 자연스러운 피부
+    return [
+      "natural skin texture",
+      "visible pores texture",
+      "natural 30s appearance",
+      "mature features preserved",
+      "skin imperfections preserved naturally",
+      "authentic skin tone",
+      skinAgingFeatures,
+    ].filter(Boolean).join(", ");
+  }
+
+  // 20대: 젊은 피부
   return [
     "natural youthful skin",
     "visible pores texture",
+    "natural 20s appearance",
     "skin imperfections preserved",
     "authentic skin tone",
-  ].join(", ");
+    skinAgingFeatures,
+  ].filter(Boolean).join(", ");
 }
 
-// ─── Beauty 전용 얼굴 유사도 강화 키워드 ────────────────
+// ─── 눈 형태 특화 프롬프트 ─────────────────────
 
-function buildBeautyFaceLikeness(a: BeautyAnalysisResult): string {
-  const parts = [
-    `maintain original ${a.faceShape} face shape exactly`,
-    `preserve ${a.eyeShape} eye shape`,
-    a.faceFeatureDetails ? `${a.faceFeatureDetails}` : "",
-    "same person facial identity preserved",
-    "realistic face likeness, NOT over-handsome, NOT beautified",
-    "original facial proportions maintained",
-  ];
+function buildEyePrompt(analysis: BeautyAnalysisResult): string {
+  const parts: string[] = [];
 
-  if (a.hasGlasses) {
+  // 눈 크기
+  if (analysis.eyeSize === "크음") {
+    parts.push("naturally large round eyes preserved");
+  } else if (analysis.eyeSize === "작음") {
+    parts.push("naturally small eyes preserved");
+  }
+
+  // 눈 모양
+  if (analysis.eyeOpenness === "가늘게 뜸") {
+    parts.push("naturally elongated eye shape preserved");
+  } else if (analysis.eyeOpenness === "크게 뜸") {
+    parts.push("natural round eye shape preserved");
+  }
+
+  // 쌍꺼풀
+  if (analysis.doubleEyelidPresence.includes("없음")) {
+    parts.push("monolid eyes preserved");
+  } else if (analysis.doubleEyelidPresence.includes("있음")) {
+    parts.push("double eyelid preserved");
+  }
+
+  return parts.join(", ");
+}
+
+// ─── 턱선 특화 프롬프트 ─────────────────────
+
+function buildJawlinePrompt(analysis: BeautyAnalysisResult): string {
+  if (analysis.jawlineType.includes("V라인")) {
+    return "V-line jawline preserved, sharp chin definition";
+  }
+  if (analysis.jawlineType.includes("각진형")) {
+    return "angular jawline preserved, defined jaw structure";
+  }
+  if (analysis.jawlineType.includes("둥근형")) {
+    return "round jawline preserved, soft chin contour";
+  }
+  return "natural jawline preserved";
+}
+
+// ─── 특이사항 자동 감지 프롬프트 ─────────────────────
+
+function buildDistinctiveFeatures(analysis: BeautyAnalysisResult): string {
+  const parts: string[] = [];
+
+  // 안경
+  if (analysis.hasGlasses) {
     parts.push(
-      `wearing ${a.glassesStyle} glasses exactly as original`,
+      `wearing ${analysis.glassesStyle} glasses exactly as original`,
       "glasses frame preserved completely",
       "face visible through glasses"
     );
+  } else {
+    parts.push("no glasses, clear face");
+  }
+
+  // 수염
+  if (analysis.hasBear) {
+    parts.push(
+      `${analysis.bearStyle} beard preserved exactly`,
+      "facial hair maintained"
+    );
+  } else {
+    parts.push("(clean-shaven, no beard:1.8)");
+  }
+
+  // 특이한 표시
+  if (analysis.hasDistinctiveMarks && analysis.distinctiveMarksDescription) {
+    parts.push(`${analysis.distinctiveMarksDescription} preserved`);
   }
 
   return parts.filter(Boolean).join(", ");
 }
 
-// ─── Beauty 전용 조명 빌더 ──────────────────────────────
+// ─── 헤어 프롬프트 ─────────────────────
 
-function buildBeautyLighting(a: BeautyAnalysisResult): string {
-  if (a.lightingType.includes("outdoor")) {
-    return [
-      `outdoor ${a.lightingDirection}`,
-      "hard sunlight casting natural directional shadows",
-      "sun catchlight at 11 o'clock in eyes",
-      `${a.shadowPresence}`,
-      "ambient occlusion under nose and chin",
-      "rim lighting from sun direction",
-      "natural color temperature 5500K",
-      "golden hour warmth",
-    ].join(", ");
-  }
-
-  if (a.lightingType.includes("studio")) {
-    return [
-      `studio ${a.lightingDirection}`,
-      "Rembrandt lighting triangle on cheek",
-      "fill light ratio 3:1",
-      "defined shadow under jaw and nose",
-      "specular highlight on nose bridge",
-      "hair light separation from background",
-      "professional studio strobe",
-    ].join(", ");
-  }
-
+function buildHairPrompt(analysis: BeautyAnalysisResult): string {
   return [
-    `indoor ${a.lightingDirection}`,
-    "window light soft directional",
-    "natural shadow on one side of face",
-    "ambient indoor warm light",
-    "color temperature 4000K",
-    "soft box diffused",
-  ].join(", ");
+    `(${analysis.hairStyle}:1.3)`,
+    `${analysis.hairColor} hair`,
+    `${analysis.hairLength} length`,
+    `${analysis.hairTexture} texture`,
+    "natural flyaway hair strands",
+    "realistic hair texture",
+    "individual hair strands visible",
+    "NOT perfect hair, natural hair movement",
+    analysis.hairDescription,
+  ].filter(Boolean).join(", ");
 }
 
-// ─── Beauty 전용 프롬프트 빌더 ──────────────────────────
+// ─── 통합 포지티브 프롬프트 빌더 ─────────────────────
 
-function buildBeautyPrompt(a: BeautyAnalysisResult): string {
+function buildBeautyPrompt(analysis: BeautyAnalysisResult): string {
   const camera = "shot on Canon EOS R5, 85mm f/2.0, RAW photo, photorealistic, 8K resolution";
 
   const realism = [
@@ -174,66 +346,75 @@ function buildBeautyPrompt(a: BeautyAnalysisResult): string {
     "NOT illustration, NOT digital art, NOT AI generated, NOT CGI",
   ].join(", ");
 
-  const skinAge = buildBeautyAgeAppropriateSkin(a.estimatedAge, a.skinAgingFeatures);
-  const faceLikeness = buildBeautyFaceLikeness(a);
+  // 얼굴 유사도 최우선
+  const faceLikeness = buildFaceLikenessCore();
 
-  const hair = [
-    `(${a.hairStyle}:1.3)`,
-    `${a.hairColor} hair`,
-    "natural flyaway hair strands",
-    "realistic hair texture",
-    "individual hair strands visible",
-    "NOT perfect hair, natural hair movement",
+  // 연령대별 피부
+  const agePrompt = buildAgeAppropriatePrompt(analysis.estimatedAge, analysis.skinAgingFeatures);
+
+  // 눈 특화
+  const eyePrompt = buildEyePrompt(analysis);
+
+  // 턱선 특화
+  const jawlinePrompt = buildJawlinePrompt(analysis);
+
+  // 특이사항
+  const distinctiveFeatures = buildDistinctiveFeatures(analysis);
+
+  // 헤어
+  const hairPrompt = buildHairPrompt(analysis);
+
+  // 표정
+  const expression = BEAUTY_EXPRESSION_VARIANTS[analysis.expressionVariant];
+
+  // 조명
+  const lighting = [
+    `${analysis.lightingType} ${analysis.lightingDirection}`,
+    "natural shadow definition",
+    "soft box diffused",
   ].join(", ");
 
-  const pose = [
-    `${a.pose}`,
-    "slight body turn 15 degrees",
-    "relaxed shoulders weight shifted",
-    "natural hand placement",
-    "weight shifted to one leg",
-    "candid unstaged authentic moment",
-  ].join(", ");
+  // 최종 조합
+  const parts = [
+    faceLikeness,
+    agePrompt,
+    eyePrompt,
+    jawlinePrompt,
+    distinctiveFeatures,
+    hairPrompt,
+    expression,
+    lighting,
+    realism,
+    camera,
+    analysis.faceFeatureDetails,
+  ];
 
-  const expressionText = BEAUTY_EXPRESSION_VARIANTS[a.expressionVariant];
-  const lighting = buildBeautyLighting(a);
-
-  const background = [
-    `${a.background}`,
-    "background slightly out of focus f/2.0",
-    "background details partially visible",
-    "environmental context visible",
-    "NOT completely blurred",
-  ].join(", ");
-
-  // beauty 전용 모드 추가 키워드
-  const beautyExtra = `${a.makeupLevel} makeup, ${a.mood} beauty, Korean beauty photography, professional portrait`;
-
-  return [camera, realism, skinAge, faceLikeness, hair, pose, expressionText, lighting, background, beautyExtra]
+  return parts
     .filter(Boolean)
     .join(", ")
-    .replace(/,\s*,/g, ",")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-// ─── Beauty 전용 네거티브 프롬프트 빌더 ─────────────────
+// ─── 통합 네거티브 프롬프트 빌더 ─────────────────────
 
-function buildBeautyNegative(a: BeautyAnalysisResult): string {
+function buildBeautyNegative(analysis: BeautyAnalysisResult): string {
+  // 얼굴 유사도 최우선 (공통)
+  const faceLikeness = buildFaceLikenessNegative();
+
+  // 기본 네거티브
   const base = [
     "(illustration:1.9), (digital art:1.9), (painting:1.8), (anime:1.9), (cartoon:1.9)",
     "(AI generated look:1.7), (CGI:1.7), (3D render:1.7)",
     "(plastic skin:1.9), (airbrushed skin:1.9), (smooth poreless skin:1.8)",
     "(wax skin:1.8), (beauty filter:1.8), (instagram filter:1.7)",
     "(perfect flawless skin:1.7), (no pores:1.7)",
-    "(over-smoothed:1.8), (de-aged:1.8), (porcelain skin:1.7)",
-    "(different person:1.9), (changed face:1.9), (wrong facial features:1.8)",
+    "(over-smoothed:1.8), (porcelain skin:1.7)",
     "(over-handsome:1.7), (over-beautified face:1.7)",
     "(wrong nose shape:1.8), (wrong eye shape:1.7)",
     "(idealized features:1.6), (k-pop idol face:1.6)",
     "(stiff pose:1.5), (frontal symmetrical pose:1.5)",
     "(standing at attention:1.5), (mannequin pose:1.5)",
-    "(robot pose:1.4)",
     "(expressionless:1.5), (blank stare:1.5)",
     "(dead eyes:1.5), (repeated same smile:1.4)",
     "(forced smile:1.4)",
@@ -248,19 +429,35 @@ function buildBeautyNegative(a: BeautyAnalysisResult): string {
     "jpeg artifacts, noise",
   ];
 
-  if (a.hasGlasses) {
+  // 연령대별 추가 네거티브
+  const age = parseInt(analysis.estimatedAge) || 30;
+  if (age >= 50) {
+    base.push(
+      "(younger looking:1.9)",
+      "(de-aged:1.9)",
+      "(smooth youthful skin:1.8)"
+    );
+  }
+
+  // 안경 관련
+  if (analysis.hasGlasses) {
     base.push(
       "(removed glasses:1.9), (no glasses:1.9)",
       "(wrong glasses style:1.7)",
       "(face distorted by glasses:1.6)"
     );
+  } else {
+    base.push("(wearing glasses when shouldn't:1.8)");
   }
 
-  if (a.hasBear) {
+  // 수염 관련
+  if (analysis.hasBear) {
     base.push("(removed beard:1.8), (clean shaven when should have beard:1.8)");
+  } else {
+    base.push("(unexpected beard:1.8), (facial hair when shouldn't have:1.8)");
   }
 
-  return base.join(", ");
+  return [faceLikeness, base.join(", ")].join(", ");
 }
 
 // ─── Beauty 전용 Mock 데이터 (API 실패 시 fallback) ─────
@@ -271,191 +468,228 @@ function getBeautyMockResult(expressionVariantOverride?: number): BeautyAnalysis
     : Math.floor(Math.random() * BEAUTY_EXPRESSION_VARIANTS.length);
 
   const result: BeautyAnalysisResult = {
-    skinTone:           "warm beige",
-    skinTexture:        "natural pores visible",
-    faceShape:          "oval",
-    eyeShape:           "almond monolid",
-    hasGlasses:         false,
-    glassesStyle:       "none",
-    hasBear:            false,
-    bearStyle:          "none",
-    hairStyle:          "shoulder-length natural hair",
-    hairColor:          "deep black",
-    pose:               "slight body turn, relaxed standing",
-    gaze:               "looking slightly off-camera",
-    expression:         "genuine smile",
-    makeupLevel:        "light natural",
-    lightingType:       "outdoor natural",
-    lightingDirection:  "upper left sunlight",
-    shadowPresence:     "soft natural shadow",
-    background:         "natural environment",
-    outfit:             "casual elegant outfit",
-    mood:               "natural elegant",
-    estimatedAge:       "30",
-    skinAgingFeatures:  "none",
+    estimatedAge: "30",
+    skinTone: "warm beige",
+    skinTexture: "natural pores visible",
+    faceShape: "oval",
+    jawlineType: "둥근형",
+    jawlineDescription: "soft round jawline",
+    eyeShape: "almond",
+    eyeSize: "중간",
+    eyeOpenness: "자연스러움",
+    doubleEyelidPresence: "쌍꺼풀 있음",
+    eyeColorDescription: "dark brown",
+    noseShape: "보통",
+    noseWidth: "보통",
+    noseDescription: "natural nose bridge",
+    lipShape: "보통",
+    lipColor: "natural pink",
+    lipDescription: "medium lips",
+    hasGlasses: false,
+    glassesStyle: "none",
+    glassesDescription: "no glasses",
+    hasBear: false,
+    bearStyle: "none",
+    bearDescription: "clean-shaven",
+    hasDistinctiveMarks: false,
+    distinctiveMarksDescription: "none",
+    hairStyle: "shoulder-length natural hair",
+    hairColor: "deep black",
+    hairLength: "중간",
+    hairTexture: "직모",
+    hairDescription: "natural hair texture",
+    pose: "slight body turn, relaxed standing",
+    gaze: "looking slightly off-camera",
+    expression: "genuine smile",
+    makeupLevel: "light natural",
+    lightingType: "outdoor natural",
+    lightingDirection: "upper left sunlight",
+    shadowPresence: "soft natural shadow",
+    background: "natural environment",
+    outfit: "casual elegant outfit",
+    mood: "natural elegant",
+    skinAgingFeatures: "none",
+    visibleWrinkles: "없음",
+    skinCondition: "맑음",
     faceFeatureDetails: "natural nose bridge, medium lips, soft jawline",
     expressionVariant,
-    generatedPrompt:    "",
-    generatedNegative:  "",
+    generatedPrompt: "",
+    generatedNegative: "",
   };
 
-  result.generatedPrompt   = buildBeautyPrompt(result);
+  result.generatedPrompt = buildBeautyPrompt(result);
   result.generatedNegative = buildBeautyNegative(result);
 
   return result;
 }
 
-// ─── Beauty 전용 Claude Vision 분석 (메인 함수) ──────────
+// ─── Claude Vision 분석 함수 (v2.0 확장) ─────────────────────
 
 export async function analyzeBeautyImage(
-  base64: string,
-  mimeType: string,
-  expressionVariantOverride?: number
+  imageBase64: string,
+  mimeType: string
 ): Promise<BeautyAnalysisResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const client = new Anthropic();
 
-  if (!apiKey) {
-    console.warn("[beauty-analyzer] ANTHROPIC_API_KEY 없음 → 폴백 반환");
-    return getBeautyMockResult(expressionVariantOverride);
-  }
+  const systemPrompt = `당신은 전문 포토그래퍼 및 뷰티 분석가입니다.
+고객의 사진을 분석하여 다음을 정확히 파악하세요:
 
-  const client = new Anthropic({ apiKey });
-  const clean = base64.includes(",") ? base64.split(",")[1] : base64;
+[필수 분석 항목]
+1. 얼굴 형태: 계란형, 둥근형, 각진형, 역삼각형 중 선택
+2. 턱선: 둥근형, V라인, 각진형 중 선택
+3. 눈 크기: 크음, 중간, 작음
+4. 눈 모양: 크고 둥근, 가늘고 긴, 일반형
+5. 눈 뜨는 정도: 크게 뜸, 자연스러움, 가늘게 뜸
+6. 쌍꺼풀: 있음/없음
+7. 코 높이: 높음, 보통, 낮음
+8. 코 넓이: 좁음, 보통, 넓음
+9. 입 모양: 두꺼움, 보통, 얇음
+10. 안경: 있음/없음 (있으면 프레임 스타일 설명)
+11. 수염: 있음/없음 (있으면 스타일 설명)
+12. 특이한 표시: 점, 흉터, 주근깨 등
+13. 헤어: 색상, 길이(초단발/단발/중간/롱/매우 긴), 질감(직모/웨이브/곱슬머리)
+14. 피부 상태: 맑음, 여드름, 흉터, 기타
+15. 주름: 없음, 미세, 보통, 뚜렷함
+16. 추정 나이: 정확한 연령대
+
+[응답 형식]
+JSON으로 다음 필드를 포함하여 응답:
+{
+  "estimatedAge": "30",
+  "skinTone": "따뜻한 베이지",
+  "skinTexture": "자연스러운 모공",
+  "faceShape": "계란형",
+  "jawlineType": "둥근형",
+  "jawlineDescription": "부드러운 턱선",
+  "eyeShape": "아몬드형",
+  "eyeSize": "중간",
+  "eyeOpenness": "자연스러움",
+  "doubleEyelidPresence": "쌍꺼풀 있음",
+  "eyeColorDescription": "어두운 갈색",
+  "noseShape": "보통",
+  "noseWidth": "보통",
+  "noseDescription": "자연스러운 콧대",
+  "lipShape": "보통",
+  "lipColor": "자연스러운 핑크",
+  "lipDescription": "중간 두께 입술",
+  "hasGlasses": false,
+  "glassesStyle": "없음",
+  "glassesDescription": "안경 없음",
+  "hasBear": false,
+  "bearStyle": "없음",
+  "bearDescription": "면도된 상태",
+  "hasDistinctiveMarks": false,
+  "distinctiveMarksDescription": "없음",
+  "hairStyle": "어깨길이 자연스러운 머리",
+  "hairColor": "검은색",
+  "hairLength": "중간",
+  "hairTexture": "직모",
+  "hairDescription": "자연스러운 머리결",
+  "skinAgingFeatures": "없음",
+  "visibleWrinkles": "없음",
+  "skinCondition": "맑음",
+  "faceFeatureDetails": "자연스러운 콧대, 중간 입술, 부드러운 턱선"
+}`;
+
+  const userPrompt = `이 사진을 분석해주세요. 위의 모든 필수 분석 항목을 포함하여 JSON으로 응답해주세요.`;
 
   try {
     const response = await client.messages.create({
-      model: "claude-opus-4-5",
+      model: "claude-opus-4-1-20250805",
       max_tokens: 2000,
-      messages: [{
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: mimeType as "image/jpeg" | "image/png" | "image/webp", data: clean },
-          },
-          {
-            type: "text",
-            text: `이 사진을 정밀 분석해줘. 용도: 개인 뷰티/브랜딩 사진 생성용. 피부, 메이크업, 조명, 연령대에 집중해서 분석해.
-
-반드시 JSON만 응답해. 다른 텍스트 없이:
-{
-  "skinTone": "피부톤 영어로 (예: warm ivory, golden beige, cool porcelain)",
-  "skinTexture": "피부결 영어로 (예: dewy, matte, natural pores visible)",
-  "faceShape": "얼굴형 영어로 (예: oval, round, heart-shaped, square)",
-  "eyeShape": "눈 모양 영어로 (예: almond monolid, double eyelid almond)",
-  "hasGlasses": true 또는 false,
-  "glassesStyle": "안경 스타일 영어로 (예: black rectangular frames, rimless oval) 또는 none",
-  "hasBeard": true 또는 false,
-  "beardStyle": "수염 스타일 영어로 또는 none",
-  "hairStyle": "헤어스타일 영어로. 길이 포함 (예: short ear-length bob, shoulder-length wavy, buzz cut)",
-  "hairColor": "헤어 색상 영어로 (예: deep black, dark brown, ash brown)",
-  "pose": "포즈 영어로 (예: slight body turn, relaxed standing, candid natural)",
-  "gaze": "시선 영어로 (예: looking slightly off-camera, direct eye contact)",
-  "expression": "표정 영어로 (예: genuine smile, subtle smirk, serene neutral)",
-  "makeupLevel": "메이크업 정도 영어로 (예: no makeup, light natural, full glam)",
-  "lightingType": "outdoor natural / indoor studio / mixed 중 하나",
-  "lightingDirection": "조명 방향 영어로 (예: upper left sunlight, front softbox, side rim light)",
-  "shadowPresence": "그림자 영어로 (예: strong directional shadow, soft shadow, no shadow)",
-  "background": "배경 영어로 (예: blurred city street, white studio, garden)",
-  "outfit": "의상 영어로 (예: white casual shirt, elegant black dress)",
-  "mood": "전체 분위기 영어로 (예: elegant, fresh casual, romantic, professional)",
-  "estimatedAge": "추정 나이 숫자만 (예: 25, 35, 45, 55)",
-  "skinAgingFeatures": "나이에 맞는 피부 특징 영어로 (예: subtle laugh lines, natural forehead lines, youthful smooth) 또는 none",
-  "faceFeatureDetails": "얼굴 특징 상세 영어로 (코 모양, 입술, 턱선 등 3가지) (예: slightly wide nose bridge, full lips, defined jawline)"
-}`,
-          },
-        ],
-      }],
+      system: systemPrompt,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+                data: imageBase64,
+              },
+            },
+            {
+              type: "text",
+              text: userPrompt,
+            },
+          ],
+        },
+      ],
     });
 
-    const text = response.content[0].type === "text" ? response.content[0].text : "";
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("분석 결과 파싱 실패");
+    const content = response.content[0];
+    if (content.type !== "text") {
+      return getBeautyMockResult();
+    }
 
-    const raw = JSON.parse(jsonMatch[0]);
+    // JSON 추출
+    const jsonMatch = content.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return getBeautyMockResult();
+    }
 
-    const expressionVariant = expressionVariantOverride !== undefined
-      ? expressionVariantOverride
-      : Math.floor(Math.random() * BEAUTY_EXPRESSION_VARIANTS.length);
+    const analysisData = JSON.parse(jsonMatch[0]);
 
+    // 기본값 설정
     const result: BeautyAnalysisResult = {
-      skinTone:           raw.skinTone || "warm beige",
-      skinTexture:        raw.skinTexture || "natural pores visible",
-      faceShape:          raw.faceShape || "oval",
-      eyeShape:           raw.eyeShape || "almond",
-      hasGlasses:         raw.hasGlasses || false,
-      glassesStyle:       raw.glassesStyle || "none",
-      hasBear:            raw.hasBeard || false,
-      bearStyle:          raw.beardStyle || "none",
-      hairStyle:          raw.hairStyle || "natural hair",
-      hairColor:          raw.hairColor || "black",
-      pose:               raw.pose || "natural relaxed pose",
-      gaze:               raw.gaze || "looking slightly off-camera",
-      expression:         raw.expression || "genuine smile",
-      makeupLevel:        raw.makeupLevel || "light natural",
-      lightingType:       raw.lightingType || "outdoor natural",
-      lightingDirection:  raw.lightingDirection || "upper left sunlight",
-      shadowPresence:     raw.shadowPresence || "soft natural shadow",
-      background:         raw.background || "natural environment",
-      outfit:             raw.outfit || "casual outfit",
-      mood:               raw.mood || "natural elegant",
-      estimatedAge:       raw.estimatedAge || "30",
-      skinAgingFeatures:  raw.skinAgingFeatures || "none",
-      faceFeatureDetails: raw.faceFeatureDetails || "",
-      expressionVariant,
-      generatedPrompt:    "",
-      generatedNegative:  "",
+      estimatedAge: analysisData.estimatedAge || "30",
+      skinTone: analysisData.skinTone || "따뜻한 톤",
+      skinTexture: analysisData.skinTexture || "자연스러운 모공",
+      faceShape: analysisData.faceShape || "계란형",
+      jawlineType: analysisData.jawlineType || "둥근형",
+      jawlineDescription: analysisData.jawlineDescription || "자연스러운 턱선",
+      eyeShape: analysisData.eyeShape || "아몬드형",
+      eyeSize: analysisData.eyeSize || "중간",
+      eyeOpenness: analysisData.eyeOpenness || "자연스러움",
+      doubleEyelidPresence: analysisData.doubleEyelidPresence || "쌍꺼풀 있음",
+      eyeColorDescription: analysisData.eyeColorDescription || "갈색",
+      noseShape: analysisData.noseShape || "보통",
+      noseWidth: analysisData.noseWidth || "보통",
+      noseDescription: analysisData.noseDescription || "자연스러운 코",
+      lipShape: analysisData.lipShape || "보통",
+      lipColor: analysisData.lipColor || "자연스러운 핑크",
+      lipDescription: analysisData.lipDescription || "중간 입술",
+      hasGlasses: analysisData.hasGlasses || false,
+      glassesStyle: analysisData.glassesStyle || "없음",
+      glassesDescription: analysisData.glassesDescription || "안경 없음",
+      hasBear: analysisData.hasBear || false,
+      bearStyle: analysisData.bearStyle || "없음",
+      bearDescription: analysisData.bearDescription || "면도된 상태",
+      hasDistinctiveMarks: analysisData.hasDistinctiveMarks || false,
+      distinctiveMarksDescription: analysisData.distinctiveMarksDescription || "없음",
+      hairStyle: analysisData.hairStyle || "자연스러운 머리",
+      hairColor: analysisData.hairColor || "검은색",
+      hairLength: analysisData.hairLength || "중간",
+      hairTexture: analysisData.hairTexture || "직모",
+      hairDescription: analysisData.hairDescription || "자연스러운 머리결",
+      pose: "slight body turn, relaxed standing",
+      gaze: "looking slightly off-camera",
+      expression: "genuine smile",
+      makeupLevel: "light natural",
+      lightingType: "outdoor natural",
+      lightingDirection: "upper left sunlight",
+      shadowPresence: "soft natural shadow",
+      background: "natural environment",
+      outfit: "casual elegant outfit",
+      mood: "natural elegant",
+      skinAgingFeatures: analysisData.skinAgingFeatures || "없음",
+      visibleWrinkles: analysisData.visibleWrinkles || "없음",
+      skinCondition: analysisData.skinCondition || "맑음",
+      faceFeatureDetails: analysisData.faceFeatureDetails || "자연스러운 얼굴",
+      expressionVariant: Math.floor(Math.random() * BEAUTY_EXPRESSION_VARIANTS.length),
+      generatedPrompt: "",
+      generatedNegative: "",
     };
 
-    result.generatedPrompt   = buildBeautyPrompt(result);
+    // 프롬프트 생성
+    result.generatedPrompt = buildBeautyPrompt(result);
     result.generatedNegative = buildBeautyNegative(result);
 
-    console.log("[beauty-analyzer] ✅ Claude Vision 분석 완료");
     return result;
-
-  } catch (err: any) {
-    const msg = err?.message ?? '';
-    const status = err?.status ?? err?.statusCode ?? 0;
-
-    if (msg.includes('credit balance') || status === 400) {
-      console.warn('[beauty-analyzer] ⚠️  Anthropic 크레딧 부족 → 폴백 반환');
-    } else if (status === 401 || status === 403) {
-      console.warn('[beauty-analyzer] ⚠️  Anthropic 인증 실패 → 폴백 반환');
-    } else {
-      console.warn('[beauty-analyzer] ⚠️  Claude Vision 실패:', msg.slice(0, 120), '→ 폴백 반환');
-    }
-
-    return getBeautyMockResult(expressionVariantOverride);
-  }
-}
-
-// ─── Anthropic 크레딧 상태 확인 (beauty 전용) ────────────
-
-export async function checkBeautyAnthropicCredits(): Promise<{
-  available: boolean;
-  message: string;
-}> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return { available: false, message: 'ANTHROPIC_API_KEY 미등록' };
-  }
-
-  try {
-    const client = new Anthropic({ apiKey });
-    await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1,
-      messages: [{ role: 'user', content: 'hi' }],
-    });
-    return { available: true, message: '정상' };
-  } catch (err: any) {
-    const msg = err?.message ?? '';
-    if (msg.includes('credit balance')) {
-      return { available: false, message: '크레딧 부족' };
-    }
-    if (err?.status === 401 || err?.status === 403) {
-      return { available: false, message: '인증 실패' };
-    }
-    return { available: false, message: msg.slice(0, 80) || '알 수 없는 에러' };
+  } catch (error) {
+    console.error("[beauty-analyzer] Claude Vision 분석 실패:", error);
+    return getBeautyMockResult();
   }
 }

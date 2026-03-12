@@ -97,9 +97,9 @@ export async function generateBeautyImages(
   // 1. Claude Vision으로 실제 분석 (beauty-analyzer-standalone 전용)
   const analysis = await analyzeBeautyImage(
     input.imageBase64,
-    input.mimeType || "image/jpeg",
-    input.expressionVariant
+    input.mimeType || "image/jpeg"
   );
+  // expressionVariant는 analyzeBeautyImage 내부에서 자동 선택됨
 
   console.log("[beauty-v3] 분석 완료:", {
     skinTone: analysis.skinTone,
@@ -147,7 +147,7 @@ export async function generateBeautyImages(
       const result = await falRun("fal-ai/flux/dev/image-to-image", {
         prompt:                currentPrompt,
         image_url:             imageDataUrl,
-        strength:              0.55,         // 원본 보존 강화
+        strength:              0.50,         // 테스트: 원본 보존 최대화
         num_inference_steps:   35,
         guidance_scale:        6.0,
         enable_safety_checker: false,

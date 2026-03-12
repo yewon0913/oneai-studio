@@ -5,7 +5,7 @@
 import { router, publicProcedure } from "../_core/trpc";
 import { z } from "zod";
 import { generateBeautyImages } from "../services/beauty-pipeline";
-import { analyzeBeautyImageBase64 } from "../services/beauty-analyzer";
+import { analyzeBeautyImage } from "../services/beauty-analyzer-standalone";
 
 export const beautyRouter = router({
   /**
@@ -34,14 +34,12 @@ export const beautyRouter = router({
       z.object({
         imageBase64: z.string(),
         mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]).optional(),
-        category: z.enum(["skincare", "makeup", "luxury", "natural"]),
       })
     )
     .mutation(async ({ input }) => {
-      return await analyzeBeautyImageBase64(
+      return await analyzeBeautyImage(
         input.imageBase64,
-        input.mimeType || "image/jpeg",
-        input.category
+        input.mimeType || "image/jpeg"
       );
     }),
 });
