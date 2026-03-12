@@ -55,6 +55,8 @@ export interface BeautyAnalysisResult {
   jawlineDescription: string;
   /** 볼살: full / natural / slim */
   cheekFullness: string;
+  /** 턱선 분류: sharp / natural / soft */
+  jawlineCategory: string;
 
   // 눈 (상세 분석)
   eyeShape: string; // 크고 둥근, 가늘고 긴, 일반형
@@ -64,6 +66,8 @@ export interface BeautyAnalysisResult {
   eyeColorDescription: string;
   /** 눈꼬리 각도: upward / downward / straight */
   eyeCornerAngle: string;
+  /** 쌍꺼풀 유무 (boolean) */
+  hasDoubleEyelid: boolean;
 
   // 코
   noseShape: string; // 높음, 보통, 낮음
@@ -71,6 +75,8 @@ export interface BeautyAnalysisResult {
   noseDescription: string;
   /** 동글코 여부 */
   isButtonNose: boolean;
+  /** 코 높이: low / medium / high */
+  noseHeight: string;
 
   // 입
   lipShape: string; // 두꺼움, 보통, 얇음
@@ -95,11 +101,17 @@ export interface BeautyAnalysisResult {
   hairDescription: string;
   /** 잔머리 존재 여부 */
   hasBabyHair: boolean;
+  /** 정확한 영문 헤어 컬러 (e.g. jet black, dark brown, ash brown) */
+  hairColorExact: string;
+  /** 웨이브 타입: straight / wavy / curly */
+  hairWaveType: string;
 
   // 피부
   skinAgingFeatures: string;
   visibleWrinkles: string; // 없음, 미세, 보통, 뚜렷함
   skinCondition: string; // 맑음, 여드름, 흡집, 기타
+  /** 피부 질감 분류: smooth / natural / textured */
+  skinTextureCategory: string;
 
   // 표정 및 자세
   pose: string;
@@ -267,10 +279,10 @@ function buildEyePrompt(analysis: BeautyAnalysisResult): string {
   }
 
   // 쌍꺼풀
-  if (analysis.doubleEyelidPresence.includes("없음")) {
-    parts.push("monolid eyes preserved");
-  } else if (analysis.doubleEyelidPresence.includes("있음")) {
+  if (analysis.hasDoubleEyelid) {
     parts.push("double eyelid preserved");
+  } else {
+    parts.push("monolid eyes preserved");
   }
 
   // 눈꼬리 각도
@@ -298,6 +310,13 @@ function buildJawlinePrompt(analysis: BeautyAnalysisResult): string {
     parts.push("round jawline preserved, soft chin contour");
   } else {
     parts.push("natural jawline preserved");
+  }
+
+  // 턱선 카테고리 (영문)
+  if (analysis.jawlineCategory === "sharp") {
+    parts.push("sharp defined jawline preserved");
+  } else if (analysis.jawlineCategory === "soft") {
+    parts.push("soft rounded jawline preserved");
   }
 
   // 볼살 보존
@@ -336,6 +355,13 @@ function buildDistinctiveFeatures(analysis: BeautyAnalysisResult): string {
     parts.push("(clean-shaven, no beard:1.8)");
   }
 
+  // 코 높이 보존
+  if (analysis.noseHeight === "low") {
+    parts.push("low nose bridge preserved exactly, do NOT heighten");
+  } else if (analysis.noseHeight === "high") {
+    parts.push("high nose bridge preserved");
+  }
+
   // 동글코 보존
   if (analysis.isButtonNose) {
     parts.push("button nose shape preserved exactly, do NOT heighten or narrow");
@@ -354,9 +380,9 @@ function buildDistinctiveFeatures(analysis: BeautyAnalysisResult): string {
 function buildHairPrompt(analysis: BeautyAnalysisResult): string {
   const parts = [
     `(${analysis.hairStyle}:1.3)`,
-    `${analysis.hairColor} hair`,
+    `${analysis.hairColorExact} hair`,
     `${analysis.hairLength} length`,
-    `${analysis.hairTexture} texture`,
+    `${analysis.hairWaveType} texture`,
     "natural flyaway hair strands",
     "realistic hair texture",
     "individual hair strands visible",
@@ -376,8 +402,15 @@ function buildHairPrompt(analysis: BeautyAnalysisResult): string {
 function buildBeautyPrompt(analysis: BeautyAnalysisResult): string {
   const camera = "shot on Canon EOS R5, 85mm f/2.0, RAW photo, photorealistic, 8K resolution";
 
+  // 피부 질감 카테고리 반영
+  const skinTexDesc = analysis.skinTextureCategory === "smooth"
+    ? "smooth even skin with minimal pores"
+    : analysis.skinTextureCategory === "textured"
+      ? "heavily textured skin with visible pores and imperfections preserved"
+      : "natural skin texture with visible pores";
+
   const realism = [
-    "skin pores clearly visible",
+    skinTexDesc,
     "natural skin texture with imperfections",
     "subsurface scattering on skin",
     "film grain ISO 400",
@@ -516,16 +549,19 @@ function getBeautyMockResult(expressionVariantOverride?: number): BeautyAnalysis
     jawlineType: "둥근형",
     jawlineDescription: "soft round jawline",
     cheekFullness: "natural",
+    jawlineCategory: "natural",
     eyeShape: "almond",
     eyeSize: "중간",
     eyeOpenness: "자연스러움",
     doubleEyelidPresence: "쌍꺼풀 있음",
     eyeColorDescription: "dark brown",
     eyeCornerAngle: "straight",
+    hasDoubleEyelid: true,
     noseShape: "보통",
     noseWidth: "보통",
     noseDescription: "natural nose bridge",
     isButtonNose: false,
+    noseHeight: "medium",
     lipShape: "보통",
     lipColor: "natural pink",
     lipDescription: "medium lips",
@@ -543,6 +579,8 @@ function getBeautyMockResult(expressionVariantOverride?: number): BeautyAnalysis
     hairTexture: "직모",
     hairDescription: "natural hair texture",
     hasBabyHair: true,
+    hairColorExact: "jet black",
+    hairWaveType: "straight",
     pose: "slight body turn, relaxed standing",
     gaze: "looking slightly off-camera",
     expression: "genuine smile",
@@ -556,6 +594,7 @@ function getBeautyMockResult(expressionVariantOverride?: number): BeautyAnalysis
     skinAgingFeatures: "none",
     visibleWrinkles: "없음",
     skinCondition: "맑음",
+    skinTextureCategory: "natural",
     faceFeatureDetails: "natural nose bridge, medium lips, soft jawline",
     expressionVariant,
     generatedPrompt: "",
@@ -601,6 +640,12 @@ export async function analyzeBeautyImage(
 19. 볼살(cheek fullness): full, natural, slim 중 선택
 20. 잔머리(baby hair) 존재: true/false
 21. 얼굴형 분류(영문): oval, round, square, heart 중 선택
+22. 코 높이(영문): low, medium, high 중 선택
+23. 턱선 분류(영문): sharp, natural, soft 중 선택
+24. 쌍꺼풀 유무(boolean): true/false
+25. 정확한 헤어 컬러(영문): jet black, dark brown, ash brown, chestnut, honey brown 등 정확한 색상
+26. 헤어 웨이브 타입(영문): straight, wavy, curly 중 선택
+27. 피부 질감 분류(영문): smooth, natural, textured 중 선택
 
 [응답 형식]
 JSON으로 다음 필드를 포함하여 응답:
@@ -643,7 +688,13 @@ JSON으로 다음 필드를 포함하여 응답:
   "isButtonNose": false,
   "cheekFullness": "natural",
   "hasBabyHair": true,
-  "faceShapeCategory": "oval"
+  "faceShapeCategory": "oval",
+  "noseHeight": "medium",
+  "jawlineCategory": "natural",
+  "hasDoubleEyelid": true,
+  "hairColorExact": "jet black",
+  "hairWaveType": "straight",
+  "skinTextureCategory": "natural"
 }`;
 
   const userPrompt = `이 사진을 분석해주세요. 위의 모든 필수 분석 항목을 포함하여 JSON으로 응답해주세요.`;
@@ -697,16 +748,19 @@ JSON으로 다음 필드를 포함하여 응답:
       jawlineType: analysisData.jawlineType || "둥근형",
       jawlineDescription: analysisData.jawlineDescription || "자연스러운 턱선",
       cheekFullness: analysisData.cheekFullness || "natural",
+      jawlineCategory: analysisData.jawlineCategory || "natural",
       eyeShape: analysisData.eyeShape || "아몬드형",
       eyeSize: analysisData.eyeSize || "중간",
       eyeOpenness: analysisData.eyeOpenness || "자연스러움",
       doubleEyelidPresence: analysisData.doubleEyelidPresence || "쌍꺼풀 있음",
       eyeColorDescription: analysisData.eyeColorDescription || "갈색",
       eyeCornerAngle: analysisData.eyeCornerAngle || "straight",
+      hasDoubleEyelid: analysisData.hasDoubleEyelid ?? true,
       noseShape: analysisData.noseShape || "보통",
       noseWidth: analysisData.noseWidth || "보통",
       noseDescription: analysisData.noseDescription || "자연스러운 코",
       isButtonNose: analysisData.isButtonNose || false,
+      noseHeight: analysisData.noseHeight || "medium",
       lipShape: analysisData.lipShape || "보통",
       lipColor: analysisData.lipColor || "자연스러운 핑크",
       lipDescription: analysisData.lipDescription || "중간 입술",
@@ -724,6 +778,8 @@ JSON으로 다음 필드를 포함하여 응답:
       hairTexture: analysisData.hairTexture || "직모",
       hairDescription: analysisData.hairDescription || "자연스러운 머리결",
       hasBabyHair: analysisData.hasBabyHair || false,
+      hairColorExact: analysisData.hairColorExact || "jet black",
+      hairWaveType: analysisData.hairWaveType || "straight",
       pose: "slight body turn, relaxed standing",
       gaze: "looking slightly off-camera",
       expression: "genuine smile",
@@ -737,6 +793,7 @@ JSON으로 다음 필드를 포함하여 응답:
       skinAgingFeatures: analysisData.skinAgingFeatures || "없음",
       visibleWrinkles: analysisData.visibleWrinkles || "없음",
       skinCondition: analysisData.skinCondition || "맑음",
+      skinTextureCategory: analysisData.skinTextureCategory || "natural",
       faceFeatureDetails: analysisData.faceFeatureDetails || "자연스러운 얼굴",
       expressionVariant: Math.floor(Math.random() * BEAUTY_EXPRESSION_VARIANTS.length),
       generatedPrompt: "",

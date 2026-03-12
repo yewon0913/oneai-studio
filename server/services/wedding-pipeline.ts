@@ -142,17 +142,27 @@ function buildStage2(mode: WeddingMode, concept: WeddingConcept): string {
   const cfg = CONCEPTS[concept];
   const parts: string[] = [];
 
-  parts.push(`Lighting: ${cfg.lighting}`);
-  parts.push(`Background: ${cfg.background}`);
-
-  if (mode === "solo_bride" || mode === "couple") {
-    parts.push("Bride outfit: elegant white wedding gown, pearl hairpiece, flowing veil, delicate lace details, fitted bodice");
-  }
-  if (mode === "solo_groom" || mode === "couple") {
-    parts.push("Groom outfit: classic black tuxedo, black bow tie, white pocket square, crisp white dress shirt, tailored fit");
-  }
-
-  if (mode === "couple") {
+  // 솔로 모드별 조명 오버라이드
+  if (mode === "solo_bride") {
+    const brideLighting = concept === "white_studio"
+      ? "soft window backlight creating ethereal glow, butterfly beauty lighting with large octabox, white bounce below chin, subtle hair rim light"
+      : cfg.lighting;
+    parts.push(`Lighting: ${brideLighting}`);
+    parts.push(`Background: ${cfg.background}`);
+    parts.push("Bride outfit: white wedding gown, pearl hairpiece, flowing veil, delicate lace details, fitted bodice");
+  } else if (mode === "solo_groom") {
+    const groomLighting = concept === "white_studio"
+      ? "soft diffused studio lighting with subtle backlight, Rembrandt side light bringing out masculine bone structure, clean even fill"
+      : cfg.lighting;
+    parts.push(`Lighting: ${groomLighting}`);
+    parts.push(`Background: ${cfg.background}`);
+    parts.push("Groom outfit: classic black tuxedo, bow tie, white pocket square, crisp white dress shirt, tailored fit");
+  } else {
+    // couple
+    parts.push(`Lighting: ${cfg.lighting}`);
+    parts.push(`Background: ${cfg.background}`);
+    parts.push("Bride outfit: white wedding gown, pearl hairpiece, flowing veil, delicate lace details, fitted bodice");
+    parts.push("Groom outfit: classic black tuxedo, bow tie, white pocket square, crisp white dress shirt, tailored fit");
     parts.push("Both subjects equally in frame, natural intimate moment, genuine warmth between them");
   }
 
