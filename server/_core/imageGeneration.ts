@@ -1,12 +1,11 @@
 /**
- * Image generation helper — FAL AI 기반
+ * Image generation helper — Google Gemini 2.0 Flash 기반
  *
- * couple-pipeline.ts / beauty-pipeline.ts와 동일한 FAL 호출 패턴 사용
+ * Gemini 2.0 Flash의 이미지 생성 기능 사용
+ * - text-to-image: 프롬프트만으로 이미지 생성
+ * - image-to-image: 참조 이미지 + 프롬프트로 이미지 편집/변환
  *
- * 모델:
- * - text-to-image:  fal-ai/flux-pro/v1.1 (고품질) → flux/dev 폴백
- * - image-to-image: fal-ai/flux/dev/image-to-image (참조 이미지 기반)
- * - 업스케일/복원:  fal-ai/codeformer (얼굴 보존 + 선명화)
+ * 생성된 이미지는 FAL Storage에 업로드하여 공개 URL 반환
  */
 
 import { storagePut } from "server/storage";
@@ -33,72 +32,125 @@ export type GenerateImageResponse = {
   url?: string;
 };
 
-// ─── FAL REST API 직접 호출 (couple-pipeline 패턴) ───────
+// ─── Gemini API 호출 ─────────────────────────────────────
 
-async function falRun(
-  modelId: string,
-  input: Record<string, unknown>
-): Promise<Record<string, unknown>> {
-  const falKey = process.env.FAL_KEY;
-  if (!falKey) throw new Error("FAL_KEY is not configured");
+const GEMINI_MODEL = "gemini-2.0-flash-preview-image-generation";
 
-  const res = await fetch(`https://fal.run/${modelId}`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Key ${falKey}`,
-      "Content-Type": "application/json",
+function getGeminiApiKey(): string {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY is not configured");
+  return key;
+}
+
+type GeminiPart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } };
+
+type GeminiResponse = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+        inlineData?: { mimeType: string; data: string };
+      }>;
+    };
+  }>;
+  error?: { message: string; code: number };
+};
+
+async function callGemini(
+  parts: GeminiPart[],
+): Promise<GeminiResponse> {
+  const apiKey = getGeminiApiKey();
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+
+  const body = {
+    contents: [{ parts }],
+    generationConfig: {
+      responseModalities: ["TEXT", "IMAGE"],
     },
-    body: JSON.stringify(input),
+  };
+
+  console.log(`[ImageGen] Gemini ${GEMINI_MODEL} 호출 (parts: ${parts.length})`);
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
 
   const text = await res.text();
-  console.log(`[ImageGen] ${modelId} status: ${res.status}`);
-  if (!res.ok) throw new Error(`${modelId} failed ${res.status}: ${text.slice(0, 300)}`);
+  if (!res.ok) {
+    throw new Error(`Gemini API failed ${res.status}: ${text.slice(0, 300)}`);
+  }
 
   try {
-    return JSON.parse(text);
+    return JSON.parse(text) as GeminiResponse;
   } catch {
-    throw new Error(`${modelId} invalid JSON: ${text.slice(0, 200)}`);
+    throw new Error(`Gemini invalid JSON: ${text.slice(0, 200)}`);
   }
 }
 
-// ─── 참조 이미지 → FAL 접근 가능 URL 변환 ───────────────
+// ─── 참조 이미지 → base64 변환 ──────────────────────────
 
-async function resolveImageUrl(img: {
+async function resolveImageToBase64(img: {
   url?: string;
   b64Json?: string;
   mimeType?: string;
-}): Promise<string | null> {
-  if (img.url) return img.url;
+}): Promise<{ data: string; mimeType: string } | null> {
   if (img.b64Json) {
-    const mime = img.mimeType || "image/png";
-    const ext = mime.includes("jpeg") || mime.includes("jpg") ? "jpg" : "png";
-    const buffer = Buffer.from(img.b64Json, "base64");
-    const { url } = await storagePut(
-      `generated/ref-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`,
-      buffer,
-      mime
-    );
-    return url;
+    return { data: img.b64Json, mimeType: img.mimeType || "image/png" };
+  }
+  if (img.url) {
+    try {
+      const res = await fetch(img.url);
+      if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const contentType = res.headers.get("content-type") || img.mimeType || "image/png";
+      return { data: buffer.toString("base64"), mimeType: contentType };
+    } catch (err: any) {
+      console.warn(`[ImageGen] 참조 이미지 다운로드 실패: ${err.message?.slice(0, 100)}`);
+      return null;
+    }
   }
   return null;
 }
 
-// ─── 업스케일/복원 프롬프트 감지 ─────────────────────────
+// ─── Gemini 응답에서 이미지 추출 → URL 변환 ─────────────
 
-function isUpscaleOrRestore(prompt: string): boolean {
-  const keywords = ["upscale", "enhance", "restore", "sharpen", "clarity", "resolution", "복원"];
-  return keywords.some(k => prompt.toLowerCase().includes(k));
+async function extractImageUrl(response: GeminiResponse): Promise<string> {
+  const candidates = response.candidates;
+  if (!candidates?.length) {
+    throw new Error("Gemini 응답에 candidates 없음");
+  }
+
+  const parts = candidates[0].content?.parts;
+  if (!parts?.length) {
+    throw new Error("Gemini 응답에 parts 없음");
+  }
+
+  // 이미지 파트 찾기
+  const imagePart = parts.find(p => p.inlineData?.data);
+  if (!imagePart?.inlineData) {
+    // 텍스트만 반환된 경우
+    const textPart = parts.find(p => p.text);
+    throw new Error(`Gemini가 이미지를 생성하지 못함: ${textPart?.text?.slice(0, 200) || "응답 없음"}`);
+  }
+
+  const { data, mimeType } = imagePart.inlineData;
+  const ext = mimeType.includes("jpeg") || mimeType.includes("jpg") ? "jpg" : "png";
+  const buffer = Buffer.from(data, "base64");
+
+  // FAL Storage에 업로드
+  const { url } = await storagePut(
+    `generated/gemini-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`,
+    buffer,
+    mimeType
+  );
+
+  console.log(`[ImageGen] Gemini 이미지 업로드 완료: ${url.slice(0, 80)}...`);
+  return url;
 }
-
-// ─── 기본 네거티브 프롬프트 ──────────────────────────────
-
-const DEFAULT_NEGATIVE_PROMPT = [
-  "(deformed:1.3), (distorted:1.3), (ugly:1.3), (bad anatomy:1.3)",
-  "blurry, low quality, cartoon, illustration, painting, 3d render, CGI",
-  "(face distortion:2.0), (facial deformation:2.0), (blurry faces:2.0)",
-  "(different face:1.8), (face change:1.8), (altered face:1.8)",
-].join(", ");
 
 // ─── 메인 함수 ──────────────────────────────────────────
 
@@ -110,146 +162,50 @@ export async function generateImage(
     prompt = prompt.substring(0, 1000);
   }
 
-  const negativePrompt = options.negativePrompt || DEFAULT_NEGATIVE_PROMPT;
-  const faceFixMode = options.faceFixMode ?? false;
-  const refImages = options.originalImages || [];
+  // 네거티브 프롬프트가 있으면 프롬프트에 포함
+  if (options.negativePrompt) {
+    prompt = `${prompt}\n\nAvoid: ${options.negativePrompt}`;
+  }
 
-  // 참조 이미지가 있는 경우
+  // 얼굴 보존 모드이면 프롬프트 강화
+  if (options.faceFixMode) {
+    prompt = `${prompt}\n\nIMPORTANT: Preserve facial features exactly. Maintain face identity, expression, and proportions precisely.`;
+  }
+
+  const refImages = options.originalImages || [];
+  const parts: GeminiPart[] = [];
+
+  // 참조 이미지 추가
   if (refImages.length > 0) {
-    const imageUrl = await resolveImageUrl(refImages[0]);
-    if (imageUrl) {
-      // 업스케일/복원 요청이면 CodeFormer 사용
-      if (isUpscaleOrRestore(prompt)) {
-        return runCodeFormer(imageUrl);
+    console.log(`[ImageGen] 참조 이미지 ${refImages.length}장 처리`);
+    for (const img of refImages) {
+      const resolved = await resolveImageToBase64(img);
+      if (resolved) {
+        parts.push({
+          inlineData: { mimeType: resolved.mimeType, data: resolved.data },
+        });
       }
-      // 참조 이미지 2장 이상이면 나머지도 URL 변환 (프롬프트 키워드용 로그)
-      if (refImages.length > 1) {
-        console.log(`[ImageGen] 참조 이미지 ${refImages.length}장 (1장만 image-to-image에 사용)`);
-      }
-      return runFluxImageToImage(prompt, negativePrompt, imageUrl, options.strength, faceFixMode);
     }
   }
 
-  // 참조 이미지 없음: text-to-image
-  return runFluxTextToImage(prompt, negativePrompt, faceFixMode, options.imageSize);
-}
+  // 프롬프트 텍스트 추가
+  parts.push({ text: prompt });
 
-// ─── Text-to-image: flux-pro/v1.1 ───────────────────────
-
-async function runFluxTextToImage(
-  prompt: string,
-  negativePrompt: string,
-  faceFixMode: boolean,
-  imageSize?: string,
-): Promise<GenerateImageResponse> {
-  const guidanceScale = faceFixMode ? 5.5 : 4.0;
-  const numInferenceSteps = faceFixMode ? 40 : 32;
-
-  console.log(`[ImageGen] flux-pro/v1.1 text-to-image (face:${faceFixMode}, guidance:${guidanceScale}, steps:${numInferenceSteps})`);
-
-  try {
-    const result = await falRun("fal-ai/flux-pro/v1.1", {
-      prompt,
-      negative_prompt: negativePrompt,
-      num_inference_steps: numInferenceSteps,
-      guidance_scale: guidanceScale,
-      image_size: imageSize || "landscape_4_3",
-      safety_tolerance: "6",
-      enable_safety_checker: false,
-      num_images: 1,
-    });
-
-    const url = (result?.images as Array<{ url: string }>)?.[0]?.url;
-    if (!url) throw new Error("flux-pro 응답에 이미지 URL 없음");
-    return { url };
-  } catch (err: any) {
-    console.warn(`[ImageGen] flux-pro 실패, flux/dev 폴백: ${err.message?.slice(0, 100)}`);
-    return runFluxDevFallback(prompt, negativePrompt, faceFixMode, imageSize);
+  if (parts.length === 0) {
+    throw new Error("프롬프트 또는 참조 이미지가 필요합니다");
   }
-}
-
-// ─── flux/dev 폴백 ───────────────────────────────────────
-
-async function runFluxDevFallback(
-  prompt: string,
-  negativePrompt: string,
-  faceFixMode: boolean,
-  imageSize?: string,
-): Promise<GenerateImageResponse> {
-  const guidanceScale = faceFixMode ? 5.0 : 3.5;
-  const numInferenceSteps = faceFixMode ? 35 : 28;
-
-  console.log(`[ImageGen] flux/dev 폴백 (guidance:${guidanceScale}, steps:${numInferenceSteps})`);
-
-  const result = await falRun("fal-ai/flux/dev", {
-    prompt,
-    negative_prompt: negativePrompt,
-    num_inference_steps: numInferenceSteps,
-    guidance_scale: guidanceScale,
-    image_size: imageSize || "landscape_4_3",
-    enable_safety_checker: false,
-    num_images: 1,
-  });
-
-  const url = (result?.images as Array<{ url: string }>)?.[0]?.url;
-  if (!url) throw new Error("flux/dev 응답에 이미지 URL 없음");
-  return { url };
-}
-
-// ─── Image-to-image: flux/dev/image-to-image ─────────────
-
-async function runFluxImageToImage(
-  prompt: string,
-  negativePrompt: string,
-  referenceUrl: string,
-  strength?: number,
-  faceFixMode?: boolean,
-): Promise<GenerateImageResponse> {
-  // beauty-pipeline과 동일한 파라미터 기본값
-  const s = strength ?? (faceFixMode ? 0.50 : 0.65);
-  const guidanceScale = faceFixMode ? 6.0 : 4.5;
-  const numInferenceSteps = faceFixMode ? 35 : 32;
-
-  console.log(`[ImageGen] flux/dev/image-to-image (strength:${s}, guidance:${guidanceScale}, steps:${numInferenceSteps})`);
 
   try {
-    const result = await falRun("fal-ai/flux/dev/image-to-image", {
-      prompt,
-      negative_prompt: negativePrompt,
-      image_url: referenceUrl,
-      strength: s,
-      num_inference_steps: numInferenceSteps,
-      guidance_scale: guidanceScale,
-      enable_safety_checker: false,
-    });
+    const response = await callGemini(parts);
 
-    const url = (result?.images as Array<{ url: string }>)?.[0]?.url;
-    if (!url) throw new Error("image-to-image 응답에 이미지 URL 없음");
+    if (response.error) {
+      throw new Error(`Gemini error: ${response.error.message}`);
+    }
+
+    const url = await extractImageUrl(response);
     return { url };
   } catch (err: any) {
-    console.warn(`[ImageGen] image-to-image 실패, text-to-image 폴백: ${err.message?.slice(0, 100)}`);
-    return runFluxTextToImage(prompt, negativePrompt, faceFixMode ?? false);
-  }
-}
-
-// ─── CodeFormer: 업스케일/복원 ───────────────────────────
-
-async function runCodeFormer(imageUrl: string): Promise<GenerateImageResponse> {
-  console.log(`[ImageGen] codeformer 업스케일/복원`);
-
-  try {
-    const result = await falRun("fal-ai/codeformer", {
-      image_url: imageUrl,
-      fidelity: 0.9,
-      upscaling: 2,
-      face_upsample: true,
-    });
-
-    const url = (result?.image as Record<string, unknown>)?.url as string;
-    if (!url) throw new Error("CodeFormer 응답에 이미지 URL 없음");
-    return { url };
-  } catch (err: any) {
-    console.warn(`[ImageGen] CodeFormer 실패: ${err.message?.slice(0, 100)}`);
-    return { url: imageUrl };
+    console.error(`[ImageGen] Gemini 이미지 생성 실패: ${err.message?.slice(0, 200)}`);
+    throw err;
   }
 }
