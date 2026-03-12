@@ -1,9 +1,12 @@
 import { correctImageOrientation } from "./image-orientation";
+import { callGemini, extractImageUrl, type GeminiPart } from "../_core/imageGeneration";
 
 export interface CoupleResult {
   url: string;
   log: string;
 }
+
+// ─── FAL REST API (birefnet, codeformer, ip-adapter용) ───
 
 async function falRun(
   modelId: string,
@@ -104,104 +107,140 @@ interface GenerateBackgroundOptions {
 }
 
 async function generateBackground(options: GenerateBackgroundOptions): Promise<string> {
-  const { scene, aspectRatio, coupleImageUrl, customPrompt, customNegativePrompt, engine, faceLock, refImageUrls } = options;
-  
-  console.log(`[couple] Step 2: Generating background for ${scene}...`);
-  console.log(`[couple] Engine: ${engine || "flux-dev"}, FaceLock: ${faceLock}`);
+  const { scene, customPrompt, customNegativePrompt, faceLock, refImageUrls } = options;
 
-  // 배경 프롬프트 구성 (기본값)
+  console.log(`[couple] Step 2: Generating background for ${scene} (Nano Banana Pro)...`);
+
   let backgroundPrompt = BACKGROUND_PROMPTS[scene] ?? BACKGROUND_PROMPTS.cherry_blossom;
-  
-  // 프롬프트 병합 (커스텀 프롬프트 우선)
-  let prompt = customPrompt ? customPrompt : backgroundPrompt;
-  
-  // 커스텀 프롬프트가 있으면 배경 정보 추가
-  if (customPrompt && customPrompt.trim()) {
-    prompt = `${customPrompt}, ${backgroundPrompt}`;
-  }
+  let prompt = customPrompt ? `${customPrompt}, ${backgroundPrompt}` : backgroundPrompt;
 
-  // 얼굴 일관성 강화 키워드 추가 (최적화)
   prompt += ", couple, professional wedding photography, natural skin, clear faces, facial identity preserved";
 
-  // faceLock 활성화 시 강화 (중복 제거)
   if (faceLock) {
     prompt += ", face consistency locked, preserve exact facial features, identical faces";
   }
 
-  // 네거티브 프롬프트 (극대화)
-  let negativePrompt = customNegativePrompt || 
-    "(deformed:1.3), (distorted:1.3), (ugly:1.3), (bad anatomy:1.3), blurry, low quality, cartoon, illustration, painting, 3d render, CGI, (no people:0.5)";
-
-  // 얼굴 손상 방지 키워드 (극대화)
-  negativePrompt += ", (face distortion:2.0), (facial deformation:2.0), (blurry faces:2.0), (face change:1.8), (different face:1.8), (face swap:1.8), (altered face:1.8), (unrecognizable face:1.8), (face modification:1.8), (wrong face:1.8)";
-
-  // 프롬프트 길이 제한 (최대 1000자)
-  if (prompt.length > 1000) {
-    prompt = prompt.substring(0, 1000);
-  }
-
-  console.log(`[couple] Prompt (${prompt.length}): ${prompt.substring(0, 100)}...`);
-
-  // 엔진별 모델 선택 및 파라미터 조정
-  let modelId = "fal-ai/flux/dev";
-  let guidanceScale = 4.0;
-  let numInferenceSteps = 30;
-
-  if (engine === "flux-lora") {
-    // Flux Pro 1.1 (고품질, 6배 빠름)
-    modelId = "fal-ai/flux-pro/v1.1";
-    guidanceScale = faceLock ? 5.5 : 4.0;  // faceLock 시 최적화
-    numInferenceSteps = faceLock ? 40 : 32;
-  } else if (engine === "stable-diffusion") {
-    // Stable Diffusion은 FAL에서 지원하지 않으므로 Flux Dev로 폴백
-    console.warn("[couple] Stable Diffusion not available on FAL, using Flux Dev instead");
-    modelId = "fal-ai/flux/dev";
-    guidanceScale = faceLock ? 5.0 : 3.5;  // 최적화
-    numInferenceSteps = faceLock ? 35 : 28;
+  if (customNegativePrompt) {
+    prompt += `\n\nAvoid: ${customNegativePrompt}`;
   } else {
-    // flux-dev (기본값)
-    guidanceScale = faceLock ? 5.0 : 3.5;  // 최적화
-    numInferenceSteps = faceLock ? 35 : 28;
+    prompt += "\n\nAvoid: deformed, distorted, ugly, bad anatomy, blurry, low quality, cartoon, illustration, painting, 3d render, CGI, face distortion, facial deformation, blurry faces, different face, altered face";
   }
 
-  console.log(`[couple] Using model: ${modelId}, guidance: ${guidanceScale}, steps: ${numInferenceSteps}`);
-
-  // FAL Flux API 입력 구성
-  const input: Record<string, unknown> = {
-    prompt,
-    negative_prompt: negativePrompt,
-    num_inference_steps: numInferenceSteps,
-    guidance_scale: guidanceScale,
-    image_size: aspectRatio === "16:9" ? "landscape_16_9" : aspectRatio === "1:1" ? "square_hd" : "portrait_4_3",
-    enable_safety_checker: false,
-    num_images: 1,
-  };
-
-  // 노트: FAL Flux API는 originalImages 파라미터를 지원하지 않습니다.
-  // 대신 프롬프트에 얼굴 보존 키워드를 강화했습니다.
-  if (coupleImageUrl) {
-    console.log(`[couple] Couple image URL provided (used in prompt keywords only)`);
+  if (prompt.length > 1500) {
+    prompt = prompt.substring(0, 1500);
   }
+
+  // Gemini parts 구성
+  const parts: GeminiPart[] = [];
+
+  // 참조 이미지가 있으면 Gemini에 전달 (얼굴 일관성)
   if (refImageUrls && refImageUrls.length > 0) {
-    console.log(`[couple] Reference images: ${refImageUrls.length} (used in prompt keywords only)`);
+    for (const refUrl of refImageUrls.slice(0, 2)) {
+      try {
+        const res = await fetch(refUrl);
+        if (res.ok) {
+          const buffer = Buffer.from(await res.arrayBuffer());
+          const mime = res.headers.get("content-type") || "image/jpeg";
+          parts.push({ inlineData: { mimeType: mime, data: buffer.toString("base64") } });
+          console.log(`[couple] 참조 이미지 추가: ${refUrl.slice(0, 60)}...`);
+        }
+      } catch (err) {
+        console.warn(`[couple] 참조 이미지 로드 실패:`, err);
+      }
+    }
   }
 
-  const result = await falRun(modelId, input);
+  parts.push({ text: prompt });
 
-  const images = result?.images as Array<{ url: string }> | undefined;
-  const url = images?.[0]?.url;
-  if (!url) throw new Error("Image generation returned no URL");
-
-  console.log("[couple] Background generated:", url);
-  return url;
+  // Gemini Nano Banana Pro로 생성
+  try {
+    const response = await callGemini(parts);
+    const url = await extractImageUrl(response);
+    console.log("[couple] Background generated (Gemini):", url.slice(0, 80));
+    return url;
+  } catch (geminiErr: any) {
+    console.warn(`[couple] Gemini 실패, FLUX.2 LoRA 폴백: ${geminiErr.message?.slice(0, 100)}`);
+    return generateBackgroundFluxFallback(prompt, options.aspectRatio);
+  }
 }
+
+// ─── FLUX.2 LoRA 폴백 ───────────────────────────────────
+
+async function generateBackgroundFluxFallback(prompt: string, aspectRatio: string): Promise<string> {
+  console.log("[couple] FLUX.2 LoRA 폴백 시도...");
+
+  const imageSize = aspectRatio === "16:9" ? "landscape_16_9" : aspectRatio === "1:1" ? "square_hd" : "portrait_4_3";
+
+  // FLUX.2 LoRA 시도 → flux-pro 폴백 → flux/dev 폴백
+  const models = ["fal-ai/flux-2/lora", "fal-ai/flux-pro/v1.1", "fal-ai/flux/dev"];
+
+  for (const modelId of models) {
+    try {
+      const result = await falRun(modelId, {
+        prompt,
+        num_inference_steps: 32,
+        guidance_scale: 4.0,
+        image_size: imageSize,
+        enable_safety_checker: false,
+        num_images: 1,
+      });
+
+      const url = (result?.images as Array<{ url: string }>)?.[0]?.url;
+      if (url) {
+        console.log(`[couple] ${modelId} 성공:`, url.slice(0, 80));
+        return url;
+      }
+    } catch (err: any) {
+      console.warn(`[couple] ${modelId} 실패: ${err.message?.slice(0, 80)}`);
+      continue;
+    }
+  }
+
+  throw new Error("모든 이미지 생성 모델 실패");
+}
+
+// ─── IP-Adapter 얼굴 일관성 강화 ────────────────────────
+
+async function runIpAdapterFace(
+  imageUrl: string,
+  faceRefUrl: string,
+  prompt: string,
+): Promise<string> {
+  try {
+    console.log("[couple] IP-Adapter 얼굴 일관성 강화...");
+
+    const result = await falRun("fal-ai/ip-adapter-face-id", {
+      image_url: imageUrl,
+      face_image_url: faceRefUrl,
+      prompt,
+      strength: 0.6,
+      num_inference_steps: 30,
+      guidance_scale: 5.0,
+    });
+
+    const url = (result?.images as Array<{ url: string }>)?.[0]?.url
+      || (result?.image as Record<string, unknown>)?.url as string;
+
+    if (url) {
+      console.log("[couple] IP-Adapter 완료:", url.slice(0, 60));
+      return url;
+    }
+    console.warn("[couple] IP-Adapter 응답에 URL 없음, 원본 유지");
+    return imageUrl;
+  } catch (err: any) {
+    console.warn(`[couple] IP-Adapter 실패 (원본 유지): ${err.message?.slice(0, 100)}`);
+    return imageUrl;
+  }
+}
+
+// ─── CodeFormer 얼굴 선명화 ─────────────────────────────
 
 async function enhanceFaces(imageUrl: string): Promise<string> {
   try {
-    console.log("[couple] Step 4: Enhancing faces...");
+    console.log("[couple] Step 4: Enhancing faces (CodeFormer)...");
     const result = await falRun("fal-ai/codeformer", {
       image_url: imageUrl,
-      fidelity: 0.95, // 얼굴 보존 극대화
+      fidelity: 0.95,
       upscaling: 2,
       face_upscale: true,
     });
@@ -219,6 +258,8 @@ async function enhanceFaces(imageUrl: string): Promise<string> {
   }
 }
 
+// ─── 메인 파이프라인 ────────────────────────────────────
+
 export async function generateCouplePipeline(
   coupleImageBase64: string,
   mimeType: string,
@@ -228,18 +269,15 @@ export async function generateCouplePipeline(
   customNegativePrompt?: string,
   engine?: string,
   faceLock?: boolean,
-  comparisonMode?: boolean
+  _comparisonMode?: boolean
 ): Promise<CoupleResult[]> {
-  console.log("[couple] ===== Pipeline Start =====");
-  console.log("[couple] Scene:", scene, "Ratio:", aspectRatio, "Engine:", engine, "FaceLock:", faceLock);
+  console.log("[couple] ===== Pipeline Start (Nano Banana Pro + IP-Adapter) =====");
+  console.log("[couple] Scene:", scene, "Ratio:", aspectRatio, "FaceLock:", faceLock);
 
   const results: CoupleResult[] = [];
 
   const coupleUrl = await uploadToFal(coupleImageBase64, mimeType);
-
   const subjectUrl = await removeBackground(coupleUrl);
-
-  const refImageUrls: string[] = [];
 
   const scenes = scene === "all"
     ? ["cherry_blossom", "chapel"]
@@ -248,7 +286,7 @@ export async function generateCouplePipeline(
   for (const s of scenes) {
     const stepLog: string[] = ["배경제거✅"];
     try {
-      // 배경 생성
+      // Gemini Nano Banana Pro로 배경 생성
       const bgUrl = await generateBackground({
         scene: s,
         aspectRatio,
@@ -257,13 +295,22 @@ export async function generateCouplePipeline(
         customNegativePrompt,
         engine,
         faceLock,
-        refImageUrls,
+        refImageUrls: [coupleUrl],
       });
-      stepLog.push("배경생성✅");
+      stepLog.push("배경생성(Gemini)✅");
 
-      let finalUrl = await enhanceFaces(bgUrl);
-      stepLog.push("후처리✅");
+      // IP-Adapter 얼굴 일관성 (faceLock 활성화 시)
+      let processedUrl = bgUrl;
+      if (faceLock) {
+        processedUrl = await runIpAdapterFace(bgUrl, coupleUrl, `wedding couple, ${s}, professional photography`);
+        stepLog.push("IP-Adapter✅");
+      }
 
+      // CodeFormer 후처리
+      let finalUrl = await enhanceFaces(processedUrl);
+      stepLog.push("CodeFormer✅");
+
+      // 방향 보정
       try {
         const response = await fetch(finalUrl);
         const buffer = await response.arrayBuffer();

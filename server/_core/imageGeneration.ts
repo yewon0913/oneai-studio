@@ -1,9 +1,10 @@
 /**
- * Image generation helper — Google Gemini 2.0 Flash 기반
+ * Image generation helper — Google Gemini Nano Banana Pro 기반
  *
- * Gemini 2.0 Flash의 이미지 생성 기능 사용
- * - text-to-image: 프롬프트만으로 이미지 생성
- * - image-to-image: 참조 이미지 + 프롬프트로 이미지 편집/변환
+ * 모델 우선순위:
+ *   1. gemini-3-pro-image-preview (Nano Banana Pro — 최고 품질)
+ *   2. gemini-2.5-flash-image (빠른 폴백)
+ *   3. gemini-2.0-flash-exp (레거시 폴백)
  *
  * 생성된 이미지는 FAL Storage에 업로드하여 공개 URL 반환
  */
@@ -35,8 +36,8 @@ export type GenerateImageResponse = {
 // ─── Gemini API 호출 ─────────────────────────────────────
 
 const GEMINI_MODELS = [
+  "gemini-3-pro-image-preview",
   "gemini-2.5-flash-image",
-  "gemini-2.5-flash-preview-image-generation",
   "gemini-2.0-flash-exp",
 ];
 
@@ -46,11 +47,11 @@ function getGeminiApiKey(): string {
   return key;
 }
 
-type GeminiPart =
+export type GeminiPart =
   | { text: string }
   | { inlineData: { mimeType: string; data: string } };
 
-type GeminiResponse = {
+export type GeminiResponse = {
   candidates?: Array<{
     content?: {
       parts?: Array<{
@@ -62,7 +63,7 @@ type GeminiResponse = {
   error?: { message: string; code: number };
 };
 
-async function callGemini(
+export async function callGemini(
   parts: GeminiPart[],
 ): Promise<GeminiResponse> {
   const apiKey = getGeminiApiKey();
@@ -74,7 +75,6 @@ async function callGemini(
     },
   };
 
-  // 여러 모델을 순서대로 시도
   let lastError = "";
   for (const model of GEMINI_MODELS) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -90,7 +90,7 @@ async function callGemini(
     if (!res.ok) {
       lastError = `${model} failed ${res.status}: ${text.slice(0, 200)}`;
       console.warn(`[ImageGen] ${lastError}`);
-      if (res.status === 404) continue; // 모델 없음 → 다음 모델 시도
+      if (res.status === 404) continue;
       throw new Error(`Gemini API failed ${res.status}: ${text.slice(0, 300)}`);
     }
 
@@ -104,9 +104,9 @@ async function callGemini(
   throw new Error(`All Gemini models failed. Last: ${lastError}`);
 }
 
-// ─── 참조 이미지 → base64 변환 ──────────────────────────
+// ─── 참조 이미지 → base64 변환 (exported for pipelines) ──
 
-async function resolveImageToBase64(img: {
+export async function resolveImageToBase64(img: {
   url?: string;
   b64Json?: string;
   mimeType?: string;
@@ -129,9 +129,9 @@ async function resolveImageToBase64(img: {
   return null;
 }
 
-// ─── Gemini 응답에서 이미지 추출 → URL 변환 ─────────────
+// ─── Gemini 응답에서 이미지 추출 → URL 변환 (exported) ───
 
-async function extractImageUrl(response: GeminiResponse): Promise<string> {
+export async function extractImageUrl(response: GeminiResponse): Promise<string> {
   const candidates = response.candidates;
   if (!candidates?.length) {
     throw new Error("Gemini 응답에 candidates 없음");
@@ -142,10 +142,8 @@ async function extractImageUrl(response: GeminiResponse): Promise<string> {
     throw new Error("Gemini 응답에 parts 없음");
   }
 
-  // 이미지 파트 찾기
   const imagePart = parts.find(p => p.inlineData?.data);
   if (!imagePart?.inlineData) {
-    // 텍스트만 반환된 경우
     const textPart = parts.find(p => p.text);
     throw new Error(`Gemini가 이미지를 생성하지 못함: ${textPart?.text?.slice(0, 200) || "응답 없음"}`);
   }
@@ -154,7 +152,6 @@ async function extractImageUrl(response: GeminiResponse): Promise<string> {
   const ext = mimeType.includes("jpeg") || mimeType.includes("jpg") ? "jpg" : "png";
   const buffer = Buffer.from(data, "base64");
 
-  // FAL Storage에 업로드
   const { url } = await storagePut(
     `generated/gemini-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`,
     buffer,
@@ -163,6 +160,24 @@ async function extractImageUrl(response: GeminiResponse): Promise<string> {
 
   console.log(`[ImageGen] Gemini 이미지 업로드 완료: ${url.slice(0, 80)}...`);
   return url;
+}
+
+// ─── Gemini 응답에서 base64 직접 추출 (pipelines용) ──────
+
+export function extractImageBase64(response: GeminiResponse): { data: string; mimeType: string } {
+  const candidates = response.candidates;
+  if (!candidates?.length) throw new Error("Gemini 응답에 candidates 없음");
+
+  const parts = candidates[0].content?.parts;
+  if (!parts?.length) throw new Error("Gemini 응답에 parts 없음");
+
+  const imagePart = parts.find(p => p.inlineData?.data);
+  if (!imagePart?.inlineData) {
+    const textPart = parts.find(p => p.text);
+    throw new Error(`Gemini가 이미지를 생성하지 못함: ${textPart?.text?.slice(0, 200) || "응답 없음"}`);
+  }
+
+  return { data: imagePart.inlineData.data, mimeType: imagePart.inlineData.mimeType };
 }
 
 // ─── 메인 함수 ──────────────────────────────────────────
@@ -175,12 +190,10 @@ export async function generateImage(
     prompt = prompt.substring(0, 1000);
   }
 
-  // 네거티브 프롬프트가 있으면 프롬프트에 포함
   if (options.negativePrompt) {
     prompt = `${prompt}\n\nAvoid: ${options.negativePrompt}`;
   }
 
-  // 얼굴 보존 모드이면 프롬프트 강화
   if (options.faceFixMode) {
     prompt = `${prompt}\n\nIMPORTANT: Preserve facial features exactly. Maintain face identity, expression, and proportions precisely.`;
   }
@@ -188,7 +201,6 @@ export async function generateImage(
   const refImages = options.originalImages || [];
   const parts: GeminiPart[] = [];
 
-  // 참조 이미지 추가
   if (refImages.length > 0) {
     console.log(`[ImageGen] 참조 이미지 ${refImages.length}장 처리`);
     for (const img of refImages) {
@@ -201,7 +213,6 @@ export async function generateImage(
     }
   }
 
-  // 프롬프트 텍스트 추가
   parts.push({ text: prompt });
 
   if (parts.length === 0) {

@@ -142,6 +142,60 @@ async function runCodeFormer(
   return urlToBuffer(result.image.url);
 }
 
+// ── Step 2.5: IP-Adapter 얼굴 일관성 강화 ─────────────────────────────────────
+
+async function runIpAdapter(
+  imageBuffer: Buffer,
+  faceRefBuffer: Buffer,
+): Promise<Buffer> {
+  try {
+    console.log('[ip-adapter] 얼굴 일관성 강화 중...');
+    const imageUrl = await uploadBufToS3(
+      await sharp(imageBuffer).jpeg({ quality: 95 }).toBuffer(), 'jpg'
+    );
+    const faceUrl = await uploadBufToS3(
+      await sharp(faceRefBuffer).jpeg({ quality: 95 }).toBuffer(), 'jpg'
+    );
+
+    const falKey = process.env.FAL_KEY;
+    if (!falKey) throw new Error("FAL_KEY not set");
+
+    const res = await fetch('https://fal.run/fal-ai/ip-adapter-face-id', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Key ${falKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        image_url: imageUrl,
+        face_image_url: faceUrl,
+        prompt: 'same person, preserve facial identity exactly, high quality portrait',
+        strength: 0.5,
+        num_inference_steps: 25,
+        guidance_scale: 5.0,
+      }),
+    });
+
+    const text = await res.text();
+    if (!res.ok) throw new Error(`IP-Adapter failed ${res.status}: ${text.slice(0, 200)}`);
+
+    const result = JSON.parse(text);
+    const url = (result?.images as Array<{ url: string }>)?.[0]?.url
+      || (result?.image as Record<string, unknown>)?.url as string;
+
+    if (url) {
+      console.log(`[ip-adapter] ✅ 완료: ${url.slice(0, 60)}...`);
+      return urlToBuffer(url);
+    }
+
+    console.warn('[ip-adapter] 응답에 URL 없음, 원본 유지');
+    return imageBuffer;
+  } catch (err: any) {
+    console.warn(`[ip-adapter] 실패 (원본 유지): ${err.message?.slice(0, 100)}`);
+    return imageBuffer;
+  }
+}
+
 // ── Step 3: 최종 색 그레이딩 ──────────────────────────────────────────────────
 
 async function finalGrade(
@@ -217,6 +271,15 @@ export async function runFaceSwapPipeline(
 
   // reactor 직후 중간 결과 저장
   const intermediateBuffer = current;
+
+  // ── IP-Adapter 얼굴 일관성 강화 ────────────────────────────────────────
+  const primarySource = faceSources[0];
+  if (primarySource) {
+    steps.push('[IP-Adapter] 얼굴 일관성 강화 중...');
+    current = await runIpAdapter(current, primarySource.imageBuffer);
+    falJobs.push('ip-adapter-face-id');
+    steps.push('[IP-Adapter] 얼굴 일관성 강화 완료 ✓');
+  }
 
   // ── CodeFormer 선명화 ──────────────────────────────────────────────────
   if (useCodeFormer) {
