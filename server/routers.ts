@@ -552,7 +552,9 @@ export const appRouter = router({
           // 5. 이미지 생성 (최대 2개 이미지만 전달)
           const result = await generateImage({
             prompt: optimizedPrompt,
+            negativePrompt: input.negativePrompt || undefined,
             originalImages: originalImages.length > 0 ? originalImages : undefined,
+            faceFixMode: input.faceFixMode,
           });
 
           const imageUrl = result.url;
@@ -1300,6 +1302,7 @@ async function processBatchAsync(batchJobId: number, userId: number) {
         const result = await generateImage({
           prompt: optimizedPrompt,
           originalImages: originalImages.length > 0 ? originalImages : undefined,
+          faceFixMode: batch.batchConfig?.faceFixMode,
         });
 
         if (!result.url) throw new Error("이미지 생성 실패");
