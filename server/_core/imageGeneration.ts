@@ -34,7 +34,7 @@ export type GenerateImageResponse = {
 
 // ─── Gemini API 호출 ─────────────────────────────────────
 
-const GEMINI_MODEL = "gemini-2.0-flash-preview-image-generation";
+const GEMINI_MODEL = "gemini-2.0-flash-exp";
 
 function getGeminiApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
