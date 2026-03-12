@@ -15,6 +15,7 @@ import { beautyRouter } from "./routers/beauty-router";
 import { memoryRouter } from "./routers/memory-router";
 import { coupleRouter } from "./routers/couple-router";
 import { geminiWeddingRouter } from "./routers/gemini-wedding-router";
+import { buildPrompt, type Gender, type Concept, type AgeGroup } from "./services/prompt-engine";
 
 // ─── 핀터레스트/외부 URL에서 실제 이미지를 다운로드하여 base64로 변환 ───
 async function resolveImageToBase64(url: string): Promise<{ b64Json: string; mimeType: string } | null> {
@@ -94,7 +95,7 @@ async function imageUrlToBase64(url: string): Promise<{ b64Json: string; mimeTyp
   }
 }
 
-// ─── 얼굴 유사도 극대화 프롬프트 엔진 (간결 버전 - API 제한 대응) ───
+// ─── 프롬프트 엔진 래퍼 (prompt-engine.ts 위임) ───
 function buildFacePreservationPrompt(opts: {
   basePrompt?: string;
   gender?: string;
@@ -107,74 +108,20 @@ function buildFacePreservationPrompt(opts: {
   referenceMode?: "face_swap" | "background_composite" | "style_transfer" | "direct_apply";
   glassesFixMode?: boolean;
 }): string {
-  const { basePrompt, gender, isCouple, partnerGender, category, concept, merchandiseFormat, hasReferenceImage, referenceMode, glassesFixMode } = opts;
+  const result = buildPrompt({
+    gender: (opts.gender as Gender) || "female",
+    partnerGender: (opts.partnerGender as Gender) || "male",
+    concept: (opts.category as Concept) || "wedding",
+    isCouple: opts.isCouple,
+    basePrompt: opts.basePrompt,
+    merchandiseFormat: opts.merchandiseFormat,
+    hasReferenceImage: opts.hasReferenceImage,
+    referenceMode: opts.referenceMode,
+    glassesFixMode: opts.glassesFixMode,
+    projectConcept: opts.concept,
+  });
 
-  const genderDesc = gender === "male" ? "man" : "woman";
-  const partnerDesc = partnerGender === "male" ? "man" : "woman";
-
-  // 핵심 지시문 (간결하게)
-  let faceCore = "Preserve EXACT facial features from reference photo with 100% accuracy. Same face, same person.";
-  if (glassesFixMode) {
-    faceCore += " Keep glasses with same style and color exactly as in reference.";
-  }
-
-  const styles: Record<string, string> = {
-    wedding: "luxury wedding photo, golden hour, cinematic",
-    profile: "professional studio portrait, clean background",
-    kids: "bright cheerful children photo, natural light",
-    restoration: "restored vintage photo, enhanced clarity",
-    custom: "professional photography",
-  };
-  const style = styles[category || "wedding"] || styles.wedding;
-
-  let compositionGuide = "";
-  if (merchandiseFormat) {
-    const format = MERCHANDISE_FORMATS[merchandiseFormat as MerchandiseFormatKey];
-    if (format) {
-      compositionGuide = `, ${format.aspectRatio} ratio`;
-    }
-  }
-
-  let prompt: string;
-
-  if (hasReferenceImage && referenceMode === "background_composite") {
-    if (isCouple) {
-      prompt = `${faceCore} Place this couple (${genderDesc} and ${partnerDesc}) into the reference background scene. ${style}${compositionGuide}. Photorealistic, 8K.`;
-    } else {
-      prompt = `${faceCore} Place this ${genderDesc} into the reference background scene. ${style}${compositionGuide}. Photorealistic, 8K.`;
-    }
-    if (basePrompt) prompt = `${basePrompt}. ${prompt}`;
-  } else if (hasReferenceImage && referenceMode === "style_transfer") {
-    if (isCouple) {
-      prompt = `${faceCore} Photo of this couple (${genderDesc} and ${partnerDesc}) in similar style as reference. ${style}${compositionGuide}. Photorealistic, 8K.`;
-    } else {
-      prompt = `${faceCore} Photo of this ${genderDesc} in similar style as reference. ${style}${compositionGuide}. Photorealistic, 8K.`;
-    }
-    if (basePrompt) prompt = `${basePrompt}. ${prompt}`;
-  } else if (hasReferenceImage && referenceMode === "face_swap") {
-    prompt = `${faceCore} Replace the face in the reference image with the face from the provided photo. Keep everything else identical. Photorealistic, 8K.`;
-    if (basePrompt) prompt = `${basePrompt}. ${prompt}`;
-  } else if (hasReferenceImage && referenceMode === "direct_apply") {
-    // 원본 직접 적용 모드: 참조 이미지를 그대로 적용, 프롬프트 변환 최소화
-    prompt = `${faceCore} Reproduce this exact reference image with the provided face photo. Keep the exact same composition, background, lighting, clothing, pose, and every detail identical. Only replace the face. Photorealistic, 8K.`;
-    if (basePrompt) prompt = `${basePrompt}. ${prompt}`;
-  } else {
-    const userPrompt = basePrompt || "professional portrait photo";
-    if (isCouple) {
-      prompt = `${faceCore} ${userPrompt}. Couple: ${genderDesc} and ${partnerDesc}, ${style}${compositionGuide}. Photorealistic, 8K.`;
-    } else {
-      prompt = `${faceCore} ${userPrompt}. ${genderDesc}, ${style}${compositionGuide}. Photorealistic, 8K.`;
-    }
-  }
-
-  if (concept) prompt += ` ${concept}.`;
-
-  // 프롬프트 길이 제한 (800자) - BAD_REQUEST 방지
-  if (prompt.length > 800) {
-    prompt = prompt.substring(0, 797) + "...";
-  }
-
-  return prompt;
+  return result.prompt;
 }
 
 // ─── 얼굴 참조 이미지 수집 (base64로 변환) ───
@@ -511,32 +458,32 @@ export const appRouter = router({
           // 2. 참조 모드 결정
           const refMode = input.referenceMode || (refBase64 ? "background_composite" : "face_swap");
 
-          // 3. 프롬프트 생성 (간결하게)
-          const optimizedPrompt = buildFacePreservationPrompt({
-            basePrompt: promptText || undefined,
-            gender: client?.gender || "female",
+          // 3. 프롬프트 엔진 (조명/카메라/표정/피부/의상 자동 최적화)
+          const promptResult = buildPrompt({
+            gender: (client?.gender as Gender) || "female",
+            partnerGender: (partnerClient?.gender as Gender) || "male",
+            concept: (project.category as Concept) || "wedding",
             isCouple,
-            partnerGender: partnerClient?.gender || "male",
-            category: project.category,
-            concept: project.concept || undefined,
+            basePrompt: promptText || undefined,
+            customNegative: input.negativePrompt || undefined,
             merchandiseFormat: input.merchandiseFormat,
             hasReferenceImage: !!refBase64,
             referenceMode: refMode,
             glassesFixMode: input.glassesFixMode,
+            projectConcept: project.concept || undefined,
           });
 
+          const optimizedPrompt = promptResult.prompt;
+
           // 4. originalImages 구성 (최대 2개 - API 제한)
-          // 전략: 얼굴 참조 1장 + 배경/스타일 참조 1장 = 최대 2장
           const originalImages: Array<{ url?: string; b64Json?: string; mimeType?: string }> = [];
-          
+
           if (input.faceFixMode && client) {
-            // 얼굴 참조 (정면 사진 1장만 - base64)
             const faceRefs = await collectFaceReferenceBase64(
-              client.id, 
+              client.id,
               isCouple ? (project.partnerClientId ?? undefined) : undefined
             );
             if (faceRefs.length > 0) {
-              // 커플이 아닌 경우 1장만, 커플인 경우 최대 2장
               const maxFace = isCouple ? 2 : 1;
               for (let i = 0; i < Math.min(faceRefs.length, maxFace); i++) {
                 originalImages.push({ b64Json: faceRefs[i].b64Json, mimeType: faceRefs[i].mimeType });
@@ -544,15 +491,14 @@ export const appRouter = router({
             }
           }
 
-          // 배경/스타일 참조 이미지 (남은 슬롯에 추가)
           if (refBase64 && originalImages.length < 2) {
             originalImages.push({ b64Json: refBase64.b64Json, mimeType: refBase64.mimeType });
           }
 
-          // 5. 이미지 생성 (최대 2개 이미지만 전달)
+          // 5. 이미지 생성 (프롬프트 엔진 네거티브 자동 포함)
           const result = await generateImage({
             prompt: optimizedPrompt,
-            negativePrompt: input.negativePrompt || undefined,
+            negativePrompt: promptResult.negativePrompt,
             originalImages: originalImages.length > 0 ? originalImages : undefined,
             faceFixMode: input.faceFixMode,
           });
@@ -1277,15 +1223,15 @@ async function processBatchAsync(batchJobId: number, userId: number) {
           partnerClient = await db.getClientById(project.partnerClientId);
         }
 
-        const optimizedPrompt = buildFacePreservationPrompt({
-          basePrompt: item.promptText,
-          gender: client?.gender || "female",
+        const batchPromptResult = buildPrompt({
+          gender: (client?.gender as Gender) || "female",
+          partnerGender: (partnerClient?.gender as Gender) || "male",
+          concept: (project.category as Concept) || "wedding",
           isCouple,
-          partnerGender: partnerClient?.gender || "male",
-          category: project.category,
-          concept: project.concept || undefined,
+          basePrompt: item.promptText,
           merchandiseFormat: batch.batchConfig?.merchandiseFormat,
           glassesFixMode: batch.batchConfig?.glassesFixMode,
+          projectConcept: project.concept || undefined,
         });
 
         const originalImages: Array<{ b64Json?: string; url?: string; mimeType?: string }> = [];
@@ -1300,7 +1246,8 @@ async function processBatchAsync(batchJobId: number, userId: number) {
         }
 
         const result = await generateImage({
-          prompt: optimizedPrompt,
+          prompt: batchPromptResult.prompt,
+          negativePrompt: batchPromptResult.negativePrompt,
           originalImages: originalImages.length > 0 ? originalImages : undefined,
           faceFixMode: batch.batchConfig?.faceFixMode,
         });
