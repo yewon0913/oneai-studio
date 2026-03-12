@@ -305,7 +305,14 @@ function getFaceConsistency(gender: Gender, glassesFixMode?: boolean): string {
       "Preserve Adam's apple visibility and natural neck width. " +
       "HAIR: preserve exact black hair color shade, natural wave pattern, and volume, " +
       "keep baby hair (잔머리) around forehead and temples visible, " +
-      "maintain hair length and parting direction precisely from reference.";
+      "maintain hair length and parting direction precisely from reference. " +
+      "BEST VERSION OF HIMSELF: " +
+      "Same face structure, same features — do NOT alter. " +
+      "Skin: clean but natural — remove blemishes, natural healthy texture preserved. " +
+      "Eyes: add natural catchlight, confident and alive. " +
+      "Hair: clean, well-groomed version of his actual hairstyle. " +
+      "Lighting: flattering angles that enhance his natural bone structure. " +
+      "The goal is 'him on his best day' NOT 'a different handsomer person'.";
   } else {
     base +=
       " FEMALE FACE PRESERVATION: " +
@@ -321,7 +328,15 @@ function getFaceConsistency(gender: Gender, glassesFixMode?: boolean): string {
       "keep bangs (앞머리/뱅) style identical — straight bangs, see-through bangs, or side-swept as-is, " +
       "maintain baby hair (잔머리) and flyaway strands around hairline, " +
       "preserve hair length, volume, and curl/wave pattern precisely, " +
-      "keep hair parting direction from reference.";
+      "keep hair parting direction from reference. " +
+      "BEST VERSION OF HERSELF: " +
+      "Same face structure, same features — do NOT alter. " +
+      "Skin: flawless but natural — remove blemishes, even skin tone, subtle healthy glow. " +
+      "Eyes: add natural catchlight, bright and alive. " +
+      "Hair: smooth, glossy, perfectly styled version of her actual hairstyle. " +
+      "Lips: naturally defined, slightly moisturized look. " +
+      "Lighting: flattering angles that enhance her natural bone structure. " +
+      "The goal is 'her on her best day' NOT 'a different prettier person'.";
   }
 
   // 피부 톤 보존
