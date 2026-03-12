@@ -264,77 +264,128 @@ function getExpression(concept: Concept, gender: Gender): string {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function getFaceConsistency(gender: Gender, glassesFixMode?: boolean): string {
+  // 공통 얼굴 보존 기반
   let base =
     "Preserve EXACT facial identity from reference: same face shape, same jawline contour, " +
-    "same eye shape and spacing, same nose bridge and tip, same lip shape and fullness, " +
-    "same ear shape and position. Maintain precise facial proportions and bone structure.";
+    "same eye shape and spacing, same nose bridge width and tip shape, same lip shape and fullness, " +
+    "same ear shape and position. Maintain precise facial proportions and bone structure. " +
+    "Do NOT idealize or modify any facial feature — reproduce the real face exactly as-is.";
 
+  // 성별별 얼굴 보존 강화
+  if (gender === "male") {
+    base +=
+      " MALE FACE PRESERVATION: keep the exact natural jawline angle and width (do NOT slim or sharpen), " +
+      "preserve original eye shape and monolid/double-eyelid as-is (do NOT enlarge eyes), " +
+      "keep nose bridge width and nostril shape unchanged (do NOT narrow or heighten nose), " +
+      "maintain natural brow thickness and arch, " +
+      "preserve Adam's apple visibility and neck thickness.";
+  } else {
+    base +=
+      " FEMALE FACE PRESERVATION: keep natural cheek fullness and round cheek volume exactly (do NOT slim to V-line), " +
+      "preserve original jawline width (do NOT sharpen or narrow jaw), " +
+      "keep nose height and bridge width unchanged (do NOT add rhinoplasty effect or heighten nose bridge), " +
+      "maintain natural lip thickness (do NOT plump), " +
+      "preserve original eye size exactly (do NOT enlarge or add circle lens effect), " +
+      "keep natural brow shape.";
+  }
+
+  // 헤어 보존
+  base +=
+    " HAIR PRESERVATION: keep exact hair color and shade from reference (do NOT change to different color), " +
+    "preserve hair length precisely (long stays long, short stays short, bob stays bob), " +
+    "maintain natural baby hair and flyaway strands around hairline and temples, " +
+    "keep hair parting direction and bangs style identical to reference, " +
+    "preserve hair volume and curl/wave pattern exactly.";
+
+  // 안경 보존
   if (glassesFixMode) {
-    base += " Keep glasses with exact same frame style, lens shape, color, and position on nose bridge.";
+    base += " GLASSES: keep exact same frame style, lens shape, color, transparency, and position on nose bridge.";
   }
 
   return base;
 }
 
 function getSkinTexture(gender: Gender, ageGroup: AgeGroup): string {
+  // 피부 과보정 방지 공통 접미사
+  const antiOverCorrection =
+    "NOT plastic skin, NOT porcelain skin, NOT wax figure, NOT airbrushed, NOT beauty-filtered. " +
+    "Must show real human skin texture with visible pores and natural imperfections.";
+
   const skinBase: Record<string, Record<string, string>> = {
     "20s": {
       female:
         "youthful skin with natural healthy glow, visible pores on nose and cheeks, " +
-        "subtle natural blemishes, dewy translucent complexion, " +
-        "light natural blush on cheeks, no visible wrinkles",
+        "subtle natural blemishes and tiny moles, dewy translucent complexion, " +
+        "light natural blush on cheeks, peach-warm undertone, no visible wrinkles. " +
+        "Skin must look like real 20s Korean woman skin — naturally luminous but NOT digitally smoothed. " +
+        antiOverCorrection,
       male:
         "youthful clear skin with visible pores, natural oil on T-zone, " +
-        "subtle razor texture on jawline, healthy natural skin tone, " +
-        "no wrinkles, minor natural skin imperfections",
+        "subtle razor texture on jawline, healthy natural warm skin tone, " +
+        "no wrinkles, minor natural skin imperfections, " +
+        "slightly thicker and rougher texture than female skin. " +
+        antiOverCorrection,
     },
     "30s": {
       female:
         "mature radiant skin with visible pores, " +
         "very fine lines near eyes (early crow's feet), " +
         "natural skin texture with subtle luminosity, " +
-        "light laugh lines beginning to form, natural skin elasticity",
+        "light laugh lines beginning to form, natural skin elasticity, " +
+        "warm golden-beige undertone. " +
+        antiOverCorrection,
       male:
         "mature skin with visible pores and natural texture, " +
         "beginning forehead lines and slight crow's feet, " +
-        "possible light stubble shadow, " +
-        "natural masculine skin tone with slight weathering",
+        "possible light stubble shadow on jaw and upper lip, " +
+        "natural masculine warm-beige skin tone with slight weathering, " +
+        "thicker skin texture with larger pores than female. " +
+        antiOverCorrection,
     },
     "40s": {
       female:
         "graceful mature skin with defined expression lines, " +
         "visible crow's feet and nasolabial folds, " +
         "maintained skin radiance with natural age spots possible, " +
-        "natural skin texture without artificial smoothing",
+        "natural skin texture without artificial smoothing, " +
+        "slightly less elasticity visible around jawline. " +
+        antiOverCorrection,
       male:
         "distinguished mature skin with forehead lines and crow's feet, " +
         "defined nasolabial folds, visible pores, " +
         "natural masculine weathering, possible gray at temples, " +
-        "authentic skin texture",
+        "deeper set wrinkles than female counterpart, rougher texture. " +
+        antiOverCorrection,
     },
     "50s": {
       female:
         "elegant mature skin with graceful aging lines, " +
         "defined wrinkles around eyes and mouth, " +
         "natural skin laxity, possible age spots, " +
-        "maintained warm skin tone with natural radiance",
+        "maintained warm skin tone with natural radiance, " +
+        "visible neck lines and subtle jowl softening. " +
+        antiOverCorrection,
       male:
         "distinguished mature skin with deep expression lines, " +
         "prominent forehead creases and crow's feet, " +
         "natural gray hair mixing, weathered distinguished look, " +
-        "authentic masculine aging",
+        "deeper wrinkles and sun spots, thicker rougher skin texture. " +
+        antiOverCorrection,
     },
     "60s": {
       female:
         "graceful senior skin with natural deep wrinkles, " +
         "defined character lines, natural age spots and skin texture, " +
         "warm soft skin tone, dignified natural aging, " +
-        "silver or gray hair with natural volume",
+        "silver or gray hair with natural volume. " +
+        antiOverCorrection,
       male:
         "distinguished senior skin with deep character lines, " +
         "natural wrinkles and weathering, " +
         "possible full gray or white hair, " +
-        "authentic dignified masculine aging, wise expression lines",
+        "authentic dignified masculine aging, wise expression lines, " +
+        "pronounced skin texture and deeper facial creases. " +
+        antiOverCorrection,
     },
   };
 
@@ -412,7 +463,7 @@ function getAttire(concept: Concept, gender: Gender, env: Environment): string {
 // 6. 네거티브 프롬프트 시스템
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function getNegativePrompt(concept: Concept, customNegative?: string): string {
+function getNegativePrompt(concept: Concept, gender: Gender, customNegative?: string): string {
   if (customNegative) return customNegative;
 
   const base = [
@@ -425,11 +476,31 @@ function getNegativePrompt(concept: Concept, customNegative?: string): string {
     "over-retouched skin, no pores, no skin texture, blurred skin, beauty filter",
     "unnaturally smooth skin, plastic surgery look, over-whitened skin",
     "excessive glow, HDR skin, unrealistic skin perfection",
+    "plastic skin, porcelain skin, wax figure skin, silicone skin",
 
-    // 비현실적 눈
+    // 얼굴형 이상화 방지 (V라인)
+    "(V-line jaw:1.5), (sharpened jawline:1.5), (slimmed face:1.5), (narrowed jaw:1.5)",
+    "(face slimming:1.5), (chin reshaping:1.3), (pointed chin:1.3)",
+    "(idealized face shape:1.3), (beauty-standard jaw:1.3)",
+    "(facial bone structure changed:1.5), (different face shape from reference:1.5)",
+
+    // 코 이상화 방지
+    "(nose job effect:1.3), (heightened nose bridge:1.3), (narrowed nose:1.3)",
+    "(rhinoplasty look:1.3), (different nose from reference:1.3)",
+
+    // 눈 이상화 방지
     "enlarged eyes, anime eyes, disproportionate eye size, unequal eyes",
+    "(circle lens effect:1.3), (bigger eyes than reference:1.3)",
     "colored contact lens glow, unrealistic iris detail, lifeless eyes",
     "no catchlights, flat dead eyes",
+
+    // 입술 이상화 방지
+    "(plumped lips:1.3), (lip filler look:1.3), (different lip shape:1.3)",
+
+    // 헤어 변형 방지
+    "(different hair color:1.5), (changed hair length:1.5), (wrong hair style:1.5)",
+    "(missing baby hair:1.3), (no flyaway strands:1.3), (wig-like hair:1.3)",
+    "(helmet hair:1.3), (plastic hair:1.3), (hair color shift:1.3)",
 
     // 손가락/신체 오류
     "extra fingers, missing fingers, fused fingers, deformed hands",
@@ -447,6 +518,23 @@ function getNegativePrompt(concept: Concept, customNegative?: string): string {
     "jpeg artifacts, pixelated, watermark, text, logo, signature",
     "cropped face, cut off body, bad framing",
   ];
+
+  // 성별별 추가 네거티브
+  const genderNeg: string[] = [];
+  if (gender === "male") {
+    genderNeg.push(
+      "(feminized male face:1.5), (softened jawline on male:1.3), (pretty-boy filter:1.3)",
+      "(reduced Adam's apple:1.3), (thinned male neck:1.3)",
+      "(smoothed male skin too much:1.3), (removed facial hair texture:1.3)",
+    );
+  } else {
+    genderNeg.push(
+      "(slimmed cheeks:1.5), (removed cheek volume:1.5), (hollow cheeks:1.3)",
+      "(sharpened female jaw to V-line:1.5), (double eyelid surgery look:1.3)",
+      "(whitened skin beyond reference:1.3), (doll-like face:1.3)",
+      "(reduced natural face width:1.3), (elongated chin:1.3)",
+    );
+  }
 
   // 컨셉별 추가
   const conceptNeg: Record<string, string[]> = {
@@ -470,7 +558,7 @@ function getNegativePrompt(concept: Concept, customNegative?: string): string {
 
   const extras = conceptNeg[concept] || [];
 
-  return [...base, ...extras].join(", ");
+  return [...base, ...genderNeg, ...extras].join(", ");
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -512,7 +600,7 @@ export function buildPrompt(input: PromptEngineInput): PromptEngineOutput {
       basePrompt,
     ].filter(Boolean).join(" ");
 
-    return { prompt: truncate(prompt), negativePrompt: getNegativePrompt(concept, customNegative) };
+    return { prompt: truncate(prompt), negativePrompt: getNegativePrompt(concept, gender, customNegative) };
   }
 
   if (hasReferenceImage && referenceMode === "face_swap") {
@@ -526,7 +614,7 @@ export function buildPrompt(input: PromptEngineInput): PromptEngineOutput {
       basePrompt,
     ].filter(Boolean).join(" ");
 
-    return { prompt: truncate(prompt), negativePrompt: getNegativePrompt(concept, customNegative) };
+    return { prompt: truncate(prompt), negativePrompt: getNegativePrompt(concept, gender, customNegative) };
   }
 
   // ── 메인 프롬프트 조립 ─────────────────────────────
@@ -609,7 +697,7 @@ export function buildPrompt(input: PromptEngineInput): PromptEngineOutput {
 
   return {
     prompt: truncate(prompt),
-    negativePrompt: getNegativePrompt(concept, customNegative),
+    negativePrompt: getNegativePrompt(concept, gender, customNegative),
   };
 }
 
