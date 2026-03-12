@@ -1,13 +1,12 @@
 /**
- * 개인촬영 프롬프트 엔진 v3.0
+ * 개인촬영 프롬프트 엔진 v4.0 — 4단계 구조
  *
- * v3 변경사항:
- * - 한국인 얼굴 보존 특화 (V라인 방지, 서구화 방지)
- * - 남/녀 성별별 얼굴 보존 지시어 대폭 강화
- * - 컨셉별 프롬프트 모듈 (남: 4종, 여: 5종)
- * - Omni Reference 가중치 최적화
- * - 피부 과보정 방지 + 볼 홍조/모공 질감 보존
- * - 헤어 컬러/길이/잔머리 보존
+ * [1단계] 인물 정보 + 얼굴 보존 (CRITICAL FACE PRESERVATION)
+ * [2단계] 컨셉 + 조명 + 카메라 + 의상
+ * [3단계] ENHANCEMENT — "One Natural Spoon" (공통 + 성별)
+ * [4단계] NEGATIVE — Do NOT generate
+ *
+ * 순서 고정: 1 → 2 → 3 → 4
  */
 
 import { MERCHANDISE_FORMATS, type MerchandiseFormatKey } from "../../drizzle/schema";
@@ -282,78 +281,110 @@ function getExpression(concept: Concept, gender: Gender): string {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 4. 얼굴 일관성 & 피부 시스템 (한국인 특화)
+// 4. [1단계] 인물 정보 + 얼굴 보존 (CRITICAL FACE PRESERVATION)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-function getFaceConsistency(gender: Gender, glassesFixMode?: boolean): string {
-  let base =
-    "Preserve EXACT facial identity from reference photo. " +
-    "Do NOT slim the face. Do NOT westernize facial features. " +
-    "Same face shape, same jawline width and contour, " +
-    "same eye shape and spacing, same nose bridge width and tip shape, same lip shape and fullness, " +
-    "same ear shape and position. Maintain precise facial proportions and bone structure. " +
-    "This is a Korean face — preserve authentic Korean facial structure without any idealization.";
+function buildStage1_PersonAndFace(
+  gender: Gender,
+  ageGroup: AgeGroup,
+  glassesFixMode?: boolean
+): string {
+  const genderWord = gender === "male" ? "man" : "woman";
+  const pronoun = gender === "male" ? "his" : "her";
+
+  let stage = `Korean ${genderWord} in ${pronoun} ${ageGroup}.\n\n`;
+
+  stage += "CRITICAL FACE PRESERVATION:\n";
 
   if (gender === "male") {
-    base +=
-      " MALE FACE PRESERVATION: " +
-      "keep the exact natural jawline angle and width — do NOT slim, sharpen, or narrow to V-line. " +
-      "Preserve original eye corner angle (눈꼬리 각도) exactly as reference — do NOT round or enlarge. " +
-      "Keep natural Korean nose — same bridge width and height, do NOT westernize or heighten nose bridge, " +
-      "do NOT narrow nostrils, preserve original nostril shape. " +
-      "Maintain natural brow thickness, arch shape, and spacing. " +
-      "Preserve Adam's apple visibility and natural neck width. " +
-      "HAIR: preserve exact black hair color shade, natural wave pattern, and volume, " +
-      "keep baby hair (잔머리) around forehead and temples visible, " +
-      "maintain hair length and parting direction precisely from reference. " +
-      "BEST VERSION OF HIMSELF: " +
-      "Same face structure, same features — do NOT alter. " +
-      "Skin: clean but natural — remove blemishes, natural healthy texture preserved. " +
-      "Eyes: add natural catchlight, confident and alive. " +
-      "Hair: clean, well-groomed version of his actual hairstyle. " +
-      "Lighting: flattering angles that enhance his natural bone structure. " +
-      "The goal is 'him on his best day' NOT 'a different handsomer person'.";
+    stage +=
+      "- Face shape: preserve exact natural jawline angle and width — do NOT slim, sharpen, or narrow to V-line. " +
+      "Same face shape always. Do NOT westernize facial structure.\n" +
+      "- Hair: preserve exact black hair color shade, natural wave pattern, volume, " +
+      "baby hair (잔머리) around forehead and temples visible, " +
+      "same length and parting direction — NEVER change this.\n" +
+      "- Eyes: preserve original eye corner angle (눈꼬리 각도) exactly — do NOT round or enlarge beyond reference. " +
+      "Keep natural Korean eye shape.\n" +
+      "- Nose: keep natural Korean nose — same bridge width and height — NOT westernized, NOT heightened.\n" +
+      "- Natural skin texture — NOT plastic. Visible pores, natural masculine texture.\n" +
+      "- Maintain natural brow thickness, Adam's apple visibility, natural neck width.\n";
   } else {
-    base +=
-      " FEMALE FACE PRESERVATION: " +
-      "keep natural round cheek fullness and cheek volume exactly — do NOT slim to V-line, " +
-      "do NOT reduce cheek width, preserve the soft round face shape. " +
-      "Preserve original jawline width — do NOT sharpen, narrow, or create pointed chin. " +
-      "Keep button nose (코 높이) exactly — do NOT heighten nose bridge, do NOT add rhinoplasty effect, " +
-      "do NOT narrow or westernize the nose shape. " +
-      "Maintain original eye size EXACTLY — do NOT enlarge or add circle lens effect. " +
-      "Keep natural lip thickness — do NOT plump or reduce. " +
-      "Preserve natural brow shape without reshaping. " +
-      "HAIR: preserve exact hair color and shade from reference, " +
-      "keep bangs (앞머리/뱅) style identical — straight bangs, see-through bangs, or side-swept as-is, " +
-      "maintain baby hair (잔머리) and flyaway strands around hairline, " +
-      "preserve hair length, volume, and curl/wave pattern precisely, " +
-      "keep hair parting direction from reference. " +
-      "BEST VERSION OF HERSELF: " +
-      "Same face structure, same features — do NOT alter. " +
-      "Skin: flawless but natural — remove blemishes, even skin tone, subtle healthy glow. " +
-      "Eyes: add natural catchlight, bright and alive. " +
-      "Hair: smooth, glossy, perfectly styled version of her actual hairstyle. " +
-      "Lips: naturally defined, slightly moisturized look. " +
-      "Lighting: flattering angles that enhance her natural bone structure. " +
-      "The goal is 'her on her best day' NOT 'a different prettier person'.";
+    stage +=
+      "- Face shape: keep natural round cheek fullness and cheek volume exactly — do NOT slim to V-line, " +
+      "do NOT reduce cheek width, preserve soft round face shape.\n" +
+      "- Hair: preserve exact hair color and shade, " +
+      "bangs (앞머리/뱅) style identical — straight, see-through, or side-swept as-is, " +
+      "baby hair (잔머리) and flyaway strands at hairline, " +
+      "same length, volume, curl/wave pattern — NEVER change this.\n" +
+      "- Eyes: maintain original eye size EXACTLY — do NOT enlarge beyond reference, " +
+      "no circle lens effect. Keep natural Korean eye shape.\n" +
+      "- Nose: keep button nose (코 높이) exactly — NOT westernized, NOT heightened.\n" +
+      "- Natural skin texture — NOT plastic. Subtle healthy glow with natural pores.\n" +
+      "- Keep natural lip thickness, preserve natural brow shape.\n";
   }
 
-  // 피부 톤 보존
-  base +=
-    " SKIN TONE: preserve the exact skin warmth and undertone from reference. " +
-    "Do NOT cool down warm skin. Do NOT whiten beyond reference.";
-
-  if (gender === "female") {
-    base += " Maintain natural cheek flush and rosy warmth (볼 홍조) visible in skin.";
-  }
+  stage += "- Same person always. Environment changes, person NEVER changes.";
 
   if (glassesFixMode) {
-    base += " GLASSES: keep exact same frame style, lens shape, color, transparency, and position on nose bridge.";
+    stage += "\n- GLASSES: keep exact same frame style, lens shape, color, transparency, and position on nose bridge.";
   }
 
-  return base;
+  return stage;
 }
+
+// Legacy wrapper — used by beauty-analyzer, face-swap, etc. (외부 호출 호환)
+function getFaceConsistency(gender: Gender, glassesFixMode?: boolean): string {
+  return buildStage1_PersonAndFace(gender, "30s", glassesFixMode);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 4b. [3단계] ENHANCEMENT — "One Natural Spoon"
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const ENHANCEMENT_COMMON = `BEAUTY ENHANCEMENT — One Natural Spoon:
+SKIN: Remove all blemishes and dark circles. Even out skin tone with warm healthy glow. Subtle luminosity — like "best skin day ever". Keep natural pores and texture — NOT plastic.
+EYES: Add one natural catchlight in each eye. Slightly brighten the iris. Subtle definition to lashes — natural, NOT dramatic. Eyes must look alive, warm, and sparkling.
+HAIR: Smooth, glossy, freshly-styled version of their exact hairstyle. Same cut, same color — just the best version of it.
+LIGHTING ENHANCEMENT: Place light at the most flattering angle for their specific face structure. Add subtle highlight on cheekbones. Soft shadow that defines without aging.
+RESULT MUST FEEL: "Oh wow — that's exactly me, but on my best day." NOT "That's a prettier stranger."
+Enhance by maximum 20~30% — no more. Same person. Better version. That's all.`;
+
+const ENHANCEMENT_FEMALE = `FEMALE ENHANCEMENT — Natural Spoon:
+FACE: Same shape always — butterfly light placement creates natural slimming illusion WITHOUT changing structure.
+SKIN: Porcelain-free natural glow. Slight rosy bloom on cheeks — preserve this always. Under-eye: brighten only, no structure change.
+EYES: Natural catchlight + subtle lash definition. Warm, inviting, alive. Do NOT enlarge — just make them sparkle.
+LIPS: Naturally defined, slightly moisturized. Same color family as reference — just richer.
+HAIR: Glossy, smooth, voluminous version of her exact cut. Bangs must fall naturally.
+The goal: "I want to look like this every day" — not "I wish I looked like her."`;
+
+const ENHANCEMENT_MALE = `MALE ENHANCEMENT — Natural Spoon:
+JAW: Keep natural jawline — subtle shadow definition only. Do NOT slim or sharpen beyond reference.
+SKIN: Clean pores, even tone, slight healthy ruddiness. Men look best with subtle texture — NOT porcelain smooth.
+EYES: Strong natural eye contact. Slight definition to brow shape — same shape, just cleaner.
+HAIR: Same style, maximum volume and shine. Natural movement preserved.
+LIGHTING: Side Rembrandt — brings out masculine bone structure without changing it.
+The goal: "Damn, I look good" — not "who is this model?"`;
+
+function buildStage3_Enhancement(gender: Gender): string {
+  return gender === "male"
+    ? `${ENHANCEMENT_COMMON}\n\n${ENHANCEMENT_MALE}`
+    : `${ENHANCEMENT_COMMON}\n\n${ENHANCEMENT_FEMALE}`;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 4c. [4단계] NEGATIVE — Do NOT generate (고정)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const STAGE4_NEGATIVE_CORE =
+  "Do NOT generate: " +
+  "V-line or slim the face, " +
+  "westernized facial features, " +
+  "overly enlarged eyes, " +
+  "high nose bridge, " +
+  "plastic or porcelain skin, " +
+  "change hair color or length, " +
+  "different person than reference, " +
+  "style bangs back or up";
 
 function getSkinTexture(gender: Gender, ageGroup: AgeGroup): string {
   const antiOverCorrection =
@@ -632,105 +663,47 @@ function getConceptPreset(preset: ConceptPreset): ConceptPresetData {
 function getNegativePrompt(concept: Concept, gender: Gender, customNegative?: string): string {
   if (customNegative) return customNegative;
 
-  const base = [
-    // AI 티 완전 제거
+  // [4단계] NEGATIVE — Do NOT generate (고정 핵심 먼저)
+  const parts: string[] = [STAGE4_NEGATIVE_CORE];
+
+  // 기술적 네거티브
+  parts.push(
     "AI-generated look, uncanny valley, synthetic texture, mannequin-like",
     "CGI render, 3D render, digital art, illustration, painting, anime, cartoon",
-
-    // 피부 과보정 방지 (핵심 3종)
-    "NOT plastic skin, NOT porcelain skin, NOT over-smoothed skin",
-    "over-retouched, no pores, no skin texture, blurred skin, beauty filter",
-    "unnaturally smooth skin, plastic surgery look, over-whitened skin",
-    "excessive glow, HDR skin, wax figure, silicone skin, airbrushed",
-
-    // 얼굴 이상화 방지 — 서구화 금지
-    "(westernized Korean face:1.8), (westernized features:1.5)",
-    "(V-line jaw:1.5), (sharpened jawline:1.5), (slimmed face:1.5), (narrowed jaw:1.5)",
-    "(face slimming:1.5), (pointed chin:1.3), (idealized face shape:1.3)",
-    "(facial bone structure changed:1.5), (different face shape from reference:1.5)",
-
-    // 코 이상화 방지
+    "(westernized Korean face:1.8), (V-line jaw:1.5), (sharpened jawline:1.5), (slimmed face:1.5)",
     "(heightened nose bridge:1.5), (narrowed nose:1.5), (westernized nose:1.5)",
-    "(rhinoplasty look:1.3), (different nose from reference:1.5)",
+    "(enlarged eyes:1.5), (bigger eyes than reference:1.5), (circle lens effect:1.3)",
+    "(different hair color:1.8), (changed hair length:1.5), (bangs removed:1.5), (bangs changed:1.5)",
+    "(plastic skin:1.5), (porcelain skin:1.5), (over-smoothed skin:1.5), (airbrushed:1.5)",
+    "(different person:1.8), (different face shape from reference:1.5)",
+    "extra fingers, deformed hands, bad anatomy",
+    "low quality, blurry, watermark, text, logo",
+  );
 
-    // 눈 이상화 방지
-    "(enlarged eyes:1.5), (bigger eyes than reference:1.5), (anime eyes:1.3)",
-    "(circle lens effect:1.3), (changed eye corner angle:1.3)",
-    "disproportionate eye size, colored contact lens glow, lifeless eyes",
-
-    // 입술 이상화 방지
-    "(plumped lips:1.3), (lip filler look:1.3), (different lip shape:1.3)",
-
-    // 헤어 변형 방지 (핵심)
-    "(different hair color:1.8), (changed hair color:1.8), (hair color shift:1.5)",
-    "(changed hair length:1.5), (wrong hair style:1.5)",
-    "(missing baby hair:1.3), (no flyaway strands:1.3), (removed flyaways:1.3)",
-    "(wig-like hair:1.3), (helmet hair:1.3), (plastic hair:1.3)",
-    "(bangs removed:1.5), (bangs changed:1.5), (different bangs style:1.5)",
-
-    // 피부 톤 변형 방지
-    "(cold skin tone:1.3), (blue-tinted skin:1.3), (gray skin:1.3)",
-    "(over-whitened skin:1.3), (skin color changed:1.3)",
-
-    // 손가락/신체 오류
-    "extra fingers, missing fingers, fused fingers, deformed hands",
-    "six fingers, malformed hands, extra limbs, twisted limbs",
-
-    // 배경 왜곡
-    "warped background, bent lines, distorted architecture",
-    "floating objects, inconsistent perspective",
-
-    // 품질
-    "low quality, blurry, noise, artifacts, watermark, text, logo",
-    "cropped face, cut off body, bad framing",
-  ];
-
-  // 성별별 추가 네거티브
-  const genderNeg: string[] = [];
+  // 성별별
   if (gender === "male") {
-    genderNeg.push(
+    parts.push(
       "(feminized male face:1.5), (softened jawline on male:1.5), (pretty-boy filter:1.3)",
-      "(reduced Adam's apple:1.3), (thinned male neck:1.3)",
-      "(over-smoothed male skin:1.5), (removed facial hair texture:1.3)",
-      "(narrowed male jaw:1.5), (male face slimmed:1.5)",
-      "(changed male eye angle:1.5), (rounded male eye corners:1.3)",
-      "(male nose bridge heightened:1.5), (male nose narrowed:1.5)",
+      "(over-smoothed male skin:1.5), (narrowed male jaw:1.5), (male nose bridge heightened:1.5)",
     );
   } else {
-    genderNeg.push(
-      "(slimmed cheeks:1.5), (removed cheek volume:1.5), (hollow cheeks:1.5)",
-      "(sharpened female jaw:1.5), (V-line surgery look:1.5)",
-      "(nose bridge heightened:1.5), (button nose removed:1.5)",
-      "(eyes enlarged beyond reference:1.5), (double eyelid surgery look:1.3)",
-      "(whitened skin beyond reference:1.3), (doll-like face:1.3)",
-      "(cheek flush removed:1.3), (cold pale skin:1.3)",
-      "(bangs removed or changed:1.5), (fringe style altered:1.5)",
+    parts.push(
+      "(slimmed cheeks:1.5), (removed cheek volume:1.5), (V-line surgery look:1.5)",
+      "(nose bridge heightened:1.5), (button nose removed:1.5), (eyes enlarged beyond reference:1.5)",
+      "(cheek flush removed:1.3), (bangs removed or changed:1.5)",
     );
   }
 
-  // 컨셉별 추가
+  // 컨셉별
   const conceptNeg: Record<string, string[]> = {
-    wedding: [
-      "casual clothing, messy appearance, dark mood",
-      "incorrect dress fabric texture, plastic-looking lace",
-    ],
-    beauty: [
-      "heavy visible makeup, clown makeup, theatrical makeup",
-      "completely flawless poreless skin",
-    ],
-    profile: [
-      "casual pose, unprofessional setting",
-      "harsh unflattering shadows",
-    ],
-    couple: [
-      "awkward pose between subjects",
-      "mismatched lighting on each person",
-    ],
+    wedding: ["casual clothing, messy appearance", "plastic-looking lace"],
+    beauty: ["heavy visible makeup", "completely flawless poreless skin"],
+    profile: ["casual pose, unprofessional setting"],
+    couple: ["awkward pose between subjects"],
   };
+  parts.push(...(conceptNeg[concept] || []));
 
-  const extras = conceptNeg[concept] || [];
-
-  return [...base, ...genderNeg, ...extras].join(", ");
+  return parts.join(", ");
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -764,7 +737,7 @@ function getOmniSettings(referenceImageCount: number, concept: Concept, gender: 
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 메인 프롬프트 빌더
+// 메인 프롬프트 빌더 — 4단계 구조
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export function buildPrompt(input: PromptEngineInput): PromptEngineOutput {
@@ -793,152 +766,113 @@ export function buildPrompt(input: PromptEngineInput): PromptEngineOutput {
   // Omni Reference 설정
   const omni = getOmniSettings(referenceImageCount, concept, gender);
 
-  // ── 참조 모드별 분기 ──────────────────────────────
+  // ── 참조 모드별 분기 (direct_apply, face_swap) ──────────────
+  if (hasReferenceImage && (referenceMode === "direct_apply" || referenceMode === "face_swap")) {
+    const stage1 = buildStage1_PersonAndFace(gender, ageGroup, glassesFixMode);
+    const instruction = referenceMode === "direct_apply"
+      ? "Reproduce this exact reference image with the provided face photo. Keep the exact same composition, background, lighting, clothing, pose, and every detail identical. Only replace the face."
+      : "Replace the face in the reference image with the face from the provided photo. Keep everything else identical — same pose, lighting, clothing, background.";
 
-  if (hasReferenceImage && referenceMode === "direct_apply") {
-    const faceBlock = getFaceConsistency(gender, glassesFixMode);
     const prompt = [
-      faceBlock,
-      "Reproduce this exact reference image with the provided face photo.",
-      "Keep the exact same composition, background, lighting, clothing, pose, and every detail identical.",
-      "Only replace the face with the reference face photo.",
-      `Skin: ${getSkinTexture(gender, ageGroup)}`,
-      "Photorealistic, 8K resolution.",
+      stage1,
+      instruction,
+      buildStage3_Enhancement(gender),
       basePrompt,
-    ].filter(Boolean).join(" ");
+    ].filter(Boolean).join("\n\n");
 
     return {
-      prompt: truncate(prompt),
+      prompt: truncate(prompt, 2500),
       negativePrompt: getNegativePrompt(concept, gender, customNegative),
       omniWeight: omni.weight,
       omniHint: omni.hint,
     };
   }
 
-  if (hasReferenceImage && referenceMode === "face_swap") {
-    const faceBlock = getFaceConsistency(gender, glassesFixMode);
-    const prompt = [
-      faceBlock,
-      "Replace the face in the reference image with the face from the provided photo.",
-      "Keep everything else identical — same pose, lighting, clothing, background.",
-      `Skin: ${getSkinTexture(gender, ageGroup)}`,
-      "Photorealistic, 8K resolution.",
-      basePrompt,
-    ].filter(Boolean).join(" ");
+  // ═══════════════════════════════════════════════════════════
+  // 4단계 구조 조립: [1] → [2] → [3] → [4 = negativePrompt]
+  // ═══════════════════════════════════════════════════════════
 
-    return {
-      prompt: truncate(prompt),
-      negativePrompt: getNegativePrompt(concept, gender, customNegative),
-      omniWeight: omni.weight,
-      omniHint: omni.hint,
-    };
+  // ── [1단계] 인물 정보 + 얼굴 보존 ──────────────────────────
+  let stage1: string;
+  if (isCouple && partnerGender) {
+    stage1 = buildStage1_PersonAndFace(gender, ageGroup, glassesFixMode) +
+      "\n\n" + buildStage1_PersonAndFace(partnerGender, partnerAgeGroup);
+  } else {
+    stage1 = buildStage1_PersonAndFace(gender, ageGroup, glassesFixMode);
   }
 
-  // ── 컨셉 프리셋 모드 ──────────────────────────────
+  // ── [2단계] 컨셉 + 조명 + 카메라 + 의상 ─────────────────────
+  let stage2: string;
 
   if (conceptPreset) {
+    // 프리셋 모드
     const preset = getConceptPreset(conceptPreset);
-    const sections: string[] = [];
-
-    if (basePrompt) sections.push(basePrompt);
-    sections.push(getFaceConsistency(gender, glassesFixMode));
-    sections.push(`A ${ageGroup} Korean ${genderWord}. ${preset.mood}.`);
-    sections.push(`Scene: ${preset.scene}.`);
-    sections.push(`Lighting: ${preset.lighting}.`);
-    sections.push(`Camera: ${preset.camera}.`);
-    sections.push(`Expression: ${getExpression(concept, gender)}.`);
-    sections.push(`Skin: ${getSkinTexture(gender, ageGroup)}.`);
-    sections.push(`Attire: ${preset.attireOverride}.`);
-    if (projectConcept) sections.push(`Concept: ${projectConcept}.`);
-    sections.push("Photorealistic, shot on professional camera, 8K resolution, magazine-quality.");
-
-    return {
-      prompt: truncate(sections.join(" ")),
-      negativePrompt: getNegativePrompt(concept, gender, customNegative),
-      omniWeight: omni.weight,
-      omniHint: omni.hint,
-    };
-  }
-
-  // ── 메인 프롬프트 조립 ─────────────────────────────
-
-  const sections: string[] = [];
-
-  if (basePrompt) {
-    sections.push(basePrompt);
-  }
-
-  // 1. 얼굴 일관성
-  sections.push(getFaceConsistency(gender, glassesFixMode));
-
-  // 2. 주제 설명
-  if (isCouple && partnerGender) {
-    sections.push(
-      `A ${ageGroup} Korean ${genderWord} and ${partnerAgeGroup} Korean ${partnerWord} couple, ` +
-      `professional ${concept} photography.`
-    );
+    stage2 = [
+      `Lighting: ${preset.lighting}`,
+      `Background: ${preset.scene}`,
+      `Outfit: ${preset.attireOverride}`,
+      `Camera: ${preset.camera}`,
+      `Mood: ${preset.mood}`,
+      `Expression: ${getExpression(concept, gender)}`,
+    ].join("\n");
   } else {
-    sections.push(
-      `A ${ageGroup} Korean ${genderWord}, professional ${concept} photography.`
-    );
-  }
+    // 일반 모드
+    const cam = getCamera(concept);
+    const stage2Parts: string[] = [];
 
-  // 3. 조명
-  sections.push(`Lighting: ${getLighting(environment, concept)}.`);
+    stage2Parts.push(`Lighting: ${getLighting(environment, concept)}`);
 
-  // 4. 카메라
-  const cam = getCamera(concept);
-  sections.push(
-    `Camera: ${cam.lens}, ${cam.aperture}, ${cam.angle}. ${cam.extra}.`
-  );
-
-  // 5. 표정 & 머리
-  sections.push(`Expression: ${getExpression(concept, gender)}.`);
-  if (isCouple && partnerGender) {
-    sections.push(`Partner expression: ${getExpression(concept, partnerGender)}.`);
-  }
-
-  // 6. 피부 질감
-  sections.push(`Skin: ${getSkinTexture(gender, ageGroup)}.`);
-  if (isCouple && partnerGender) {
-    sections.push(`Partner skin: ${getSkinTexture(partnerGender, partnerAgeGroup)}.`);
-  }
-
-  // 7. 의상
-  sections.push(`Attire: ${getAttire(concept, gender, environment)}.`);
-  if (isCouple && partnerGender) {
-    sections.push(`Partner attire: ${getAttire(concept, partnerGender, environment)}.`);
-  }
-
-  // 8. 참조 이미지 모드
-  if (hasReferenceImage) {
-    if (referenceMode === "background_composite") {
-      sections.push("Place the subject(s) into the reference background scene, matching its lighting and color palette.");
-    } else if (referenceMode === "style_transfer") {
-      sections.push("Apply the visual style, color grading, and mood of the reference image to this portrait.");
+    if (projectConcept) {
+      stage2Parts.push(`Background: ${projectConcept}`);
     }
-  }
 
-  // 9. 컨셉 메모
-  if (projectConcept) {
-    sections.push(`Concept: ${projectConcept}.`);
-  }
-
-  // 10. 상품 포맷
-  if (merchandiseFormat) {
-    const format = MERCHANDISE_FORMATS[merchandiseFormat as MerchandiseFormatKey];
-    if (format) {
-      sections.push(`Composition: ${format.aspectRatio} aspect ratio, centered subject framing.`);
+    stage2Parts.push(`Outfit: ${getAttire(concept, gender, environment)}`);
+    if (isCouple && partnerGender) {
+      stage2Parts.push(`Partner outfit: ${getAttire(concept, partnerGender, environment)}`);
     }
+
+    stage2Parts.push(`Expression: ${getExpression(concept, gender)}`);
+    if (isCouple && partnerGender) {
+      stage2Parts.push(`Partner expression: ${getExpression(concept, partnerGender)}`);
+    }
+
+    stage2Parts.push(`Shot on ${cam.extra}, ${cam.lens}, ${cam.aperture}`);
+
+    // 참조 이미지 모드
+    if (hasReferenceImage) {
+      if (referenceMode === "background_composite") {
+        stage2Parts.push("Place the subject(s) into the reference background scene, matching its lighting and color palette.");
+      } else if (referenceMode === "style_transfer") {
+        stage2Parts.push("Apply the visual style, color grading, and mood of the reference image to this portrait.");
+      }
+    }
+
+    // 상품 포맷
+    if (merchandiseFormat) {
+      const format = MERCHANDISE_FORMATS[merchandiseFormat as MerchandiseFormatKey];
+      if (format) {
+        stage2Parts.push(`Composition: ${format.aspectRatio} aspect ratio, centered subject framing`);
+      }
+    }
+
+    stage2 = stage2Parts.join("\n");
   }
 
-  // 11. 마무리 품질
-  sections.push("Photorealistic, shot on professional camera, 8K resolution, magazine-quality.");
+  // ── [3단계] ENHANCEMENT ───────────────────────────────────
+  const stage3 = buildStage3_Enhancement(gender);
 
-  const prompt = sections.join(" ");
+  // ── 조립: [1] + [2] + [3] ────────────────────────────────
+  const promptParts: string[] = [];
+  if (basePrompt) promptParts.push(basePrompt);
+  promptParts.push(stage1);
+  promptParts.push(stage2);
+  promptParts.push(stage3);
 
+  const prompt = promptParts.join("\n\n");
+
+  // ── [4단계] NEGATIVE — 별도 negativePrompt 필드 ──────────
   return {
-    prompt: truncate(prompt),
+    prompt: truncate(prompt, 2500),
     negativePrompt: getNegativePrompt(concept, gender, customNegative),
     omniWeight: omni.weight,
     omniHint: omni.hint,

@@ -182,46 +182,40 @@ function buildPromptWithBackground(
     "night": "elegant evening ambiance, warm artificial lighting, bokeh city lights background, sophisticated atmosphere",
   }[bg.timeOfDay] || "beautiful natural lighting";
 
-  const moodDesc = {
-    "romantic": "deeply romantic and intimate, love story aesthetic",
-    "luxury": "high-end luxury editorial, Vogue Korea quality, sophisticated elegance",
-    "minimal": "clean minimalist beauty, understated sophistication, modern aesthetic",
-    "rustic": "warm rustic charm, natural organic textures, countryside romance",
-    "urban": "chic urban sophistication, contemporary city romance",
-    "sacred": "sacred reverent atmosphere, timeless spiritual beauty",
-  }[bg.mood] || "beautiful romantic atmosphere";
-
   const variationExtra = variation === "romantic"
     ? "Natural candid moment, genuine laughter, slight body turn, relaxed and joyful"
     : "Elegant poised stance, sophisticated gaze, luxury editorial pose, timeless and refined";
 
-  return `MASTERPIECE WEDDING PHOTOGRAPH - Ultra photorealistic, award-winning Korean wedding photography.
+  // ═══ [1단계] 인물 정보 + 얼굴 보존 ═══
+  const stage1 = `Korean woman (BRIDE) and Korean man (GROOM) — from the reference photos.
 
-The two people in the reference photos are the BRIDE and GROOM.
-CRITICAL INSTRUCTION: Reproduce their EXACT facial features, hairstyles, and physical characteristics with 100% accuracy.
-- Bride: preserve her EXACT face, hair length, hair color, eye shape, and all facial features
-- Groom: preserve his EXACT face, hair, and all facial features
+CRITICAL FACE PRESERVATION:
+- BRIDE face shape — preserve exactly, do NOT slim to V-line. Hair — NEVER change color or length. Eyes — do NOT enlarge beyond reference. Nose — NOT westernized. Natural skin texture — NOT plastic.
+- GROOM face shape — preserve exact jawline width. Hair — NEVER change. Eyes — preserve eye corner angle. Nose — NOT westernized. Natural skin texture — NOT plastic.
+- Same person always. Environment changes, person NEVER changes.`;
 
-ATTIRE:
-- Bride: elegant white Korean bridal gown, fitted bodice with delicate lace details
-- Groom: classic black tuxedo with white shirt and black bow tie
+  // ═══ [2단계] 컨셉 + 조명 + 의상 ═══
+  const stage2 = `Lighting: ${lightingDesc}
+Background: ${bg.promptDescription}. ${bg.architectureStyle} style venue, ${bg.season} season, ${bg.colorTone} color palette.
+Outfit — Bride: elegant white Korean bridal gown, fitted bodice with delicate lace details. Groom: classic black tuxedo with white shirt and black bow tie.
+Moment: ${variationExtra}. Both subjects equally in frame.
+Shot on Canon EOS R5, 85mm f/2.0, RAW, 8K resolution.`;
 
-BACKGROUND & VENUE:
-${bg.promptDescription}
-${bg.architectureStyle} style venue, ${bg.season} season atmosphere, ${bg.colorTone} color palette
+  // ═══ [3단계] ENHANCEMENT ═══
+  const stage3 = `BEAUTY ENHANCEMENT — One Natural Spoon:
+SKIN: Remove all blemishes and dark circles. Even out skin tone with warm healthy glow. Subtle luminosity — like "best skin day ever". Keep natural pores and texture — NOT plastic.
+EYES: Add one natural catchlight in each eye. Slightly brighten the iris. Subtle definition to lashes — natural, NOT dramatic. Eyes must look alive, warm, and sparkling.
+HAIR: Smooth, glossy, freshly-styled version of their exact hairstyle. Same cut, same color — just the best version of it.
+LIGHTING ENHANCEMENT: Place light at the most flattering angle for their specific face structure. Add subtle highlight on cheekbones. Soft shadow that defines without aging.
+Enhance by maximum 20~30% — no more. Same person. Better version. That's all.
 
-LIGHTING:
-${lightingDesc}
+BRIDE ENHANCEMENT: Porcelain-free natural glow. Slight rosy bloom on cheeks. Natural catchlight + subtle lash definition. Glossy smooth hair, bangs fall naturally.
+GROOM ENHANCEMENT: Keep natural jawline — subtle shadow definition only. Clean pores, slight healthy ruddiness. Strong natural eye contact. Maximum hair volume and shine.
 
-MOOD & COMPOSITION:
-${moodDesc}. ${variationExtra}.
-Both subjects equally in frame, professional wedding composition.
-
-TECHNICAL QUALITY:
-Shot on Canon EOS R5, 85mm f/2.0, RAW, 8K resolution.
 Skin pores visible, natural skin texture, subsurface scattering, film grain ISO 200.
-NOT illustration, NOT digital art, NOT AI generated look.
-Professional color grading, magazine cover quality.`;
+NOT illustration, NOT digital art, NOT AI generated look. Magazine cover quality.`;
+
+  return [stage1, stage2, stage3].join("\n\n");
 }
 
 // ─── 메인 생성 함수 ─────────────────────────────────────
@@ -252,22 +246,40 @@ export async function generateGeminiWedding(
     prompt1 = buildPromptWithBackground(backgroundAnalysis, "romantic");
     prompt2 = buildPromptWithBackground(backgroundAnalysis, "luxury");
   } else {
-    // 배경 없을 때 기본 프롬프트
-    prompt1 = `MASTERPIECE WEDDING PHOTOGRAPH.
-The two people in the reference photos are the BRIDE and GROOM.
-CRITICAL: Reproduce their EXACT facial features, hairstyle, hair length, hair color with 100% accuracy.
-Bride wearing elegant white wedding dress. Groom wearing classic black tuxedo.
-Beautiful outdoor golden hour garden setting, warm romantic atmosphere.
-Natural candid pose, genuine smiles, slight body turn.
-Shot on Canon EOS R5, 85mm f/2.0, photorealistic, 8K, NOT illustration, NOT AI generated.`;
+    // 배경 없을 때 기본 프롬프트 (4단계 구조)
+    const defaultStage1 = `Korean woman (BRIDE) and Korean man (GROOM) — from the reference photos.
 
-    prompt2 = `MASTERPIECE WEDDING PHOTOGRAPH.
-The two people in the reference photos are the BRIDE and GROOM.
-CRITICAL: Reproduce their EXACT facial features, hairstyle, hair length, hair color with 100% accuracy.
-Bride wearing minimalist sleek white wedding dress. Groom wearing modern slim-fit black tuxedo.
-Elegant grand ballroom interior, crystal chandeliers, luxury editorial atmosphere.
-Sophisticated poised pose, elegant and refined, Vogue Korea quality.
-Shot on Hasselblad X2D, 80mm f/2.8, photorealistic, 8K, NOT illustration, NOT AI generated.`;
+CRITICAL FACE PRESERVATION:
+- BRIDE face shape — preserve exactly, do NOT slim. Hair — NEVER change color or length. Eyes — do NOT enlarge. Nose — NOT westernized. Natural skin — NOT plastic.
+- GROOM face shape — preserve jawline width. Hair — NEVER change. Eyes — preserve eye corner angle. Nose — NOT westernized. Natural skin — NOT plastic.
+- Same person always. Environment changes, person NEVER changes.`;
+
+    const defaultStage3 = `BEAUTY ENHANCEMENT — One Natural Spoon:
+SKIN: Remove blemishes, even skin tone, warm healthy glow. Keep natural pores — NOT plastic.
+EYES: Natural catchlight, bright iris, subtle lash definition. Alive, warm, sparkling.
+HAIR: Glossy, freshly-styled version of their exact hairstyle. Same cut, same color.
+Enhance 20~30% max. Same person. Better version. That's all.
+NOT illustration, NOT digital art, NOT AI generated.`;
+
+    prompt1 = [
+      defaultStage1,
+      `Lighting: Golden hour natural light, warm rim light on hair.
+Background: Beautiful outdoor garden, warm romantic atmosphere.
+Outfit — Bride: elegant white wedding dress. Groom: classic black tuxedo.
+Moment: Natural candid pose, genuine smiles, slight body turn.
+Shot on Canon EOS R5, 85mm f/2.0, 8K.`,
+      defaultStage3,
+    ].join("\n\n");
+
+    prompt2 = [
+      defaultStage1,
+      `Lighting: Crystal chandelier warm prismatic light, high-key elegant.
+Background: Grand ballroom interior, luxury editorial atmosphere.
+Outfit — Bride: minimalist sleek white wedding dress. Groom: modern slim-fit black tuxedo.
+Moment: Sophisticated poised pose, elegant and refined, Vogue Korea quality.
+Shot on Hasselblad X2D, 80mm f/2.8, 8K.`,
+      defaultStage3,
+    ].join("\n\n");
   }
 
   const prompts = [prompt1, prompt2];

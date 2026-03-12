@@ -158,7 +158,7 @@ const REALISM_CORE = `skin pores visible under catchlight, natural skin texture 
 
 const MASTER_NEGATIVE = `(plastic skin:1.9), (airbrushed skin:1.9), (smooth poreless skin:1.8), (wax mannequin skin:1.8), (beauty filter:1.8), (instagram filter:1.7), (oversaturated:1.6), (illustration:1.9), (digital art:1.9), (anime:1.9), (cartoon:1.8), (CGI:1.8), (3D render:1.8), (painting:1.8), (AI generated look:1.7), (stiff unnatural pose:1.8), (mannequin pose:1.8), (standing at attention:1.8), (symmetrical robot pose:1.7), (expressionless face:1.7), (blank stare:1.7), (dead eyes:1.7), (flat lighting:1.6), (no shadows:1.6), (overexposed blown highlights:1.5), (complete background blur:1.5), (extreme bokeh separation:1.5), (wrong number of fingers:1.9), (deformed hands:1.9), (bad anatomy:1.8), (distorted face:1.8), (asymmetrical eyes:1.7), (watermark:1.9), (text overlay:1.9), (logo:1.9), (low resolution:1.8), (blurry:1.7), (noise artifacts:1.6), (jpeg compression:1.6)`;
 
-// ─── 메인 프롬프트 빌더 ──────────────────────────────────
+// ─── 4단계 웨딩 프롬프트 빌더 ──────────────────────────────────
 
 export function buildWeddingPrompt(
   bride: AnalysisResult,
@@ -173,7 +173,7 @@ export function buildWeddingPrompt(
   }
 ): { prompt: string; negativePrompt: string } {
 
-  // 옵션 기본값 (랜덤)
+  // 옵션 기본값
   const dressIdx   = ["A-line","ballgown","minimal","romantic"].indexOf(options?.dressStyle || "A-line");
   const dress      = DRESS_STYLES[dressIdx >= 0 ? dressIdx : 0];
   const tuxIdx     = ["classic","modern","navy"].indexOf(options?.tuxStyle || "classic");
@@ -185,67 +185,78 @@ export function buildWeddingPrompt(
   const camera     = CAMERA_SETUPS[options?.cameraIdx ?? Math.floor(Math.random() * CAMERA_SETUPS.length)];
   const lighting   = getLightingForSkin(bride.skinTone);
 
-  // 신부 특징 - 매우 상세한 설명
+  // 신부 특징
   const brideDesc = [
-    `${bride.skinTone} skin tone`,
-    `${bride.skinTexture}`,
-    `${bride.faceShape} face shape`,
-    `${bride.eyeShape} eyes`,
-    bride.eyeColor ? `${bride.eyeColor} eye color` : "",
-    bride.eyeSize ? `${bride.eyeSize} eye size` : "",
-    bride.eyebrowShape ? `${bride.eyebrowShape} eyebrows` : "",
-    bride.noseShape ? `${bride.noseShape} nose` : "",
-    bride.mouthShape ? `${bride.mouthShape}` : "",
-    bride.cheekbones ? `${bride.cheekbones} cheekbones` : "",
-    bride.hairLength ? `${bride.hairLength} hair` : "",
-    bride.hairTexture ? `${bride.hairTexture}` : "",
+    `${bride.skinTone} skin tone`, `${bride.skinTexture}`, `${bride.faceShape} face shape`,
+    `${bride.eyeShape} eyes`, bride.eyeColor ? `${bride.eyeColor} eye color` : "",
+    bride.eyeSize ? `${bride.eyeSize} eye size` : "", bride.eyebrowShape ? `${bride.eyebrowShape} eyebrows` : "",
+    bride.noseShape ? `${bride.noseShape} nose` : "", bride.mouthShape ? `${bride.mouthShape}` : "",
+    bride.hairLength ? `${bride.hairLength} hair` : "", bride.hairTexture ? `${bride.hairTexture}` : "",
     `${bride.hairColor} hair color`,
     bride.hasGlasses ? `wearing ${bride.glassesStyle} glasses (PRESERVE EXACTLY)` : "",
-    `${bride.makeupLevel} bridal makeup with dewy finish`,
   ].filter(Boolean).join(", ");
 
-  // 신랑 특징 - 매우 상세한 설명
+  // 신랑 특징
   const groomDesc = [
-    `${groom.skinTone} skin tone`,
-    `${groom.skinTexture}`,
-    `${groom.faceShape} face shape`,
-    `${groom.eyeShape} eyes`,
-    groom.eyeColor ? `${groom.eyeColor} eye color` : "",
-    groom.eyeSize ? `${groom.eyeSize} eye size` : "",
-    groom.eyebrowShape ? `${groom.eyebrowShape} eyebrows` : "",
-    groom.noseShape ? `${groom.noseShape} nose` : "",
-    groom.mouthShape ? `${groom.mouthShape}` : "",
-    groom.cheekbones ? `${groom.cheekbones} cheekbones` : "",
-    groom.hairLength ? `${groom.hairLength} hair` : "",
-    groom.hairTexture ? `${groom.hairTexture}` : "",
+    `${groom.skinTone} skin tone`, `${groom.skinTexture}`, `${groom.faceShape} face shape`,
+    `${groom.eyeShape} eyes`, groom.eyeColor ? `${groom.eyeColor} eye color` : "",
+    groom.eyeSize ? `${groom.eyeSize} eye size` : "", groom.eyebrowShape ? `${groom.eyebrowShape} eyebrows` : "",
+    groom.noseShape ? `${groom.noseShape} nose` : "", groom.mouthShape ? `${groom.mouthShape}` : "",
+    groom.hairLength ? `${groom.hairLength} hair` : "", groom.hairTexture ? `${groom.hairTexture}` : "",
     `${groom.hairColor} hair color`,
     groom.hasGlasses ? `wearing ${groom.glassesStyle} glasses (PRESERVE EXACTLY)` : "",
     groom.hasBear ? `${groom.bearStyle} beard (PRESERVE EXACTLY)` : "clean-shaven",
   ].filter(Boolean).join(", ");
 
-  const prompt = `MASTERPIECE WEDDING PHOTOGRAPH. Ultra-photorealistic. Shot by award-winning Korean wedding photographer.
+  // ═══ [1단계] 인물 정보 + 얼굴 보존 ═══
+  const stage1 = `Korean woman (BRIDE) and Korean man (GROOM).
 
-[SUBJECTS]
-BRIDE — ${brideDesc}. Wearing: ${dress.desc}.
-GROOM — ${groomDesc}. Wearing: ${tux.desc}.
-CRITICAL: Preserve ALL facial features EXACTLY as described. Same person consistency is paramount.
+BRIDE — ${brideDesc}.
+GROOM — ${groomDesc}.
 
-[MOMENT & EMOTION]
-${emotion}
+CRITICAL FACE PRESERVATION:
+- BRIDE face shape: preserve exact face shape, cheek fullness — do NOT slim to V-line. Hair: ${bride.hairColor} ${bride.hairLength || ""} — NEVER change this. Eyes: do NOT enlarge beyond reference. Nose: NOT westernized. Natural skin texture — NOT plastic.
+- GROOM face shape: preserve exact jawline width — do NOT slim or sharpen. Hair: ${groom.hairColor} ${groom.hairLength || ""} — NEVER change this. Eyes: preserve eye corner angle exactly. Nose: NOT westernized. Natural skin texture — NOT plastic.
+- Same person always. Environment changes, person NEVER changes.`;
 
-[VENUE & ATMOSPHERE]
-${venue}
+  // ═══ [2단계] 컨셉 + 조명 + 카메라 + 의상 ═══
+  const stage2 = `Lighting: ${lighting}. Fill light from opposite side at 1/4 intensity. Both subjects equally lit.
+Background: ${venue}
+Outfit — Bride: ${dress.desc}. Groom: ${tux.desc}.
+Moment: ${emotion}
+${comp}
+Shot on ${camera}`;
 
-[LIGHTING]
-${lighting}. Fill light from opposite side at 1/4 intensity. No blown highlights. Full shadow detail preserved. Both subjects equally lit.
+  // ═══ [3단계] ENHANCEMENT ═══
+  const stage3 = `BEAUTY ENHANCEMENT — One Natural Spoon:
+SKIN: Remove all blemishes and dark circles. Even out skin tone with warm healthy glow. Subtle luminosity — like "best skin day ever". Keep natural pores and texture — NOT plastic.
+EYES: Add one natural catchlight in each eye. Slightly brighten the iris. Subtle definition to lashes — natural, NOT dramatic. Eyes must look alive, warm, and sparkling.
+HAIR: Smooth, glossy, freshly-styled version of their exact hairstyle. Same cut, same color — just the best version of it.
+LIGHTING ENHANCEMENT: Place light at the most flattering angle for their specific face structure. Add subtle highlight on cheekbones. Soft shadow that defines without aging.
+Enhance by maximum 20~30% — no more. Same person. Better version. That's all.
 
-[TECHNICAL]
-${camera}. ${comp}. ${REALISM_CORE}.
+BRIDE ENHANCEMENT — Natural Spoon:
+FACE: Same shape always — butterfly light creates natural slimming illusion WITHOUT changing structure.
+SKIN: Porcelain-free natural glow. Slight rosy bloom on cheeks. Under-eye: brighten only.
+EYES: Natural catchlight + subtle lash definition. Do NOT enlarge — just sparkle.
+LIPS: Naturally defined, slightly moisturized. ${bride.makeupLevel} bridal makeup with dewy finish.
+HAIR: Glossy, smooth, voluminous. Bangs must fall naturally.
 
-[STYLE]
-Korean luxury wedding photography style. Vogue Korea editorial quality. Timeless romantic. Natural authentic emotion over posed perfection. Magazine cover worthy. Premium 5-star venue aesthetic.`;
+GROOM ENHANCEMENT — Natural Spoon:
+JAW: Keep natural jawline — subtle shadow definition only.
+SKIN: Clean pores, even tone, slight healthy ruddiness. Subtle texture — NOT porcelain smooth.
+EYES: Strong natural eye contact. Slight brow definition — same shape, just cleaner.
+HAIR: Same style, maximum volume and shine. Natural movement preserved.
 
-  return { prompt, negativePrompt: MASTER_NEGATIVE };
+${REALISM_CORE}.
+Korean luxury wedding photography. Vogue Korea editorial quality. Magazine cover worthy.`;
+
+  const prompt = [stage1, stage2, stage3].join("\n\n");
+
+  // ═══ [4단계] NEGATIVE ═══
+  const negativePrompt = "Do NOT generate: V-line or slim the face, westernized facial features, overly enlarged eyes, high nose bridge, plastic or porcelain skin, change hair color or length, different person than reference, style bangs back or up. " + MASTER_NEGATIVE;
+
+  return { prompt, negativePrompt };
 }
 
 // ─── 2장 변주 (같은 분석, 다른 스타일) ─────────────────
