@@ -34,7 +34,11 @@ export type GenerateImageResponse = {
 
 // ─── Gemini API 호출 ─────────────────────────────────────
 
-const GEMINI_MODEL = "gemini-2.0-flash-exp";
+const GEMINI_MODELS = [
+  "gemini-2.5-flash-image",
+  "gemini-2.5-flash-preview-image-generation",
+  "gemini-2.0-flash-exp",
+];
 
 function getGeminiApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
@@ -62,7 +66,6 @@ async function callGemini(
   parts: GeminiPart[],
 ): Promise<GeminiResponse> {
   const apiKey = getGeminiApiKey();
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
   const body = {
     contents: [{ parts }],
@@ -71,24 +74,34 @@ async function callGemini(
     },
   };
 
-  console.log(`[ImageGen] Gemini ${GEMINI_MODEL} 호출 (parts: ${parts.length})`);
+  // 여러 모델을 순서대로 시도
+  let lastError = "";
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    console.log(`[ImageGen] Gemini ${model} 호출 (parts: ${parts.length})`);
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Gemini API failed ${res.status}: ${text.slice(0, 300)}`);
+    const text = await res.text();
+    if (!res.ok) {
+      lastError = `${model} failed ${res.status}: ${text.slice(0, 200)}`;
+      console.warn(`[ImageGen] ${lastError}`);
+      if (res.status === 404) continue; // 모델 없음 → 다음 모델 시도
+      throw new Error(`Gemini API failed ${res.status}: ${text.slice(0, 300)}`);
+    }
+
+    try {
+      return JSON.parse(text) as GeminiResponse;
+    } catch {
+      throw new Error(`Gemini invalid JSON: ${text.slice(0, 200)}`);
+    }
   }
 
-  try {
-    return JSON.parse(text) as GeminiResponse;
-  } catch {
-    throw new Error(`Gemini invalid JSON: ${text.slice(0, 200)}`);
-  }
+  throw new Error(`All Gemini models failed. Last: ${lastError}`);
 }
 
 // ─── 참조 이미지 → base64 변환 ──────────────────────────
