@@ -1,4 +1,4 @@
-import { invokeLLM } from "../_core/llm";
+import Anthropic from "@anthropic-ai/sdk";
 
 export interface AnalysisResult {
   prompt: string;
@@ -79,28 +79,135 @@ function parseResponse(text: string): AnalysisResult {
   };
 }
 
+/**
+ * URL 이미지를 다운로드해서 base64로 변환 후 Claude로 분석
+ */
+async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string }> {
+  const res = await fetch(imageUrl);
+  if (!res.ok) throw new Error(`이미지 다운로드 실패: ${res.status}`);
+  const contentType = res.headers.get("content-type") || "image/jpeg";
+  const buffer = Buffer.from(await res.arrayBuffer());
+  return {
+    base64: buffer.toString("base64"),
+    mimeType: contentType.split(";")[0],
+  };
+}
+
+/**
+ * Anthropic Claude로 이미지 분석 (ANTHROPIC_API_KEY 사용)
+ */
+async function analyzeWithClaude(
+  base64Data: string,
+  mimeType: string
+): Promise<AnalysisResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY가 설정되지 않았습니다");
+
+  const client = new Anthropic({ apiKey });
+  const clean = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
+
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 4000,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: mimeType as "image/jpeg" | "image/png" | "image/webp",
+              data: clean,
+            },
+          },
+          { type: "text", text: ANALYSIS_PROMPT },
+        ],
+      },
+    ],
+  });
+
+  const text = response.content[0].type === "text" ? response.content[0].text : "";
+  return parseResponse(text);
+}
+
+/**
+ * Gemini로 이미지 분석 (GEMINI_API_KEY 사용, Anthropic 실패 시 폴백)
+ */
+async function analyzeWithGemini(
+  base64Data: string,
+  mimeType: string
+): Promise<AnalysisResult> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY가 설정되지 않았습니다");
+
+  const clean = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                inline_data: {
+                  mime_type: mimeType,
+                  data: clean,
+                },
+              },
+              { text: ANALYSIS_PROMPT },
+            ],
+          },
+        ],
+        generationConfig: {
+          maxOutputTokens: 4000,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Gemini API 실패 (${response.status}): ${detail}`);
+  }
+
+  const result = await response.json();
+  const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  return parseResponse(text);
+}
+
+/**
+ * Claude → Gemini 폴백 순서로 이미지 분석
+ */
+async function analyzeImage(base64Data: string, mimeType: string): Promise<AnalysisResult> {
+  // 1차: Anthropic Claude
+  if (process.env.ANTHROPIC_API_KEY) {
+    try {
+      return await analyzeWithClaude(base64Data, mimeType);
+    } catch (err: any) {
+      console.warn(`[image-analyzer] Claude 분석 실패: ${err.message?.slice(0, 100)} → Gemini 폴백`);
+    }
+  }
+
+  // 2차: Google Gemini
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      return await analyzeWithGemini(base64Data, mimeType);
+    } catch (err: any) {
+      console.warn(`[image-analyzer] Gemini 분석 실패: ${err.message?.slice(0, 100)}`);
+    }
+  }
+
+  throw new Error("이미지 분석 불가: ANTHROPIC_API_KEY 또는 GEMINI_API_KEY가 필요합니다");
+}
+
 export async function analyzeImageToPrompt(imageUrl: string): Promise<AnalysisResult> {
   try {
-    const response = await invokeLLM({
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: { url: imageUrl, detail: "high" },
-            },
-            {
-              type: "text",
-              text: ANALYSIS_PROMPT,
-            },
-          ],
-        },
-      ],
-    });
-    const rawContent = response.choices?.[0]?.message?.content || "";
-    const text = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
-    return parseResponse(text);
+    const { base64, mimeType } = await fetchImageAsBase64(imageUrl);
+    return await analyzeImage(base64, mimeType);
   } catch (err: any) {
     throw new Error(`이미지 분석 실패: ${err.message}`);
   }
@@ -111,27 +218,7 @@ export async function analyzeBase64ImageToPrompt(
   mimeType: "image/jpeg" | "image/png" | "image/webp" = "image/jpeg"
 ): Promise<AnalysisResult> {
   try {
-    const dataUrl = `data:${mimeType};base64,${base64Data}`;
-    const response = await invokeLLM({
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: { url: dataUrl, detail: "high" },
-            },
-            {
-              type: "text",
-              text: ANALYSIS_PROMPT,
-            },
-          ],
-        },
-      ],
-    });
-    const rawContent = response.choices?.[0]?.message?.content || "";
-    const text = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
-    return parseResponse(text);
+    return await analyzeImage(base64Data, mimeType);
   } catch (err: any) {
     throw new Error(`이미지 분석 실패: ${err.message}`);
   }

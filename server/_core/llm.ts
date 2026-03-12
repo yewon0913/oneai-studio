@@ -1,4 +1,9 @@
-import { ENV } from "./env";
+/**
+ * LLM invoke helper — Anthropic Claude / Google Gemini 기반
+ * (Manus Forge / OpenAI 의존 제거)
+ */
+
+import Anthropic from "@anthropic-ai/sdk";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -110,223 +115,208 @@ export type ResponseFormat =
   | { type: "json_object" }
   | { type: "json_schema"; json_schema: JsonSchema };
 
-const ensureArray = (
-  value: MessageContent | MessageContent[]
-): MessageContent[] => (Array.isArray(value) ? value : [value]);
+// ─── 이미지 URL → base64 변환 ────────────────────────────
 
-const normalizeContentPart = (
-  part: MessageContent
-): TextContent | ImageContent | FileContent => {
-  if (typeof part === "string") {
-    return { type: "text", text: part };
+async function imageUrlToBase64(url: string): Promise<{ data: string; mediaType: string } | null> {
+  // data: URI는 직접 파싱
+  if (url.startsWith("data:")) {
+    const match = url.match(/^data:(image\/\w+);base64,(.+)$/);
+    if (match) return { data: match[2], mediaType: match[1] };
+    return null;
   }
 
-  if (part.type === "text") {
-    return part;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const contentType = res.headers.get("content-type") || "image/jpeg";
+    const buf = Buffer.from(await res.arrayBuffer());
+    return { data: buf.toString("base64"), mediaType: contentType.split(";")[0] };
+  } catch {
+    return null;
+  }
+}
+
+// ─── OpenAI 형식 메시지 → Anthropic 형식 변환 ───────────
+
+function extractSystemPrompt(messages: Message[]): string {
+  return messages
+    .filter(m => m.role === "system")
+    .map(m => {
+      if (typeof m.content === "string") return m.content;
+      const arr = Array.isArray(m.content) ? m.content : [m.content];
+      return arr.map(p => (typeof p === "string" ? p : p.type === "text" ? p.text : "")).join("\n");
+    })
+    .join("\n\n");
+}
+
+async function convertToAnthropicContent(
+  content: MessageContent | MessageContent[]
+): Promise<Anthropic.ContentBlockParam[]> {
+  const parts = Array.isArray(content) ? content : [content];
+  const result: Anthropic.ContentBlockParam[] = [];
+
+  for (const part of parts) {
+    if (typeof part === "string") {
+      result.push({ type: "text", text: part });
+    } else if (part.type === "text") {
+      result.push({ type: "text", text: part.text });
+    } else if (part.type === "image_url") {
+      const img = await imageUrlToBase64(part.image_url.url);
+      if (img) {
+        result.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: img.mediaType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+            data: img.data,
+          },
+        });
+      }
+    }
+    // file_url 은 무시 (이미지 분석에선 불필요)
   }
 
-  if (part.type === "image_url") {
-    return part;
-  }
+  return result;
+}
 
-  if (part.type === "file_url") {
-    return part;
-  }
+// ─── Anthropic Claude로 실행 ─────────────────────────────
 
-  throw new Error("Unsupported message content part");
-};
+async function invokeWithClaude(params: InvokeParams): Promise<InvokeResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
 
-const normalizeMessage = (message: Message) => {
-  const { role, name, tool_call_id } = message;
+  const client = new Anthropic({ apiKey });
+  const systemPrompt = extractSystemPrompt(params.messages);
+  const userMessages = params.messages.filter(m => m.role !== "system");
 
-  if (role === "tool" || role === "function") {
-    const content = ensureArray(message.content)
-      .map(part => (typeof part === "string" ? part : JSON.stringify(part)))
-      .join("\n");
-
-    return {
-      role,
-      name,
-      tool_call_id,
+  const anthropicMessages: Anthropic.MessageParam[] = [];
+  for (const msg of userMessages) {
+    const content = await convertToAnthropicContent(msg.content);
+    anthropicMessages.push({
+      role: msg.role === "assistant" ? "assistant" : "user",
       content,
-    };
+    });
   }
 
-  const contentParts = ensureArray(message.content).map(normalizeContentPart);
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: params.maxTokens || params.max_tokens || 4096,
+    ...(systemPrompt ? { system: systemPrompt } : {}),
+    messages: anthropicMessages,
+  });
 
-  // If there's only text content, collapse to a single string for compatibility
-  if (contentParts.length === 1 && contentParts[0].type === "text") {
-    return {
-      role,
-      name,
-      content: contentParts[0].text,
-    };
-  }
+  const textContent = response.content
+    .filter(b => b.type === "text")
+    .map(b => b.type === "text" ? b.text : "")
+    .join("");
 
   return {
-    role,
-    name,
-    content: contentParts,
-  };
-};
-
-const normalizeToolChoice = (
-  toolChoice: ToolChoice | undefined,
-  tools: Tool[] | undefined
-): "none" | "auto" | ToolChoiceExplicit | undefined => {
-  if (!toolChoice) return undefined;
-
-  if (toolChoice === "none" || toolChoice === "auto") {
-    return toolChoice;
-  }
-
-  if (toolChoice === "required") {
-    if (!tools || tools.length === 0) {
-      throw new Error(
-        "tool_choice 'required' was provided but no tools were configured"
-      );
-    }
-
-    if (tools.length > 1) {
-      throw new Error(
-        "tool_choice 'required' needs a single tool or specify the tool name explicitly"
-      );
-    }
-
-    return {
-      type: "function",
-      function: { name: tools[0].function.name },
-    };
-  }
-
-  if ("name" in toolChoice) {
-    return {
-      type: "function",
-      function: { name: toolChoice.name },
-    };
-  }
-
-  return toolChoice;
-};
-
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
-
-const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
-  }
-};
-
-const normalizeResponseFormat = ({
-  responseFormat,
-  response_format,
-  outputSchema,
-  output_schema,
-}: {
-  responseFormat?: ResponseFormat;
-  response_format?: ResponseFormat;
-  outputSchema?: OutputSchema;
-  output_schema?: OutputSchema;
-}):
-  | { type: "json_schema"; json_schema: JsonSchema }
-  | { type: "text" }
-  | { type: "json_object" }
-  | undefined => {
-  const explicitFormat = responseFormat || response_format;
-  if (explicitFormat) {
-    if (
-      explicitFormat.type === "json_schema" &&
-      !explicitFormat.json_schema?.schema
-    ) {
-      throw new Error(
-        "responseFormat json_schema requires a defined schema object"
-      );
-    }
-    return explicitFormat;
-  }
-
-  const schema = outputSchema || output_schema;
-  if (!schema) return undefined;
-
-  if (!schema.name || !schema.schema) {
-    throw new Error("outputSchema requires both name and schema");
-  }
-
-  return {
-    type: "json_schema",
-    json_schema: {
-      name: schema.name,
-      schema: schema.schema,
-      ...(typeof schema.strict === "boolean" ? { strict: schema.strict } : {}),
+    id: response.id,
+    created: Date.now(),
+    model: response.model,
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content: textContent,
+        },
+        finish_reason: response.stop_reason || "stop",
+      },
+    ],
+    usage: {
+      prompt_tokens: response.usage?.input_tokens || 0,
+      completion_tokens: response.usage?.output_tokens || 0,
+      total_tokens: (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0),
     },
   };
-};
+}
 
-export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  assertApiKey();
+// ─── Google Gemini로 실행 (폴백) ─────────────────────────
 
-  const {
-    messages,
-    tools,
-    toolChoice,
-    tool_choice,
-    outputSchema,
-    output_schema,
-    responseFormat,
-    response_format,
-  } = params;
+async function invokeWithGemini(params: InvokeParams): Promise<InvokeResult> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
 
-  const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
-    messages: messages.map(normalizeMessage),
-  };
+  const systemPrompt = extractSystemPrompt(params.messages);
+  const userMessages = params.messages.filter(m => m.role !== "system");
 
-  if (tools && tools.length > 0) {
-    payload.tools = tools;
+  const parts: Array<{ text: string } | { inline_data: { mime_type: string; data: string } }> = [];
+
+  for (const msg of userMessages) {
+    const contentArr = Array.isArray(msg.content) ? msg.content : [msg.content];
+    for (const part of contentArr) {
+      if (typeof part === "string") {
+        parts.push({ text: part });
+      } else if (part.type === "text") {
+        parts.push({ text: part.text });
+      } else if (part.type === "image_url") {
+        const img = await imageUrlToBase64(part.image_url.url);
+        if (img) {
+          parts.push({ inline_data: { mime_type: img.mediaType, data: img.data } });
+        }
+      }
+    }
   }
 
-  const normalizedToolChoice = normalizeToolChoice(
-    toolChoice || tool_choice,
-    tools
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...(systemPrompt ? { systemInstruction: { parts: [{ text: systemPrompt }] } } : {}),
+        contents: [{ parts }],
+        generationConfig: {
+          maxOutputTokens: params.maxTokens || params.max_tokens || 4096,
+        },
+      }),
+    }
   );
-  if (normalizedToolChoice) {
-    payload.tool_choice = normalizedToolChoice;
-  }
-
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
-  }
-
-  const normalizedResponseFormat = normalizeResponseFormat({
-    responseFormat,
-    response_format,
-    outputSchema,
-    output_schema,
-  });
-
-  if (normalizedResponseFormat) {
-    payload.response_format = normalizedResponseFormat;
-  }
-
-  const response = await fetch(resolveApiUrl(), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
-    );
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Gemini API failed (${response.status}): ${detail}`);
   }
 
-  return (await response.json()) as InvokeResult;
+  const result = await response.json();
+  const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+  return {
+    id: `gemini-${Date.now()}`,
+    created: Date.now(),
+    model: "gemini-2.0-flash",
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content: text },
+        finish_reason: "stop",
+      },
+    ],
+  };
+}
+
+// ─── 메인: Claude → Gemini 폴백 ─────────────────────────
+
+export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
+  // 1차: Anthropic Claude
+  if (process.env.ANTHROPIC_API_KEY) {
+    try {
+      return await invokeWithClaude(params);
+    } catch (err: any) {
+      console.warn(`[llm] Claude 실패: ${err.message?.slice(0, 120)} → Gemini 폴백`);
+    }
+  }
+
+  // 2차: Google Gemini
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      return await invokeWithGemini(params);
+    } catch (err: any) {
+      console.warn(`[llm] Gemini 실패: ${err.message?.slice(0, 120)}`);
+      throw err;
+    }
+  }
+
+  throw new Error("LLM 사용 불가: ANTHROPIC_API_KEY 또는 GEMINI_API_KEY가 필요합니다");
 }
