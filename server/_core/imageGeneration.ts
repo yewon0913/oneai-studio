@@ -1,22 +1,13 @@
 /**
- * Image generation helper using internal ImageService
+ * Image generation helper — FAL AI (Flux) 기반
+ * Forge API 의존 제거, FAL_KEY 환경변수 사용
  *
- * Example usage:
- *   const { url: imageUrl } = await generateImage({
- *     prompt: "A serene landscape with mountains"
- *   });
- *
- * For editing:
- *   const { url: imageUrl } = await generateImage({
- *     prompt: "Add a rainbow to this landscape",
- *     originalImages: [{
- *       url: "https://example.com/original.jpg",
- *       mimeType: "image/jpeg"
- *     }]
- *   });
+ * - 텍스트만: flux-dev (text-to-image)
+ * - 참조 이미지 포함: flux-dev/image-to-image
  */
+
+import { fal } from "@fal-ai/client";
 import { storagePut } from "server/storage";
-import { ENV } from "./env";
 
 export type GenerateImageOptions = {
   prompt: string;
@@ -31,118 +22,114 @@ export type GenerateImageResponse = {
   url?: string;
 };
 
+function ensureFalConfig() {
+  const key = process.env.FAL_KEY;
+  if (!key) throw new Error("FAL_KEY is not configured");
+  fal.config({ credentials: key });
+}
+
+/**
+ * 참조 이미지 → FAL이 접근 가능한 URL로 변환
+ * base64 데이터는 FAL storage에 업로드
+ */
+async function resolveImageUrl(img: {
+  url?: string;
+  b64Json?: string;
+  mimeType?: string;
+}): Promise<string | null> {
+  if (img.url) return img.url;
+  if (img.b64Json) {
+    const mime = img.mimeType || "image/png";
+    const ext = mime.includes("jpeg") || mime.includes("jpg") ? "jpg" : "png";
+    const buffer = Buffer.from(img.b64Json, "base64");
+    const { url } = await storagePut(
+      `generated/ref-${Date.now()}.${ext}`,
+      buffer,
+      mime
+    );
+    return url;
+  }
+  return null;
+}
+
 export async function generateImage(
   options: GenerateImageOptions
 ): Promise<GenerateImageResponse> {
-  if (!ENV.forgeApiUrl) {
-    throw new Error("BUILT_IN_FORGE_API_URL is not configured");
-  }
-  if (!ENV.forgeApiKey) {
-    throw new Error("BUILT_IN_FORGE_API_KEY is not configured");
-  }
+  ensureFalConfig();
 
-  // Build the full URL by appending the service path to the base URL
-  const baseUrl = ENV.forgeApiUrl.endsWith("/")
-    ? ENV.forgeApiUrl
-    : `${ENV.forgeApiUrl}/`;
-  const fullUrl = new URL(
-    "images.v1.ImageService/GenerateImage",
-    baseUrl
-  ).toString();
-
-  // Convert originalImages to snake_case format expected by the API
-  const originalImagesPayload = (options.originalImages || []).map(img => {
-    const item: Record<string, string> = {};
-    if (img.url) item.url = img.url;
-    if (img.b64Json) item.b64_json = img.b64Json;
-    if (img.mimeType) item.mime_type = img.mimeType;
-    return item;
-  });
-
-  // Truncate prompt to prevent BAD_REQUEST from overly long prompts
   let prompt = options.prompt;
-  if (prompt.length > 1000) {
-    prompt = prompt.substring(0, 997) + "...";
+  if (prompt.length > 2000) {
+    prompt = prompt.substring(0, 1997) + "...";
   }
 
-  console.log(`[ImageGen] Prompt length: ${prompt.length}, Images: ${originalImagesPayload.length}`);
+  const refImages = options.originalImages || [];
 
-  const response = await fetch(fullUrl, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-      "connect-protocol-version": "1",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
-    },
-    body: JSON.stringify({
-      prompt,
-      original_images: originalImagesPayload,
-    }),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    console.error(`[ImageGen] API Error ${response.status}: ${detail.substring(0, 500)}`);
-    
-    // If BAD_REQUEST with original images, retry without them
-    if (response.status === 400 && originalImagesPayload.length > 0) {
-      console.warn("[ImageGen] Retrying without original images...");
-      const retryResponse = await fetch(fullUrl, {
-        method: "POST",
-        headers: {
-          accept: "application/json",
-          "content-type": "application/json",
-          "connect-protocol-version": "1",
-          authorization: `Bearer ${ENV.forgeApiKey}`,
-        },
-        body: JSON.stringify({
-          prompt,
-          original_images: [],
-        }),
-      });
-
-      if (!retryResponse.ok) {
-        const retryDetail = await retryResponse.text().catch(() => "");
-        throw new Error(
-          `Image generation request failed (${retryResponse.status} ${retryResponse.statusText})${retryDetail ? `: ${retryDetail}` : ""}`
-        );
-      }
-
-      const retryResult = (await retryResponse.json()) as {
-        image: { b64Json: string; mimeType: string };
-      };
-      const retryBase64 = retryResult.image.b64Json;
-      const retryBuffer = Buffer.from(retryBase64, "base64");
-      const { url: retryUrl } = await storagePut(
-        `generated/${Date.now()}.png`,
-        retryBuffer,
-        retryResult.image.mimeType
-      );
-      return { url: retryUrl };
+  // 참조 이미지가 있으면 image-to-image, 없으면 text-to-image
+  if (refImages.length > 0) {
+    const imageUrl = await resolveImageUrl(refImages[0]);
+    if (imageUrl) {
+      return generateImageToImage(prompt, imageUrl);
     }
-
-    throw new Error(
-      `Image generation request failed (${response.status} ${response.statusText})${detail ? `: ${detail}` : ""}`
-    );
   }
 
-  const result = (await response.json()) as {
-    image: {
-      b64Json: string;
-      mimeType: string;
-    };
-  };
-  const base64Data = result.image.b64Json;
-  const buffer = Buffer.from(base64Data, "base64");
+  return generateTextToImage(prompt);
+}
 
-  // Save to S3
-  const { url } = await storagePut(
-    `generated/${Date.now()}.png`,
-    buffer,
-    result.image.mimeType
-  );
-  return {
-    url,
-  };
+/**
+ * Text-to-image: fal-ai/flux/dev
+ */
+async function generateTextToImage(prompt: string): Promise<GenerateImageResponse> {
+  console.log(`[ImageGen] FAL text-to-image, prompt length: ${prompt.length}`);
+
+  try {
+    const result = await fal.subscribe("fal-ai/flux/dev" as any, {
+      input: {
+        prompt,
+        num_inference_steps: 28,
+        guidance_scale: 3.5,
+        image_size: "landscape_4_3",
+        enable_safety_checker: false,
+      } as any,
+    });
+
+    const url = (result as any)?.data?.images?.[0]?.url;
+    if (!url) throw new Error("FAL 응답에 이미지 URL 없음");
+
+    return { url };
+  } catch (err: any) {
+    console.error(`[ImageGen] FAL text-to-image 실패:`, err.message?.slice(0, 200));
+    throw new Error(`이미지 생성 실패: ${err.message}`);
+  }
+}
+
+/**
+ * Image-to-image: fal-ai/flux/dev/image-to-image
+ */
+async function generateImageToImage(
+  prompt: string,
+  referenceUrl: string
+): Promise<GenerateImageResponse> {
+  console.log(`[ImageGen] FAL image-to-image, prompt length: ${prompt.length}`);
+
+  try {
+    const result = await fal.subscribe("fal-ai/flux/dev/image-to-image" as any, {
+      input: {
+        prompt,
+        image_url: referenceUrl,
+        strength: 0.75,
+        num_inference_steps: 28,
+        guidance_scale: 3.5,
+        enable_safety_checker: false,
+      } as any,
+    });
+
+    const url = (result as any)?.data?.images?.[0]?.url;
+    if (!url) throw new Error("FAL 응답에 이미지 URL 없음");
+
+    return { url };
+  } catch (err: any) {
+    // image-to-image 실패 시 text-to-image로 폴백
+    console.warn(`[ImageGen] image-to-image 실패, text-to-image로 폴백:`, err.message?.slice(0, 100));
+    return generateTextToImage(prompt);
+  }
 }
