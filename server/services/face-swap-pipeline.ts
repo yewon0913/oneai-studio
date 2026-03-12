@@ -120,7 +120,7 @@ async function runReactor(
 
 async function runCodeFormer(
   imageBuffer: Buffer,
-  fidelity: number = 0.8
+  fidelity: number = 0.85
 ): Promise<Buffer> {
   const jpeg = await sharp(imageBuffer).jpeg({ quality: 95 }).toBuffer();
 
