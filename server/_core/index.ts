@@ -3,7 +3,7 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerOAuthRoutes } from "./oauth";
+// import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -37,8 +37,8 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  // OAuth callback under /api/oauth/callback
-  registerOAuthRoutes(app);
+  // OAuth callback under /api/oauth/callback (disabled for Railway)
+  // registerOAuthRoutes(app);
   // Couple Composite API
   app.use('/api/couple-composite', coupleCompositeRouter);
   // Face Swap API
@@ -62,16 +62,24 @@ async function startServer() {
     serveStatic(app);
   }
 
-  const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
+  // Railway injects PORT env var — use it directly without port scanning
+  const port = parseInt(process.env.PORT || "3000");
 
-  if (port !== preferredPort) {
-    console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
+  if (process.env.PORT) {
+    // Railway: use exact PORT, bind to 0.0.0.0
+    server.listen(port, "0.0.0.0", () => {
+      console.log(`Server running on http://0.0.0.0:${port}/`);
+    });
+  } else {
+    // Local dev: find available port
+    const availablePort = await findAvailablePort(port);
+    if (availablePort !== port) {
+      console.log(`Port ${port} is busy, using port ${availablePort} instead`);
+    }
+    server.listen(availablePort, () => {
+      console.log(`Server running on http://localhost:${availablePort}/`);
+    });
   }
-
-  server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
-  });
 }
 
 startServer().catch(console.error);

@@ -1,5 +1,5 @@
 import { eq, desc, and, like, sql, isNull } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/node-postgres";
 import {
   InsertUser, users,
   clients, InsertClient, Client,
@@ -53,7 +53,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     else if (user.openId === ENV.ownerOpenId) { values.role = 'admin'; updateSet.role = 'admin'; }
     if (!values.lastSignedIn) values.lastSignedIn = new Date();
     if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
-    await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+    await db.insert(users).values(values).onConflictDoUpdate({ target: users.openId, set: updateSet });
   } catch (error) { console.error("[Database] Failed to upsert user:", error); throw error; }
 }
 
@@ -68,8 +68,8 @@ export async function getUserByOpenId(openId: string) {
 export async function createClient(data: InsertClient) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(clients).values(data);
-  return { id: result[0].insertId };
+  const result = await db.insert(clients).values(data).returning({ id: clients.id });
+  return { id: result[0].id };
 }
 
 export async function getClientsByUser(userId: number, search?: string) {
@@ -103,8 +103,8 @@ export async function deleteClient(id: number) {
 export async function createClientPhoto(data: InsertClientPhoto) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(clientPhotos).values(data);
-  return { id: result[0].insertId };
+  const result = await db.insert(clientPhotos).values(data).returning({ id: clientPhotos.id });
+  return { id: result[0].id };
 }
 
 export async function getClientPhotos(clientId: number) {
@@ -123,8 +123,8 @@ export async function deleteClientPhoto(id: number) {
 export async function createProject(data: InsertProject) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(projects).values(data);
-  return { id: result[0].insertId };
+  const result = await db.insert(projects).values(data).returning({ id: projects.id });
+  return { id: result[0].id };
 }
 
 export async function getProjectsByUser(userId: number, clientId?: number) {
@@ -164,8 +164,8 @@ export async function deleteProject(id: number) {
 export async function createPrompt(data: InsertPromptLibraryItem) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(promptLibrary).values(data);
-  return { id: result[0].insertId };
+  const result = await db.insert(promptLibrary).values(data).returning({ id: promptLibrary.id });
+  return { id: result[0].id };
 }
 
 export async function getPrompts(userId: number, category?: string) {
@@ -204,8 +204,8 @@ export async function deletePrompt(id: number) {
 export async function createGeneration(data: InsertGeneration) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(generations).values(data);
-  return { id: result[0].insertId };
+  const result = await db.insert(generations).values(data).returning({ id: generations.id });
+  return { id: result[0].id };
 }
 
 export async function getGenerationsByProject(projectId: number) {
@@ -254,8 +254,8 @@ export async function getReviewQueueByProject(projectId: number) {
 export async function createBatchJob(data: InsertBatchJob) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(batchJobs).values(data);
-  return { id: result[0].insertId };
+  const result = await db.insert(batchJobs).values(data).returning({ id: batchJobs.id });
+  return { id: result[0].id };
 }
 
 export async function getBatchJobs(userId: number) {
@@ -280,8 +280,8 @@ export async function updateBatchJob(id: number, data: Partial<InsertBatchJob>) 
 export async function createBatchJobItem(data: InsertBatchJobItem) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(batchJobItems).values(data);
-  return { id: result[0].insertId };
+  const result = await db.insert(batchJobItems).values(data).returning({ id: batchJobItems.id });
+  return { id: result[0].id };
 }
 
 export async function getBatchJobItems(batchJobId: number) {
@@ -300,8 +300,8 @@ export async function updateBatchJobItem(id: number, data: Partial<InsertBatchJo
 export async function createDeliveryPackage(data: InsertDeliveryPackage) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(deliveryPackages).values(data);
-  return { id: result[0].insertId };
+  const result = await db.insert(deliveryPackages).values(data).returning({ id: deliveryPackages.id });
+  return { id: result[0].id };
 }
 
 export async function getDeliveryPackagesByProject(projectId: number) {
@@ -320,8 +320,8 @@ export async function updateDeliveryPackage(id: number, data: Partial<InsertDeli
 export async function createVideoConversion(data: InsertVideoConversion) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(videoConversions).values(data);
-  return { id: result[0].insertId };
+  const result = await db.insert(videoConversions).values(data).returning({ id: videoConversions.id });
+  return { id: result[0].id };
 }
 
 export async function getVideoConversionsByProject(projectId: number) {
@@ -353,8 +353,8 @@ export async function deleteVideoConversion(id: number) {
 export async function createPhotoRestoration(data: InsertPhotoRestoration) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(photoRestorations).values(data);
-  return { id: result[0].insertId };
+  const result = await db.insert(photoRestorations).values(data).returning({ id: photoRestorations.id });
+  return { id: result[0].id };
 }
 
 export async function getPhotoRestorationsByClient(clientId: number) {
@@ -373,8 +373,8 @@ export async function updatePhotoRestoration(id: number, data: Partial<InsertPho
 export async function createNotification(data: InsertNotification) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(notifications).values(data);
-  return { id: result[0].insertId };
+  const result = await db.insert(notifications).values(data).returning({ id: notifications.id });
+  return { id: result[0].id };
 }
 
 export async function getNotifications(userId: number, unreadOnly?: boolean) {
