@@ -15,6 +15,7 @@ import { beautyRouter } from "./routers/beauty-router";
 import { memoryRouter } from "./routers/memory-router";
 import { coupleRouter } from "./routers/couple-router";
 import { geminiWeddingRouter } from "./routers/gemini-wedding-router";
+import { weddingRouter } from "./routers/wedding-router";
 import { buildPrompt, type Gender, type Concept, type AgeGroup } from "./services/prompt-engine";
 
 // ─── 핀터레스트/외부 URL에서 실제 이미지를 다운로드하여 base64로 변환 ───
@@ -1143,6 +1144,7 @@ JSON 배열로만 답해 (다른 텍스트 없이):
   memory: memoryRouter,
   couple: coupleRouter,
   geminiWedding: geminiWeddingRouter,
+  wedding: weddingRouter,
 });
 
 // ─── 영상 생성 비동기 처리 ───
