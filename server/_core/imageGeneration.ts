@@ -9,6 +9,7 @@
  * 생성된 이미지는 FAL Storage에 업로드하여 공개 URL 반환
  */
 
+import sharp from "sharp";
 import { storagePut } from "server/storage";
 
 // ─── Types ────────────────────────────────────────────────
@@ -206,8 +207,25 @@ export async function generateImage(
     for (const img of refImages) {
       const resolved = await resolveImageToBase64(img);
       if (resolved) {
+        // 512px 리사이즈: 긴 쪽이 512px 넘으면 축소하여 Gemini 토큰 절약 + 얼굴 인식 최적화
+        let resizedData = resolved.data;
+        try {
+          const buf = Buffer.from(resolved.data, "base64");
+          const meta = await sharp(buf).metadata();
+          const longer = Math.max(meta.width || 0, meta.height || 0);
+          if (longer > 512) {
+            const resized = await sharp(buf)
+              .resize({ width: 512, height: 512, fit: "inside", withoutEnlargement: true })
+              .jpeg({ quality: 90 })
+              .toBuffer();
+            resizedData = resized.toString("base64");
+            console.log(`[ImageGen] 참조 이미지 리사이즈: ${meta.width}x${meta.height} → 512px`);
+          }
+        } catch (resizeErr: any) {
+          console.warn(`[ImageGen] 리사이즈 실패 (원본 사용): ${resizeErr.message?.slice(0, 80)}`);
+        }
         parts.push({
-          inlineData: { mimeType: resolved.mimeType, data: resolved.data },
+          inlineData: { mimeType: "image/jpeg", data: resizedData },
         });
       }
     }

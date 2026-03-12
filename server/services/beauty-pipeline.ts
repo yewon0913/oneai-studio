@@ -20,6 +20,8 @@ export interface BeautyGenerateInput {
   customNegative?: string;
   outputCount?: number;
   expressionVariant?: number;
+  /** IP-Adapter 얼굴 일관성 강화 (기본 false) */
+  faceLock?: boolean;
 }
 
 export interface BeautyGenerateOutput {
@@ -260,7 +262,8 @@ export async function generateBeautyImages(
 
   console.log("[beauty-v4]", outputCount, "장 생성 시작...");
 
-  for (let i = 0; i < outputCount; i++) {
+  // 각 이미지 생성 태스크를 함수로 정의
+  const generateOne = async (i: number): Promise<string | null> => {
     let currentPrompt = finalPrompt;
     if (i > 0 && !input.customPrompt) {
       const nextVariant = (analysis.expressionVariant + i) % 6;
@@ -296,22 +299,33 @@ export async function generateBeautyImages(
       }
 
       if (generatedBase64) {
-        // IP-Adapter 얼굴 일관성 (선택적)
-        const ipResult = await runIpAdapterFace(
-          generatedBase64,
-          input.imageBase64,
-          mimeType,
-        );
-
-        const finalBase64 = ipResult || generatedBase64;
-        images.push(`data:image/jpeg;base64,${finalBase64}`);
+        // IP-Adapter 얼굴 일관성 (faceLock 활성화 시에만)
+        let finalBase64 = generatedBase64;
+        if (input.faceLock) {
+          const ipResult = await runIpAdapterFace(
+            generatedBase64,
+            input.imageBase64,
+            mimeType,
+          );
+          finalBase64 = ipResult || generatedBase64;
+        }
         console.log(`[beauty-v4] ${i + 1}번 완료`);
+        return `data:image/jpeg;base64,${finalBase64}`;
       } else {
         console.warn(`[beauty-v4] ${i + 1}번 이미지 없음 (모든 모델 실패)`);
+        return null;
       }
     } catch (err) {
       console.error(`[beauty-v4] ${i + 1}번 에러:`, err);
+      return null;
     }
+  };
+
+  // outputCount >= 2이면 Promise.all로 병렬 실행
+  const tasks = Array.from({ length: outputCount }, (_, i) => generateOne(i));
+  const results = await Promise.all(tasks);
+  for (const r of results) {
+    if (r) images.push(r);
   }
 
   if (images.length === 0) throw new Error("모든 이미지 생성 실패");
