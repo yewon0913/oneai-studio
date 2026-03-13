@@ -156,46 +156,46 @@ interface CameraSettings {
 
 const CAMERA: Record<string, CameraSettings> = {
   wedding: {
-    lens: "85mm prime lens",
-    aperture: "f/1.8",
+    lens: "NIKKOR 85mm",
+    aperture: "f/2.8",
     angle: "eye-level slightly below chin",
-    extra: "shallow depth of field, creamy bokeh background, shot on Canon R5",
+    extra: "Nikon Z9, ISO 100, 1/200s, natural depth, background detail preserved",
   },
   profile: {
-    lens: "85mm portrait lens",
-    aperture: "f/2.8",
+    lens: "RF 85mm",
+    aperture: "f/3.5",
     angle: "eye-level direct",
-    extra: "medium depth of field, sharp focus on eyes, shot on Sony A7IV",
+    extra: "Canon EOS R5, ISO 200, 1/160s, background detail preserved, sharp focus on eyes",
   },
   beauty: {
-    lens: "100mm macro portrait lens",
-    aperture: "f/2.0",
+    lens: "85mm",
+    aperture: "f/2.8",
     angle: "eye-level to slight high angle",
-    extra: "razor-sharp focus on face, skin texture visible, shot on Hasselblad X2D",
+    extra: "Sony A7III, ISO 200, 1/200s, moderate bokeh, venue visible, skin texture visible",
   },
   outdoor: {
-    lens: "50mm prime lens",
-    aperture: "f/1.8",
-    angle: "eye-level",
-    extra: "environmental bokeh, natural depth separation, shot on Nikon Z8",
-  },
-  couple: {
-    lens: "35mm prime lens",
-    aperture: "f/2.0",
-    angle: "eye-level to slight low angle",
-    extra: "both subjects in focus, environmental context, shot on Canon R5",
-  },
-  kids: {
-    lens: "50mm prime lens",
-    aperture: "f/2.0",
-    angle: "child's eye-level (low angle)",
-    extra: "fast shutter speed, bright natural tones, candid moment",
-  },
-  default: {
-    lens: "85mm lens",
+    lens: "85mm",
     aperture: "f/2.8",
     angle: "eye-level",
-    extra: "sharp focus, professional quality",
+    extra: "Sony A7III, ISO 200, 1/200s, moderate bokeh, venue visible, natural depth",
+  },
+  couple: {
+    lens: "80mm",
+    aperture: "f/4.0",
+    angle: "eye-level to slight low angle",
+    extra: "Hasselblad X2D, ISO 100, controlled depth of field, both subjects in focus, environmental context",
+  },
+  kids: {
+    lens: "RF 85mm",
+    aperture: "f/3.5",
+    angle: "child's eye-level (low angle)",
+    extra: "Canon EOS R5, ISO 200, 1/160s, fast shutter speed, bright natural tones, candid moment",
+  },
+  default: {
+    lens: "NIKKOR 85mm",
+    aperture: "f/2.8",
+    angle: "eye-level",
+    extra: "Nikon Z9, ISO 100, 1/200s, natural depth",
   },
 };
 
@@ -384,7 +384,7 @@ Natural skin texture with subtle pores visible.
 Micro skin texture preserved — NOT smoothed out.
 Natural sebum and light interaction on skin.
 Skin must look like DSLR photo, NOT 3D render.
-Shot on Sony A7III, 85mm f/1.8, RAW file, natural skin reproduction.
+Shot on Sony A7III, 85mm f/2.8, RAW file, natural skin reproduction.
 AVOID: plastic skin, porcelain finish, over-smoothed AI texture, perfectly uniform skin tone.
 
 NATURAL EYES — CRITICAL:
@@ -591,7 +591,7 @@ const CONCEPT_PRESETS: Record<ConceptPreset, ConceptPresetData> = {
       "dramatic Rembrandt lighting with key softbox at 45 degrees camera-left, " +
       "strong rim light from behind creating shoulder and hair edge separation, " +
       "minimal fill for dramatic shadow contrast on face",
-    camera: "85mm f/2.0, eye-level direct, sharp focus on eyes, shot on Sony A7RV",
+    camera: "85mm f/2.8, eye-level direct, sharp focus on eyes, shot on Sony A7RV, ISO 200, 1/200s, moderate bokeh",
     attireOverride:
       "black turtleneck or black dress shirt with visible cotton knit texture, " +
       "clothing blending into dark background for face-focused composition",
@@ -602,7 +602,7 @@ const CONCEPT_PRESETS: Record<ConceptPreset, ConceptPresetData> = {
     lighting:
       "golden hour side-light at 30 degrees, warm rim light on hair, " +
       "natural fill from open sky, soft shadows",
-    camera: "50mm f/1.8, eye-level, shallow depth of field, shot on Nikon Z8",
+    camera: "50mm f/2.8, eye-level, moderate bokeh, venue visible, shot on Nikon Z8, ISO 200, 1/200s",
     attireOverride:
       "casual jacket or denim with visible fabric texture, " +
       "natural outdoor styling, relaxed collar",
@@ -613,7 +613,7 @@ const CONCEPT_PRESETS: Record<ConceptPreset, ConceptPresetData> = {
     lighting:
       "overcast winter daylight with soft cool directional light from sky, " +
       "subtle warm reflection from buildings, natural winter color palette",
-    camera: "35mm f/2.0, slight low angle, environmental framing, shot on Canon R5",
+    camera: "35mm f/3.5, slight low angle, environmental framing, shot on Canon EOS R5, ISO 200, 1/160s, background detail preserved",
     attireOverride:
       "wool overcoat or padded jacket with visible texture, " +
       "knit scarf with fiber detail, winter layers with natural bulkiness",
@@ -624,7 +624,7 @@ const CONCEPT_PRESETS: Record<ConceptPreset, ConceptPresetData> = {
     lighting:
       "large window soft daylight from camera-left, " +
       "warm ambient interior fill, natural catchlights",
-    camera: "50mm f/1.8, eye-level, medium close-up, shot on Fujifilm X-T5",
+    camera: "50mm f/2.8, eye-level, medium close-up, shot on Fujifilm X-T5, ISO 200, 1/200s, moderate bokeh",
     attireOverride:
       "casual t-shirt or hoodie with visible cotton texture, " +
       "relaxed everyday fit, natural fabric drape",
@@ -638,7 +638,7 @@ const CONCEPT_PRESETS: Record<ConceptPreset, ConceptPresetData> = {
       "butterfly beauty lighting with large octabox above, " +
       "white bounce below chin for under-eye fill, " +
       "subtle rim light for hair separation",
-    camera: "85mm f/2.8, eye-level direct, razor-sharp focus on eyes, shot on Sony A7IV",
+    camera: "85mm f/3.5, eye-level direct, razor-sharp focus on eyes, shot on Sony A7IV, ISO 200, 1/160s, background detail preserved",
     attireOverride:
       "professional blouse or elegant minimal top, " +
       "visible fabric texture, clean neckline framing face",
@@ -649,7 +649,7 @@ const CONCEPT_PRESETS: Record<ConceptPreset, ConceptPresetData> = {
     lighting:
       "golden hour backlight with warm rim glow on hair, " +
       "natural fill from open sky, dappled light through leaves",
-    camera: "50mm f/1.8, eye-level, shallow depth of field with environmental bokeh, shot on Nikon Z8",
+    camera: "50mm f/2.8, eye-level, moderate bokeh, venue visible, shot on Nikon Z8, ISO 200, 1/200s",
     attireOverride:
       "flowing casual dress or blouse with cardigan, visible cotton/linen texture, " +
       "clothing catching gentle breeze naturally",
@@ -661,7 +661,7 @@ const CONCEPT_PRESETS: Record<ConceptPreset, ConceptPresetData> = {
       "large window soft daylight with warm interior fill, " +
       "careful lighting to minimize glasses reflection, " +
       "soft catchlights visible through lenses",
-    camera: "85mm f/2.0, eye-level, sharp focus on eyes through glasses, shot on Canon R5",
+    camera: "85mm f/2.8, eye-level, sharp focus on eyes through glasses, shot on Canon EOS R5, ISO 200, 1/200s, moderate bokeh",
     attireOverride:
       "casual-smart outfit — knit sweater or collar shirt, " +
       "visible fabric texture, intellectual styling",
@@ -676,7 +676,7 @@ const CONCEPT_PRESETS: Record<ConceptPreset, ConceptPresetData> = {
       "large white bounce below, " +
       "subtle warm hair light from behind, " +
       "bright clean illumination emphasizing skin",
-    camera: "100mm f/2.0, slight high angle for flattering perspective, shot on Hasselblad X2D",
+    camera: "80mm f/4.0, slight high angle for flattering perspective, shot on Hasselblad X2D, ISO 100, controlled depth of field",
     attireOverride:
       "white or cream minimal top or bare shoulders, " +
       "clean styling to emphasize face and skin quality",
@@ -687,7 +687,7 @@ const CONCEPT_PRESETS: Record<ConceptPreset, ConceptPresetData> = {
     lighting:
       "soft window-style key light with warm color temperature, " +
       "gentle fill creating soft shadows, cozy intimate atmosphere",
-    camera: "85mm f/1.8, eye-level slightly below chin, soft bokeh, shot on Sony A7IV",
+    camera: "85mm f/2.8, eye-level slightly below chin, moderate bokeh, venue visible, shot on Sony A7IV, ISO 200, 1/200s",
     attireOverride:
       "colorful oversized knit sweater with visible yarn and cable-knit texture, " +
       "soft chunky wool fabric, warm autumnal or pastel color, " +
@@ -726,7 +726,11 @@ const UNIFIED_NEGATIVE =
   "(plastic or porcelain skin:1.9), " +
   "(perfectly round catchlight:1.7), " +
   "(watermark:1.9), (text overlay:1.9), " +
-  "(low resolution:1.8), (blurry:1.7)";
+  "(low resolution:1.8), (blurry:1.7), " +
+  "(extreme bokeh:1.8), (complete background blur:1.8), " +
+  "(background completely out of focus:1.7), " +
+  "(excessive depth of field separation:1.7), " +
+  "(artificial lens blur:1.8), (tilt-shift effect:1.6)";
 
 function getNegativePrompt(concept: Concept, gender: Gender, customNegative?: string): string {
   if (customNegative) return customNegative;
@@ -917,7 +921,7 @@ Natural skin texture with subtle pores visible.
 Micro skin texture preserved — NOT smoothed out.
 Natural sebum and light interaction on skin.
 Skin must look like DSLR photo, NOT 3D render.
-Shot on Sony A7III, 85mm f/1.8, RAW file, natural skin reproduction.
+Shot on Sony A7III, 85mm f/2.8, RAW file, natural skin reproduction.
 AVOID: plastic skin, porcelain finish, over-smoothed AI texture, perfectly uniform skin tone.
 
 NATURAL EYES — CRITICAL:
@@ -956,6 +960,7 @@ function buildLayer3_Concept(block: MasterPromptInput["conceptBlock"]): string {
   parts.push(`Lighting: ${block.lighting}`);
   if (block.camera) parts.push(`Camera: ${block.camera}`);
   if (block.mood) parts.push(`Mood: ${block.mood}`);
+  parts.push(`Moderate depth of field — background slightly soft but venue/environment still recognizable. NOT extreme bokeh. Background adds context, not distraction.`);
   return parts.join("\n");
 }
 
@@ -1103,6 +1108,7 @@ export function buildPrompt(input: PromptEngineInput): PromptEngineOutput {
     }
 
     stage2Parts.push(`Shot on ${cam.extra}, ${cam.lens}, ${cam.aperture}`);
+    stage2Parts.push("Moderate depth of field — background slightly soft but venue/environment still recognizable. NOT extreme bokeh. Background adds context, not distraction.");
 
     // 참조 이미지 모드
     if (hasReferenceImage) {

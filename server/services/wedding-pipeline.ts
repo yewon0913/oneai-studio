@@ -88,22 +88,22 @@ const CONCEPTS: Record<WeddingConcept, ConceptConfig> = {
   white_studio: {
     background: "clean white seamless studio backdrop with luminous gradient, minimalist elegant",
     lighting: "soft window backlight creating ethereal glow, butterfly beauty lighting with large octabox, white bounce below chin, subtle hair rim light",
-    camera: "Shot on Canon EOS R5, 85mm f/1.8, shallow depth of field, creamy bokeh, 8K",
+    camera: "Shot on Nikon Z9, NIKKOR 85mm f/2.8, ISO 100, 1/200s, natural depth, background detail preserved. Moderate depth of field — background slightly soft but venue/environment still recognizable. NOT extreme bokeh.",
   },
   outdoor_garden: {
-    background: "beautiful outdoor garden at golden hour, cherry blossom trees, warm golden sunlight filtering through leaves, soft bokeh greenery, romantic spring atmosphere",
+    background: "beautiful outdoor garden at golden hour, cherry blossom trees, warm golden sunlight filtering through leaves, romantic spring atmosphere",
     lighting: "golden hour natural backlight at 15-degree angle, warm rim light on hair, soft directional shadows, gentle breeze moving veil and hair",
-    camera: "Shot on Nikon Z9, 85mm f/1.4, golden hour warmth, environmental bokeh, 8K",
+    camera: "Shot on Canon EOS R5, RF 85mm f/3.5, ISO 200, 1/160s, background detail preserved, golden hour warmth. Moderate depth of field — venue/environment still recognizable. NOT extreme bokeh.",
   },
   european_chapel: {
     background: "historic European stone chapel interior, vaulted ceiling, stained glass windows casting jewel-toned light, white lilies along aisle, candlelit ambiance, sacred intimate atmosphere",
     lighting: "warm stained glass window light mixed with candlelight, dramatic directional illumination, soft shadows, warm color temperature 4500K",
-    camera: "Shot on Sony A7R V, 85mm f/2.0, cinematic depth, architectural framing, 8K",
+    camera: "Shot on Sony A7III, 85mm f/2.8, ISO 200, 1/200s, moderate bokeh, venue visible, architectural framing. Moderate depth of field — chapel interior still recognizable. NOT extreme bokeh.",
   },
   grand_hall: {
     background: "opulent grand hotel ballroom, 10-meter crystal chandeliers, white marble floors reflecting light, ivory floral installations, luxury editorial interior",
     lighting: "crystal chandelier warm prismatic light, high-key elegant illumination, subtle reflections from marble floor, even front fill",
-    camera: "Shot on Hasselblad X2D, 80mm f/2.8, medium format quality, extraordinary dynamic range, 8K",
+    camera: "Shot on Hasselblad X2D, 80mm f/4.0, ISO 100, controlled depth of field, medium format quality. Moderate depth of field — ballroom details still recognizable. NOT extreme bokeh.",
   },
 };
 
@@ -256,7 +256,7 @@ Natural skin texture with subtle pores visible.
 Micro skin texture preserved — NOT smoothed out.
 Natural sebum and light interaction on skin.
 Skin must look like DSLR photo, NOT 3D render.
-Shot on Sony A7III, 85mm f/1.8, RAW file, natural skin reproduction.
+Shot on Sony A7III, 85mm f/2.8, RAW file, natural skin reproduction.
 AVOID: plastic skin, porcelain finish, over-smoothed AI texture, perfectly uniform skin tone.
 
 NATURAL EYES — CRITICAL:
@@ -310,7 +310,11 @@ const STAGE4_NEGATIVE =
   "(plastic or porcelain skin:1.9), " +
   "(perfectly round catchlight:1.7), " +
   "(watermark:1.9), (text overlay:1.9), " +
-  "(low resolution:1.8), (blurry:1.7)";
+  "(low resolution:1.8), (blurry:1.7), " +
+  "(extreme bokeh:1.8), (complete background blur:1.8), " +
+  "(background completely out of focus:1.7), " +
+  "(excessive depth of field separation:1.7), " +
+  "(artificial lens blur:1.8), (tilt-shift effect:1.6)";
 
 // ── [Primary] FLUX.2 LoRA 이미지 생성 ────────────────────
 
