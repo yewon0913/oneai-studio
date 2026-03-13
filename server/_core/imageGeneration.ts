@@ -146,7 +146,7 @@ export async function resolveImageToBase64(img: {
       const contentType = res.headers.get("content-type") || img.mimeType || "image/png";
       return { data: buffer.toString("base64"), mimeType: contentType };
     } catch (err: any) {
-      console.warn(`[ImageGen] 참조 이미지 다운로드 실패: ${err.message?.slice(0, 100)}`);
+      console.warn(`[FLUX.2] 참조 이미지 다운로드 실패: ${err.message?.slice(0, 100)}`);
       return null;
     }
   }
@@ -291,7 +291,7 @@ export async function generateImage(
   const geminiParts: GeminiPart[] = [];
 
   if (refImages.length > 0) {
-    console.log(`[ImageGen] 참조 이미지 ${refImages.length}장 처리`);
+    console.log(`[FLUX.2] 참조 이미지 ${refImages.length}장 처리`);
     for (const img of refImages) {
       const resolved = await resolveImageToBase64(img);
       if (resolved) {
@@ -312,10 +312,10 @@ export async function generateImage(
               .jpeg({ quality: 90 })
               .toBuffer();
             resizedData = resized.toString("base64");
-            console.log(`[ImageGen] 참조 이미지 리사이즈: ${meta.width}x${meta.height} → 512px`);
+            console.log(`[FLUX.2] 참조 이미지 리사이즈: ${meta.width}x${meta.height} → 512px`);
           }
         } catch (resizeErr: any) {
-          console.warn(`[ImageGen] 리사이즈 실패 (원본 사용): ${resizeErr.message?.slice(0, 80)}`);
+          console.warn(`[FLUX.2] 리사이즈 실패 (원본 사용): ${resizeErr.message?.slice(0, 80)}`);
         }
         geminiParts.push({
           inlineData: { mimeType: "image/jpeg", data: resizedData },
