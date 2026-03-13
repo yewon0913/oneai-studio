@@ -1,12 +1,13 @@
 /**
- * Beauty Pipeline v4.0 - Nano Banana Pro + IP-Adapter
+ * Beauty Pipeline v5.0 - FLUX.2 LoRA Primary + Gemini/FLUX Pro Fallback
  *
  * ⚠️  beauty-analyzer-standalone.ts 사용 — shared-analyzer.ts와 완전 분리
  *
- * v4 업그레이드:
- * 1. Gemini Nano Banana Pro (gemini-3-pro-image-preview) 이미지 생성
- * 2. FAL IP-Adapter Face ID 얼굴 일관성 강화
- * 3. FLUX.2 LoRA 폴백
+ * v5 업그레이드:
+ * 1. FLUX.2 LoRA (fal-ai/flux-2/lora) — Primary 이미지 생성
+ * 2. Gemini Nano Banana Pro — Fallback #1
+ * 3. FLUX Pro v1.1 (fal-ai/flux-pro/v1.1) — Fallback #2
+ * 4. FAL IP-Adapter Face ID 얼굴 일관성 강화
  */
 
 import { analyzeBeautyImage } from "./beauty-analyzer-standalone";
@@ -159,15 +160,51 @@ async function runIpAdapterFace(
   }
 }
 
-// ─── Gemini Nano Banana Pro 이미지 생성 ─────────────────
+// ─── [Primary] FLUX.2 LoRA 이미지 생성 ──────────────────
 
-async function generateWithGemini(
+async function generateWithFluxPrimary(
+  imageDataUrl: string,
+  prompt: string,
+  negativePrompt: string,
+): Promise<string | null> {
+  try {
+    console.log("[beauty-v5] FLUX.2 LoRA (Primary) 생성 중...");
+    const result = await falRun("fal-ai/flux-2/lora", {
+      prompt,
+      negative_prompt: negativePrompt,
+      image_url: imageDataUrl,
+      strength: 0.75,
+      num_inference_steps: 28,
+      guidance_scale: 7.5,
+      image_size: { width: 1024, height: 1024 },
+      enable_safety_checker: false,
+      seed: Math.floor(Math.random() * 999999),
+    });
+
+    const imageUrl = (result?.images as Array<{ url: string }>)?.[0]?.url;
+    if (imageUrl) {
+      const res = await fetch(imageUrl);
+      const buffer = Buffer.from(await res.arrayBuffer());
+      console.log("[beauty-v5] FLUX.2 LoRA 성공");
+      return buffer.toString("base64");
+    }
+    return null;
+  } catch (err: any) {
+    console.warn(`[beauty-v5] FLUX.2 LoRA 실패: ${err.message?.slice(0, 100)}`);
+    return null;
+  }
+}
+
+// ─── [Fallback #1] Gemini Nano Banana Pro ────────────────
+
+async function generateWithGeminiFallback(
   imageBase64: string,
   mimeType: string,
   prompt: string,
   negativePrompt: string,
 ): Promise<string | null> {
   try {
+    console.log("[beauty-v5] Gemini (Fallback #1) 시도...");
     const clean = imageBase64.includes(",") ? imageBase64.split(",")[1] : imageBase64;
 
     const parts: GeminiPart[] = [
@@ -179,54 +216,47 @@ async function generateWithGemini(
 
     const response = await callGemini(parts);
     const { data } = extractImageBase64(response);
-    console.log("[beauty-v4] Gemini 이미지 생성 성공");
+    console.log("[beauty-v5] Gemini 성공");
     return data;
   } catch (err: any) {
-    console.warn(`[beauty-v4] Gemini 실패: ${err.message?.slice(0, 100)}`);
+    console.warn(`[beauty-v5] Gemini 실패: ${err.message?.slice(0, 100)}`);
     return null;
   }
 }
 
-// ─── FLUX.2 LoRA 폴백 ───────────────────────────────────
+// ─── [Fallback #2] FLUX Pro v1.1 ────────────────────────
 
-async function generateWithFluxFallback(
+async function generateWithFluxProFallback(
   imageDataUrl: string,
   prompt: string,
   negativePrompt: string,
 ): Promise<string | null> {
-  // FLUX.2 LoRA → flux/dev 폴백
-  const models = ["fal-ai/flux-2/lora", "fal-ai/flux/dev/image-to-image"];
+  try {
+    console.log("[beauty-v5] FLUX Pro v1.1 (Fallback #2) 시도...");
+    const result = await falRun("fal-ai/flux-pro/v1.1", {
+      prompt,
+      negative_prompt: negativePrompt,
+      image_url: imageDataUrl,
+      strength: 0.70,
+      num_inference_steps: 28,
+      guidance_scale: 7.0,
+      image_size: { width: 1024, height: 1024 },
+      enable_safety_checker: false,
+      seed: Math.floor(Math.random() * 999999),
+    });
 
-  for (const modelId of models) {
-    try {
-      console.log(`[beauty-v4] ${modelId} 폴백 시도...`);
-      const result = await falRun(modelId, {
-        prompt,
-        image_url: imageDataUrl,
-        strength: 0.50,
-        num_inference_steps: 35,
-        guidance_scale: 6.0,
-        enable_safety_checker: false,
-        width: 832,
-        height: 1216,
-        negative_prompt: negativePrompt,
-        seed: Math.floor(Math.random() * 999999),
-      });
-
-      const imageUrl = (result?.images as Array<{ url: string }>)?.[0]?.url;
-      if (imageUrl) {
-        const res = await fetch(imageUrl);
-        const buffer = Buffer.from(await res.arrayBuffer());
-        console.log(`[beauty-v4] ${modelId} 성공`);
-        return buffer.toString("base64");
-      }
-    } catch (err: any) {
-      console.warn(`[beauty-v4] ${modelId} 실패: ${err.message?.slice(0, 80)}`);
-      continue;
+    const imageUrl = (result?.images as Array<{ url: string }>)?.[0]?.url;
+    if (imageUrl) {
+      const res = await fetch(imageUrl);
+      const buffer = Buffer.from(await res.arrayBuffer());
+      console.log("[beauty-v5] FLUX Pro v1.1 성공");
+      return buffer.toString("base64");
     }
+    return null;
+  } catch (err: any) {
+    console.warn(`[beauty-v5] FLUX Pro v1.1 실패: ${err.message?.slice(0, 80)}`);
+    return null;
   }
-
-  return null;
 }
 
 // ─── 메인 함수 ──────────────────────────────────────────
@@ -234,7 +264,7 @@ async function generateWithFluxFallback(
 export async function generateBeautyImages(
   input: BeautyGenerateInput
 ): Promise<BeautyGenerateOutput> {
-  console.log("[beauty-v4] 시작 (Nano Banana Pro + IP-Adapter)...");
+  console.log("[beauty-v5] 시작 (FLUX.2 LoRA Primary + Gemini/FLUX Pro Fallback)...");
 
   // 1. Claude Vision으로 실제 분석
   const analysis = await analyzeBeautyImage(
@@ -242,7 +272,7 @@ export async function generateBeautyImages(
     input.mimeType || "image/jpeg"
   );
 
-  console.log("[beauty-v4] 분석 완료:", {
+  console.log("[beauty-v5] 분석 완료:", {
     skinTone: analysis.skinTone,
     estimatedAge: analysis.estimatedAge,
     hasGlasses: analysis.hasGlasses,
@@ -263,7 +293,7 @@ export async function generateBeautyImages(
   const outputCount = input.outputCount || 2;
   const images: string[] = [];
 
-  console.log("[beauty-v4]", outputCount, "장 생성 시작...");
+  console.log("[beauty-v5]", outputCount, "장 생성 시작...");
 
   // 각 이미지 생성 태스크를 함수로 정의
   const generateOne = async (i: number): Promise<string | null> => {
@@ -282,19 +312,28 @@ export async function generateBeautyImages(
     }
 
     try {
-      console.log(`[beauty-v4] ${i + 1}/${outputCount} 생성 중...`);
+      console.log(`[beauty-v5] ${i + 1}/${outputCount} 생성 중...`);
 
-      // Gemini Nano Banana Pro 시도
-      let generatedBase64 = await generateWithGemini(
-        input.imageBase64,
-        mimeType,
+      // [Primary] FLUX.2 LoRA
+      let generatedBase64 = await generateWithFluxPrimary(
+        imageDataUrl,
         currentPrompt,
         finalNegative,
       );
 
-      // Gemini 실패 시 FLUX.2 LoRA 폴백
+      // [Fallback #1] Gemini
       if (!generatedBase64) {
-        generatedBase64 = await generateWithFluxFallback(
+        generatedBase64 = await generateWithGeminiFallback(
+          input.imageBase64,
+          mimeType,
+          currentPrompt,
+          finalNegative,
+        );
+      }
+
+      // [Fallback #2] FLUX Pro v1.1
+      if (!generatedBase64) {
+        generatedBase64 = await generateWithFluxProFallback(
           imageDataUrl,
           currentPrompt,
           finalNegative,
@@ -312,14 +351,14 @@ export async function generateBeautyImages(
           );
           finalBase64 = ipResult || generatedBase64;
         }
-        console.log(`[beauty-v4] ${i + 1}번 완료`);
+        console.log(`[beauty-v5] ${i + 1}번 완료`);
         return `data:image/jpeg;base64,${finalBase64}`;
       } else {
-        console.warn(`[beauty-v4] ${i + 1}번 이미지 없음 (모든 모델 실패)`);
+        console.warn(`[beauty-v5] ${i + 1}번 이미지 없음 (모든 모델 실패)`);
         return null;
       }
     } catch (err) {
-      console.error(`[beauty-v4] ${i + 1}번 에러:`, err);
+      console.error(`[beauty-v5] ${i + 1}번 에러:`, err);
       return null;
     }
   };
@@ -333,7 +372,7 @@ export async function generateBeautyImages(
 
   if (images.length === 0) throw new Error("모든 이미지 생성 실패");
 
-  console.log(`[beauty-v4] 완료: ${images.length}/${outputCount}`);
+  console.log(`[beauty-v5] 완료: ${images.length}/${outputCount}`);
 
   return {
     images,
