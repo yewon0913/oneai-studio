@@ -1,10 +1,10 @@
 /**
- * Image generation helper — Google Gemini Nano Banana Pro 기반
+ * Image generation helper v2.0 — FLUX.2 LoRA Primary + Gemini/FLUX Pro Fallback
  *
  * 모델 우선순위:
- *   1. gemini-3-pro-image-preview (Nano Banana Pro — 최고 품질)
- *   2. gemini-2.5-flash-image (빠른 폴백)
- *   3. gemini-2.0-flash-exp (레거시 폴백)
+ *   1. FLUX.2 LoRA (fal-ai/flux-2/lora) — Primary
+ *   2. Gemini (gemini-3-pro-image-preview → flash → exp) — Fallback #1
+ *   3. FLUX Pro v1.1 (fal-ai/flux-pro/v1.1) — Fallback #2
  *
  * 생성된 이미지는 FAL Storage에 업로드하여 공개 URL 반환
  */
@@ -22,7 +22,7 @@ export type GenerateImageOptions = {
     b64Json?: string;
     mimeType?: string;
   }>;
-  /** 참조 이미지 기반 image-to-image 변환 강도 (0~1, 기본 0.65) */
+  /** 참조 이미지 기반 image-to-image 변환 강도 (0~1, 기본 0.75) */
   strength?: number;
   /** 얼굴 보존 모드 — guidance/steps 강화 */
   faceFixMode?: boolean;
@@ -33,6 +33,29 @@ export type GenerateImageOptions = {
 export type GenerateImageResponse = {
   url?: string;
 };
+
+// ─── FAL REST API ─────────────────────────────────────────
+
+async function falRun(
+  modelId: string,
+  input: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const falKey = process.env.FAL_KEY;
+  if (!falKey) throw new Error("FAL_KEY not set");
+
+  const res = await fetch(`https://fal.run/${modelId}`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Key ${falKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  const text = await res.text();
+  if (!res.ok) throw new Error(`${modelId} failed ${res.status}: ${text.slice(0, 300)}`);
+  return JSON.parse(text);
+}
 
 // ─── Gemini API 호출 ─────────────────────────────────────
 
@@ -79,7 +102,7 @@ export async function callGemini(
   let lastError = "";
   for (const model of GEMINI_MODELS) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    console.log(`[ImageGen] Gemini ${model} 호출 (parts: ${parts.length})`);
+    console.log(`[Gemini] ${model} 호출 (parts: ${parts.length})`);
 
     const res = await fetch(url, {
       method: "POST",
@@ -90,7 +113,7 @@ export async function callGemini(
     const text = await res.text();
     if (!res.ok) {
       lastError = `${model} failed ${res.status}: ${text.slice(0, 200)}`;
-      console.warn(`[ImageGen] ${lastError}`);
+      console.warn(`[Gemini] ${lastError}`);
       if (res.status === 404) continue;
       throw new Error(`Gemini API failed ${res.status}: ${text.slice(0, 300)}`);
     }
@@ -159,7 +182,7 @@ export async function extractImageUrl(response: GeminiResponse): Promise<string>
     mimeType
   );
 
-  console.log(`[ImageGen] Gemini 이미지 업로드 완료: ${url.slice(0, 80)}...`);
+  console.log(`[Gemini] 이미지 업로드 완료: ${url.slice(0, 80)}...`);
   return url;
 }
 
@@ -181,6 +204,70 @@ export function extractImageBase64(response: GeminiResponse): { data: string; mi
   return { data: imagePart.inlineData.data, mimeType: imagePart.inlineData.mimeType };
 }
 
+// ─── [Primary] FLUX.2 LoRA ────────────────────────────────
+
+async function generateWithFlux2(
+  prompt: string,
+  negativePrompt: string | undefined,
+  refImageDataUrl: string | undefined,
+  strength: number,
+): Promise<string> {
+  console.log("[FLUX.2] Primary 생성 시도...");
+
+  const input: Record<string, unknown> = {
+    prompt,
+    image_size: { width: 1024, height: 1024 },
+    num_inference_steps: 28,
+    guidance_scale: 7.5,
+    enable_safety_checker: false,
+    seed: Math.floor(Math.random() * 999999),
+  };
+  if (negativePrompt) input.negative_prompt = negativePrompt;
+  if (refImageDataUrl) {
+    input.image_url = refImageDataUrl;
+    input.strength = strength;
+  }
+
+  const result = await falRun("fal-ai/flux-2/lora", input);
+  const imageUrl = (result?.images as Array<{ url: string }>)?.[0]?.url;
+  if (!imageUrl) throw new Error("FLUX.2 응답에 이미지 URL 없음");
+
+  console.log("[FLUX.2] Primary 성공");
+  return imageUrl;
+}
+
+// ─── [Fallback #2] FLUX Pro v1.1 ─────────────────────────
+
+async function generateWithFluxPro(
+  prompt: string,
+  negativePrompt: string | undefined,
+  refImageDataUrl: string | undefined,
+  strength: number,
+): Promise<string> {
+  console.log("[FLUX Pro] Fallback #2 시도...");
+
+  const input: Record<string, unknown> = {
+    prompt,
+    image_size: { width: 1024, height: 1024 },
+    num_inference_steps: 28,
+    guidance_scale: 7.0,
+    enable_safety_checker: false,
+    seed: Math.floor(Math.random() * 999999),
+  };
+  if (negativePrompt) input.negative_prompt = negativePrompt;
+  if (refImageDataUrl) {
+    input.image_url = refImageDataUrl;
+    input.strength = strength;
+  }
+
+  const result = await falRun("fal-ai/flux-pro/v1.1", input);
+  const imageUrl = (result?.images as Array<{ url: string }>)?.[0]?.url;
+  if (!imageUrl) throw new Error("FLUX Pro 응답에 이미지 URL 없음");
+
+  console.log("[FLUX Pro] Fallback #2 성공");
+  return imageUrl;
+}
+
 // ─── 메인 함수 ──────────────────────────────────────────
 
 export async function generateImage(
@@ -191,23 +278,29 @@ export async function generateImage(
     prompt = prompt.substring(0, 1000);
   }
 
-  if (options.negativePrompt) {
-    prompt = `${prompt}\n\nAvoid: ${options.negativePrompt}`;
-  }
+  const negativePrompt = options.negativePrompt;
+  const strength = options.strength ?? 0.75;
 
   if (options.faceFixMode) {
     prompt = `${prompt}\n\nIMPORTANT: Preserve facial features exactly. Maintain face identity, expression, and proportions precisely.`;
   }
 
+  // 참조 이미지 준비
   const refImages = options.originalImages || [];
-  const parts: GeminiPart[] = [];
+  let refImageDataUrl: string | undefined;
+  const geminiParts: GeminiPart[] = [];
 
   if (refImages.length > 0) {
     console.log(`[ImageGen] 참조 이미지 ${refImages.length}장 처리`);
     for (const img of refImages) {
       const resolved = await resolveImageToBase64(img);
       if (resolved) {
-        // 512px 리사이즈: 긴 쪽이 512px 넘으면 축소하여 Gemini 토큰 절약 + 얼굴 인식 최적화
+        // FLUX용: 첫 번째 참조 이미지를 data URL로
+        if (!refImageDataUrl) {
+          refImageDataUrl = `data:${resolved.mimeType};base64,${resolved.data}`;
+        }
+
+        // Gemini용: 512px 리사이즈
         let resizedData = resolved.data;
         try {
           const buf = Buffer.from(resolved.data, "base64");
@@ -224,30 +317,52 @@ export async function generateImage(
         } catch (resizeErr: any) {
           console.warn(`[ImageGen] 리사이즈 실패 (원본 사용): ${resizeErr.message?.slice(0, 80)}`);
         }
-        parts.push({
+        geminiParts.push({
           inlineData: { mimeType: "image/jpeg", data: resizedData },
         });
       }
     }
   }
 
-  parts.push({ text: prompt });
-
-  if (parts.length === 0) {
-    throw new Error("프롬프트 또는 참조 이미지가 필요합니다");
+  // ── [1] FLUX.2 LoRA Primary ──
+  try {
+    const url = await generateWithFlux2(prompt, negativePrompt, refImageDataUrl, strength);
+    return { url };
+  } catch (fluxError: any) {
+    console.log("[FLUX.2 실패 원인]:", fluxError?.message || fluxError);
   }
 
+  // ── [2] Gemini Fallback #1 ──
   try {
-    const response = await callGemini(parts);
+    console.log("[Gemini] Fallback #1 시도...");
+    let geminiPrompt = prompt;
+    if (negativePrompt) {
+      geminiPrompt = `${prompt}\n\nAvoid: ${negativePrompt}`;
+    }
 
+    const parts: GeminiPart[] = [...geminiParts, { text: geminiPrompt }];
+    if (parts.length === 0) {
+      throw new Error("프롬프트 또는 참조 이미지가 필요합니다");
+    }
+
+    const response = await callGemini(parts);
     if (response.error) {
       throw new Error(`Gemini error: ${response.error.message}`);
     }
 
     const url = await extractImageUrl(response);
     return { url };
-  } catch (err: any) {
-    console.error(`[ImageGen] Gemini 이미지 생성 실패: ${err.message?.slice(0, 200)}`);
-    throw err;
+  } catch (geminiError: any) {
+    console.log("[Gemini 실패 원인]:", geminiError?.message || geminiError);
   }
+
+  // ── [3] FLUX Pro v1.1 Fallback #2 ──
+  try {
+    const url = await generateWithFluxPro(prompt, negativePrompt, refImageDataUrl, strength);
+    return { url };
+  } catch (fluxProError: any) {
+    console.log("[FLUX Pro 실패 원인]:", fluxProError?.message || fluxProError);
+  }
+
+  throw new Error("모든 이미지 생성 모델 실패 (FLUX.2 → Gemini → FLUX Pro)");
 }
