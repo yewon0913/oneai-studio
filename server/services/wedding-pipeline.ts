@@ -1,5 +1,5 @@
 /**
- * Wedding Pipeline v1.0 — 솔로/커플 웨딩 이미지 생성
+ * Wedding Pipeline v2.0 — FLUX.2 LoRA Primary + Gemini/FLUX Pro Fallback
  *
  * 4단계 프롬프트 구조:
  *   [1] 인물 정보 + CRITICAL FACE PRESERVATION
@@ -8,7 +8,8 @@
  *   [4] NEGATIVE
  *
  * 파이프라인:
- *   Gemini 3 Pro → FLUX.2 LoRA fallback → CodeFormer (fidelity 0.85)
+ *   FLUX.2 LoRA (Primary) → Gemini (Fallback #1) → FLUX Pro v1.1 (Fallback #2)
+ *   → CodeFormer (fidelity 0.78) → Film Grain
  *
  * ⛔ beauty-pipeline.ts, couple-pipeline.ts, face-swap-pipeline.ts 미수정
  */
@@ -311,13 +312,49 @@ const STAGE4_NEGATIVE =
   "(watermark:1.9), (text overlay:1.9), " +
   "(low resolution:1.8), (blurry:1.7)";
 
-// ── Gemini 이미지 생성 ───────────────────────────────────
+// ── [Primary] FLUX.2 LoRA 이미지 생성 ────────────────────
 
-async function generateWithGemini(
+async function generateWithFluxPrimary(
+  prompt: string,
+  negativePrompt: string,
+  refImageDataUrl: string,
+): Promise<string | null> {
+  try {
+    console.log("[wedding-v2] FLUX.2 LoRA (Primary) 생성 중...");
+    const result = await falRun("fal-ai/flux-2/lora", {
+      prompt,
+      negative_prompt: negativePrompt,
+      image_url: refImageDataUrl,
+      strength: 0.75,
+      num_inference_steps: 28,
+      guidance_scale: 7.5,
+      image_size: { width: 1024, height: 1024 },
+      enable_safety_checker: false,
+      seed: Math.floor(Math.random() * 999999),
+    });
+
+    const imageUrl = (result?.images as Array<{ url: string }>)?.[0]?.url;
+    if (imageUrl) {
+      const res = await fetch(imageUrl);
+      const buffer = Buffer.from(await res.arrayBuffer());
+      console.log("[wedding-v2] FLUX.2 LoRA 성공");
+      return buffer.toString("base64");
+    }
+    return null;
+  } catch (err: any) {
+    console.warn(`[wedding-v2] FLUX.2 LoRA 실패: ${err.message?.slice(0, 100)}`);
+    return null;
+  }
+}
+
+// ── [Fallback #1] Gemini ─────────────────────────────────
+
+async function generateWithGeminiFallback(
   prompt: string,
   refImages: { base64: string; mimeType: string }[],
 ): Promise<string | null> {
   try {
+    console.log("[wedding-v2] Gemini (Fallback #1) 시도...");
     const parts: GeminiPart[] = [];
 
     // 참조 이미지 먼저 (얼굴 인식 최적화)
@@ -330,51 +367,47 @@ async function generateWithGemini(
 
     const response = await callGemini(parts);
     const { data } = extractImageBase64(response);
-    console.log("[wedding] Gemini 생성 성공");
+    console.log("[wedding-v2] Gemini 성공");
     return data;
   } catch (err: any) {
-    console.warn(`[wedding] Gemini 실패: ${err.message?.slice(0, 100)}`);
+    console.warn(`[wedding-v2] Gemini 실패: ${err.message?.slice(0, 100)}`);
     return null;
   }
 }
 
-// ── FLUX.2 LoRA fallback ─────────────────────────────────
+// ── [Fallback #2] FLUX Pro v1.1 ─────────────────────────
 
-async function generateWithFluxFallback(
+async function generateWithFluxProFallback(
   prompt: string,
+  negativePrompt: string,
   refImageDataUrl: string,
 ): Promise<string | null> {
-  const models = ["fal-ai/flux-2/lora", "fal-ai/flux/dev/image-to-image"];
+  try {
+    console.log("[wedding-v2] FLUX Pro v1.1 (Fallback #2) 시도...");
+    const result = await falRun("fal-ai/flux-pro/v1.1", {
+      prompt,
+      negative_prompt: negativePrompt,
+      image_url: refImageDataUrl,
+      strength: 0.70,
+      num_inference_steps: 28,
+      guidance_scale: 7.0,
+      image_size: { width: 1024, height: 1024 },
+      enable_safety_checker: false,
+      seed: Math.floor(Math.random() * 999999),
+    });
 
-  for (const modelId of models) {
-    try {
-      console.log(`[wedding] ${modelId} 폴백 시도...`);
-      const result = await falRun(modelId, {
-        prompt,
-        image_url: refImageDataUrl,
-        strength: 0.55,
-        num_inference_steps: 32,
-        guidance_scale: 5.0,
-        enable_safety_checker: false,
-        width: 832,
-        height: 1216,
-        seed: Math.floor(Math.random() * 999999),
-      });
-
-      const imageUrl = (result?.images as Array<{ url: string }>)?.[0]?.url;
-      if (imageUrl) {
-        const res = await fetch(imageUrl);
-        const buffer = Buffer.from(await res.arrayBuffer());
-        console.log(`[wedding] ${modelId} 성공`);
-        return buffer.toString("base64");
-      }
-    } catch (err: any) {
-      console.warn(`[wedding] ${modelId} 실패: ${err.message?.slice(0, 80)}`);
-      continue;
+    const imageUrl = (result?.images as Array<{ url: string }>)?.[0]?.url;
+    if (imageUrl) {
+      const res = await fetch(imageUrl);
+      const buffer = Buffer.from(await res.arrayBuffer());
+      console.log("[wedding-v2] FLUX Pro v1.1 성공");
+      return buffer.toString("base64");
     }
+    return null;
+  } catch (err: any) {
+    console.warn(`[wedding-v2] FLUX Pro v1.1 실패: ${err.message?.slice(0, 80)}`);
+    return null;
   }
-
-  return null;
 }
 
 // ── CodeFormer 선명화 (fidelity 0.78) ────────────────────
@@ -490,7 +523,7 @@ export async function generateWeddingImages(
     outputCount = 2,
   } = input;
 
-  console.log(`[wedding] 시작: mode=${mode}, concept=${concept}, count=${outputCount}`);
+  console.log(`[wedding-v2] 시작 (FLUX.2 Primary): mode=${mode}, concept=${concept}, count=${outputCount}`);
 
   // 참조 이미지 준비
   const refImages: { base64: string; mimeType: string }[] = [];
@@ -504,6 +537,12 @@ export async function generateWeddingImages(
   if (refImages.length === 0) {
     throw new Error("참조 이미지가 필요합니다 (신부 또는 신랑)");
   }
+
+  // 참조 이미지 data URL 준비 (FLUX용)
+  const firstRef = refImages[0];
+  const refDataUrl = firstRef.base64.startsWith("data:")
+    ? firstRef.base64
+    : `data:${firstRef.mimeType};base64,${firstRef.base64}`;
 
   // 4단계 프롬프트 조립
   const stage1 = buildStage1(mode, {
@@ -523,22 +562,25 @@ export async function generateWeddingImages(
   // 병렬 생성
   const generateOne = async (i: number): Promise<string | null> => {
     try {
-      console.log(`[wedding] ${i + 1}/${outputCount} 생성 중...`);
+      console.log(`[wedding-v2] ${i + 1}/${outputCount} 생성 중...`);
 
-      // Gemini 3 Pro 시도
-      let base64 = await generateWithGemini(fullPrompt, refImages);
+      // [Primary] FLUX.2 LoRA
+      let base64 = await generateWithFluxPrimary(fullPrompt, STAGE4_NEGATIVE, refDataUrl);
 
-      // FLUX.2 LoRA fallback
+      // [Fallback #1] Gemini
       if (!base64) {
-        const firstRef = refImages[0];
-        const dataUrl = firstRef.base64.startsWith("data:")
-          ? firstRef.base64
-          : `data:${firstRef.mimeType};base64,${firstRef.base64}`;
-        base64 = await generateWithFluxFallback(fullPrompt, dataUrl);
+        console.log("[wedding-v2] FLUX.2 실패, Gemini로 폴백");
+        base64 = await generateWithGeminiFallback(fullPrompt, refImages);
+      }
+
+      // [Fallback #2] FLUX Pro v1.1
+      if (!base64) {
+        console.log("[wedding-v2] Gemini 실패, FLUX Pro로 폴백");
+        base64 = await generateWithFluxProFallback(fullPrompt, STAGE4_NEGATIVE, refDataUrl);
       }
 
       if (!base64) {
-        console.warn(`[wedding] ${i + 1}번 이미지 생성 실패`);
+        console.warn(`[wedding-v2] ${i + 1}번 이미지 생성 실패 (모든 모델 실패)`);
         return null;
       }
 
@@ -548,10 +590,10 @@ export async function generateWeddingImages(
       // Film Grain 후처리
       base64 = await applyFilmGrain(base64);
 
-      console.log(`[wedding] ${i + 1}번 완료`);
+      console.log(`[wedding-v2] ${i + 1}번 완료`);
       return `data:image/jpeg;base64,${base64}`;
     } catch (err) {
-      console.error(`[wedding] ${i + 1}번 에러:`, err);
+      console.error(`[wedding-v2] ${i + 1}번 에러:`, err);
       return null;
     }
   };
@@ -564,7 +606,7 @@ export async function generateWeddingImages(
 
   if (images.length === 0) throw new Error("모든 웨딩 이미지 생성 실패");
 
-  console.log(`[wedding] 완료: ${images.length}/${outputCount}`);
+  console.log(`[wedding-v2] 완료: ${images.length}/${outputCount}`);
 
   return {
     images,
