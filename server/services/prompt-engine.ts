@@ -225,7 +225,7 @@ const EXPRESSION: Record<string, Record<string, string>> = {
       "composed confident expression, slight closed-lip smile, " +
       "direct eye contact with catchlights, " +
       "polished hair perfectly framing face, bangs style preserved from reference, " +
-      "natural warm cheek flush visible",
+      "natural healthy complexion",
     male:
       "confident professional expression, neutral-to-slight-smile, " +
       "direct steady gaze with original eye corner angle preserved, strong jawline visible, " +
@@ -236,7 +236,7 @@ const EXPRESSION: Record<string, Record<string, string>> = {
       "serene beauty expression, parted lips, " +
       "intense gaze slightly past camera, original eye size preserved exactly, " +
       "editorial hair with controlled movement and shine, bangs preserved, " +
-      "natural peach cheek flush, button nose preserved",
+      "natural healthy complexion, button nose preserved",
     male:
       "composed expression with slight intensity in gaze, " +
       "original eye corner angle and eye shape preserved, " +
@@ -248,7 +248,7 @@ const EXPRESSION: Record<string, Record<string, string>> = {
       "natural candid expression, mid-laugh or wind-swept smile, " +
       "eyes with genuine warmth, original eye size exactly, " +
       "hair flowing naturally with wind including loose baby hair and flyaways catching light, " +
-      "warm natural cheek color",
+      "natural healthy complexion",
     male:
       "relaxed natural expression, easy smile, " +
       "eyes looking into distance or at camera, original eye angle preserved, " +
@@ -258,7 +258,7 @@ const EXPRESSION: Record<string, Record<string, string>> = {
   couple: {
     female:
       "loving genuine smile looking at partner or camera, " +
-      "warm radiant expression, natural cheek flush, " +
+      "warm radiant expression, natural healthy complexion, " +
       "hair with soft natural movement, bangs and flyaways preserved",
     male:
       "warm protective smile, relaxed happy expression, " +
@@ -270,7 +270,7 @@ const EXPRESSION: Record<string, Record<string, string>> = {
     male: "bright joyful natural smile, sparkling eyes, playful expression, natural hair with flyaways",
   },
   default: {
-    female: "natural pleasant expression, soft smile, well-styled hair with bangs preserved, warm cheek flush",
+    female: "natural pleasant expression, soft smile, well-styled hair with bangs preserved, natural healthy complexion",
     male: "natural pleasant expression, composed look, neat black hair with natural volume",
   },
 };
@@ -351,7 +351,15 @@ Enhance by maximum 20~30% — no more. Same person. Better version. That's all.`
 
 const ENHANCEMENT_FEMALE = `FEMALE ENHANCEMENT — Natural Spoon:
 FACE: Same shape always — butterfly light placement creates natural slimming illusion WITHOUT changing structure.
-SKIN: Porcelain-free natural glow. Slight rosy bloom on cheeks — preserve this always. Under-eye: brighten only, no structure change.
+SKIN — NATURAL KOREAN WOMAN:
+Natural even warm skin tone.
+Remove blemishes and dark circles only.
+Subtle healthy complexion — NO rosy flush, NO pink cheeks.
+NO artificial color on cheeks whatsoever.
+Natural sebum texture preserved.
+Micro pores slightly visible — NOT porcelain smooth.
+Real DSLR photo skin reproduction — not 3D rendered skin.
+Under-eye: brighten only, no structure change.
 EYES: Natural catchlight + subtle lash definition. Warm, inviting, alive. Do NOT enlarge — just make them sparkle.
 LIPS: Naturally defined, slightly moisturized. Same color family as reference — just richer.
 HAIR: Glossy, smooth, voluminous version of her exact cut. Bangs must fall naturally.
@@ -359,7 +367,13 @@ The goal: "I want to look like this every day" — not "I wish I looked like her
 
 const ENHANCEMENT_MALE = `MALE ENHANCEMENT — Natural Spoon:
 JAW: Keep natural jawline — subtle shadow definition only. Do NOT slim or sharpen beyond reference.
-SKIN: Clean pores, even tone, slight healthy ruddiness. Men look best with subtle texture — NOT porcelain smooth.
+SKIN — NATURAL KOREAN MAN:
+Clean even natural skin tone, remove blemishes only.
+Natural male skin texture with subtle pores visible.
+NO over-smoothing, NO plastic finish, NO artificial flush.
+Natural outdoor ruddiness only if outdoor shot —
+NOT artificial pink or red color grading.
+Real DSLR photo skin — NOT CGI or rendered.
 EYES: Strong natural eye contact. Slight definition to brow shape — same shape, just cleaner.
 HAIR: Same style, maximum volume and shine. Natural movement preserved.
 LIGHTING: Side Rembrandt — brings out masculine bone structure without changing it.
@@ -412,7 +426,7 @@ function getSkinTexture(gender: Gender, ageGroup: AgeGroup): string {
       female:
         "youthful Korean skin with natural healthy glow, visible pores on nose and cheeks, " +
         "subtle natural blemishes and tiny moles, dewy translucent complexion, " +
-        "natural peach-pink cheek flush (볼 홍조), warm undertone. " +
+        "natural warm undertone, subtle healthy complexion. " +
         antiOverCorrection,
       male:
         "youthful Korean skin with visible pores especially around nose, natural oil on T-zone, " +
@@ -427,7 +441,7 @@ function getSkinTexture(gender: Gender, ageGroup: AgeGroup): string {
         "very fine lines near eyes (early crow's feet), " +
         "natural luminosity with warm golden-beige undertone, " +
         "light laugh lines beginning to form, " +
-        "subtle natural cheek warmth. " +
+        "natural even warm skin tone. " +
         antiOverCorrection,
       male:
         "mature Korean skin with visible pores and natural texture, " +
@@ -705,9 +719,17 @@ function getNegativePrompt(concept: Concept, gender: Gender, customNegative?: st
     parts.push(
       "(slimmed cheeks:1.5), (removed cheek volume:1.5), (V-line surgery look:1.5)",
       "(nose bridge heightened:1.5), (button nose removed:1.5), (eyes enlarged beyond reference:1.5)",
-      "(cheek flush removed:1.3), (bangs removed or changed:1.5)",
+      "(bangs removed or changed:1.5)",
     );
   }
+
+  // 홍조/인공 색상 방지
+  parts.push(
+    "rosy cheeks, pink flush, artificial color on cheeks",
+    "perfectly round catchlight (must be natural irregular)",
+    "different body type than reference",
+    "exaggerated muscles not in reference",
+  );
 
   // 컨셉별
   const conceptNeg: Record<string, string[]> = {
@@ -771,6 +793,8 @@ export interface MasterPromptInput {
     hairWaveType?: string;        // straight / wavy / curly
     hasBabyHair?: boolean;
     skinTextureCategory?: string; // smooth / natural / textured
+    glasses?: string;             // none / round-black / rectangle-black / round-gold / rectangle-clear / sunglasses
+    glasses_present?: boolean;
   };
   /** LAYER 3: 컨셉 블록 (매번 교체) */
   conceptBlock: {
@@ -845,6 +869,20 @@ function buildLayer1_FaceIdentityLock(
     layer += "\nGLASSES: keep exact same frame style, lens shape, color, and position.";
   }
 
+  // 안경 LOCK 블록 자동 삽입
+  if (analysis?.glasses_present) {
+    const glassesType = analysis.glasses || "prescription";
+    layer += `\n\nACCESSORIES IDENTITY LOCK:
+This person wears ${glassesType} glasses.
+Glasses are a CORE part of their identity.
+ALWAYS include glasses in EVERY single shot.
+REGARDLESS of outfit, background, or concept:
+Glasses must be present and clearly visible.
+Same frame shape and color as reference photo.
+Do NOT remove glasses for any reason.
+Do NOT replace with sunglasses unless specified.`;
+  }
+
   return layer;
 }
 
@@ -876,7 +914,7 @@ Iris texture: natural with subtle depth.
     return common + `\n
 BEST VERSION OF HERSELF:
 - Face shape unchanged — butterfly light creates natural slimming illusion only.
-- Skin: porcelain-free natural glow. Slight rosy cheek bloom preserved.
+- Skin: natural even warm skin tone. NO rosy flush, NO pink cheeks. NO artificial color on cheeks.
 - Eyes: natural sparkle, do NOT enlarge. Warm and alive.
 - Lips: naturally defined, slightly moisturized. Same color family.
 - Hair: glossy smooth version. Bangs fall naturally.
@@ -922,7 +960,14 @@ function buildMasterNegative(gender: Gender): string {
     ? ["(feminized male face:1.5)", "(softened jawline on male:1.5)", "(over-smoothed male skin:1.5)"]
     : ["(slimmed cheeks:1.5)", "(V-line surgery look:1.5)", "(eyes enlarged beyond reference:1.5)", "(button nose removed:1.5)"];
 
-  return [core, ...tech, ...genderNeg].join(", ");
+  const antiRosy = [
+    "rosy cheeks, pink flush, artificial color on cheeks",
+    "perfectly round catchlight (must be natural irregular)",
+    "different body type than reference",
+    "exaggerated muscles not in reference",
+  ];
+
+  return [core, ...tech, ...genderNeg, ...antiRosy].join(", ");
 }
 
 /**

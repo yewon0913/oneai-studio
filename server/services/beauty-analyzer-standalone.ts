@@ -87,6 +87,10 @@ export interface BeautyAnalysisResult {
   hasGlasses: boolean;
   glassesStyle: string;
   glassesDescription: string;
+  /** 안경 분류: none / round-black / rectangle-black / round-gold / rectangle-clear / sunglasses */
+  glasses: string;
+  /** 안경 착용 여부 (boolean) */
+  glasses_present: boolean;
   hasBear: boolean;
   bearStyle: string;
   bearDescription: string;
@@ -568,6 +572,8 @@ function getBeautyMockResult(expressionVariantOverride?: number): BeautyAnalysis
     hasGlasses: false,
     glassesStyle: "none",
     glassesDescription: "no glasses",
+    glasses: "none",
+    glasses_present: false,
     hasBear: false,
     bearStyle: "none",
     bearDescription: "clean-shaven",
@@ -646,6 +652,8 @@ export async function analyzeBeautyImage(
 25. 정확한 헤어 컬러(영문): jet black, dark brown, ash brown, chestnut, honey brown 등 정확한 색상
 26. 헤어 웨이브 타입(영문): straight, wavy, curly 중 선택
 27. 피부 질감 분류(영문): smooth, natural, textured 중 선택
+28. 안경 분류(영문): none, round-black, rectangle-black, round-gold, rectangle-clear, sunglasses 중 선택
+29. 안경 착용 여부(boolean): true/false
 
 [응답 형식]
 JSON으로 다음 필드를 포함하여 응답:
@@ -694,7 +702,9 @@ JSON으로 다음 필드를 포함하여 응답:
   "hasDoubleEyelid": true,
   "hairColorExact": "jet black",
   "hairWaveType": "straight",
-  "skinTextureCategory": "natural"
+  "skinTextureCategory": "natural",
+  "glasses": "none",
+  "glasses_present": false
 }`;
 
   const userPrompt = `이 사진을 분석해주세요. 위의 모든 필수 분석 항목을 포함하여 JSON으로 응답해주세요.`;
@@ -767,6 +777,8 @@ JSON으로 다음 필드를 포함하여 응답:
       hasGlasses: analysisData.hasGlasses || false,
       glassesStyle: analysisData.glassesStyle || "없음",
       glassesDescription: analysisData.glassesDescription || "안경 없음",
+      glasses: analysisData.glasses || "none",
+      glasses_present: analysisData.glasses_present ?? analysisData.hasGlasses ?? false,
       hasBear: analysisData.hasBear || false,
       bearStyle: analysisData.bearStyle || "없음",
       bearDescription: analysisData.bearDescription || "면도된 상태",

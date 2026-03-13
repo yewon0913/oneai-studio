@@ -36,6 +36,12 @@ export interface WeddingGenerateInput {
   concept?: WeddingConcept;
   customPrompt?: string;
   outputCount?: number;
+  /** 신부 안경 정보 */
+  brideGlasses?: string;
+  brideGlassesPresent?: boolean;
+  /** 신랑 안경 정보 */
+  groomGlasses?: string;
+  groomGlassesPresent?: boolean;
 }
 
 export interface WeddingGenerateOutput {
@@ -102,9 +108,26 @@ const CONCEPTS: Record<WeddingConcept, ConceptConfig> = {
 
 // ── [1단계] 인물 정보 + 얼굴 보존 ────────────────────────
 
-function buildStage1(mode: WeddingMode): string {
+function buildGlassesLockBlock(glassesType: string): string {
+  return `
+
+ACCESSORIES IDENTITY LOCK:
+This person wears ${glassesType} glasses.
+Glasses are a CORE part of their identity.
+ALWAYS include glasses in EVERY single shot.
+REGARDLESS of outfit, background, or concept:
+Glasses must be present and clearly visible.
+Same frame shape and color as reference photo.
+Do NOT remove glasses for any reason.
+Do NOT replace with sunglasses unless specified.`;
+}
+
+function buildStage1(
+  mode: WeddingMode,
+  opts?: { brideGlasses?: string; brideGlassesPresent?: boolean; groomGlasses?: string; groomGlassesPresent?: boolean },
+): string {
   if (mode === "solo_bride") {
-    return `Korean woman (BRIDE) — from the reference photo.
+    let result = `Korean woman (BRIDE) — from the reference photo.
 
 CRITICAL FACE PRESERVATION:
 - Face shape — preserve exactly, do NOT slim to V-line. Keep natural round cheek fullness.
@@ -113,10 +136,14 @@ CRITICAL FACE PRESERVATION:
 - Nose — keep exactly as reference — NOT westernized, NOT heightened.
 - Natural skin texture — NOT plastic. Subtle healthy glow with natural pores.
 - Same person always. Outfit changes, person NEVER changes.`;
+    if (opts?.brideGlassesPresent) {
+      result += buildGlassesLockBlock(opts.brideGlasses || "prescription");
+    }
+    return result;
   }
 
   if (mode === "solo_groom") {
-    return `Korean man (GROOM) — from the reference photo.
+    let result = `Korean man (GROOM) — from the reference photo.
 
 CRITICAL FACE PRESERVATION:
 - Face shape — preserve exact jawline angle and width — do NOT slim, sharpen, or V-line.
@@ -125,15 +152,26 @@ CRITICAL FACE PRESERVATION:
 - Nose — keep natural Korean nose — NOT westernized, NOT heightened.
 - Natural skin texture — NOT plastic. Visible pores, natural masculine texture.
 - Same person always. Outfit changes, person NEVER changes.`;
+    if (opts?.groomGlassesPresent) {
+      result += buildGlassesLockBlock(opts.groomGlasses || "prescription");
+    }
+    return result;
   }
 
   // couple
-  return `Korean woman (BRIDE) and Korean man (GROOM) — from the reference photos.
+  let result = `Korean woman (BRIDE) and Korean man (GROOM) — from the reference photos.
 
 CRITICAL FACE PRESERVATION:
 - BRIDE: face shape — preserve exactly, do NOT slim. Hair — preserve exact color, length, bangs — NEVER change. Eyes — do NOT enlarge. Nose — NOT westernized. Natural skin — NOT plastic.
 - GROOM: face shape — preserve exact jawline width. Hair — preserve exact color, volume, baby hair — NEVER change. Eyes — preserve eye corner angle. Nose — NOT westernized. Natural skin — NOT plastic.
 - Same person always. Environment changes, person NEVER changes.`;
+  if (opts?.brideGlassesPresent) {
+    result += buildGlassesLockBlock(opts.brideGlasses || "prescription");
+  }
+  if (opts?.groomGlassesPresent) {
+    result += buildGlassesLockBlock(opts.groomGlasses || "prescription");
+  }
+  return result;
 }
 
 // ── [2단계] 컨셉 + 조명 + 의상 ──────────────────────────
@@ -183,7 +221,14 @@ Enhance by maximum 20~30% — no more. Same person. Better version. That's all.`
 
   const female = `BRIDE ENHANCEMENT — BEST VERSION OF HERSELF:
 FACE: Same shape always — butterfly light creates natural slimming illusion WITHOUT changing structure.
-SKIN: Porcelain-free natural glow. Slight rosy bloom on cheeks — preserve always. Under-eye: brighten only.
+SKIN — NATURAL KOREAN WOMAN:
+Natural even warm skin tone.
+Remove blemishes and dark circles only.
+Subtle healthy complexion — NO rosy flush, NO pink cheeks.
+NO artificial color on cheeks whatsoever.
+Natural sebum texture preserved.
+Micro pores slightly visible — NOT porcelain smooth.
+Real DSLR photo skin reproduction — not 3D rendered skin.
 EYES: Natural catchlight + subtle lash definition. Warm, inviting, alive. Do NOT enlarge — just sparkle.
 LIPS: Naturally defined, slightly moisturized. Same color family as reference — just richer.
 HAIR: Glossy, smooth, voluminous version of her exact cut. Bangs must fall naturally.
@@ -191,7 +236,13 @@ The goal: "I want to look like this every day" — not "I wish I looked like her
 
   const male = `GROOM ENHANCEMENT — BEST VERSION OF HIMSELF:
 JAW: Keep natural jawline — subtle shadow definition only. Do NOT slim or sharpen beyond reference.
-SKIN: Clean pores, even tone, slight healthy ruddiness. Subtle texture — NOT porcelain smooth.
+SKIN — NATURAL KOREAN MAN:
+Clean even natural skin tone, remove blemishes only.
+Natural male skin texture with subtle pores visible.
+NO over-smoothing, NO plastic finish, NO artificial flush.
+Natural outdoor ruddiness only if outdoor shot —
+NOT artificial pink or red color grading.
+Real DSLR photo skin — NOT CGI or rendered.
 EYES: Strong natural eye contact. Slight definition to brow shape — same shape, just cleaner.
 HAIR: Same style, maximum volume and shine. Natural movement preserved.
 LIGHTING: Side Rembrandt — brings out masculine bone structure without changing it.
@@ -225,7 +276,10 @@ const STAGE4_NEGATIVE =
   "(westernized Korean face:1.8), (V-line jaw:1.5), (slimmed face:1.5), (heightened nose bridge:1.5), (enlarged eyes:1.5), " +
   "(plastic skin:1.5), (porcelain skin:1.5), (airbrushed:1.5), (different person:1.8), (different hair color:1.8), (bangs removed:1.5), " +
   "AI-generated look, CGI, 3D render, illustration, painting, anime, cartoon, " +
-  "extra fingers, deformed hands, bad anatomy, blurry, low quality, watermark, text, logo";
+  "extra fingers, deformed hands, bad anatomy, blurry, low quality, watermark, text, logo, " +
+  "rosy cheeks, pink flush, artificial color on cheeks, " +
+  "perfectly round catchlight (must be natural irregular), " +
+  "different body type than reference, exaggerated muscles not in reference";
 
 // ── Gemini 이미지 생성 ───────────────────────────────────
 
@@ -422,7 +476,12 @@ export async function generateWeddingImages(
   }
 
   // 4단계 프롬프트 조립
-  const stage1 = buildStage1(mode);
+  const stage1 = buildStage1(mode, {
+    brideGlasses: input.brideGlasses,
+    brideGlassesPresent: input.brideGlassesPresent,
+    groomGlasses: input.groomGlasses,
+    groomGlassesPresent: input.groomGlassesPresent,
+  });
   const stage2 = buildStage2(mode, concept);
   const stage3 = buildStage3(mode);
   const fullPrompt = customPrompt
