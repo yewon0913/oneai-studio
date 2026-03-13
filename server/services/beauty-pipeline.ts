@@ -1,13 +1,14 @@
 /**
- * Beauty Pipeline v5.0 - FLUX.2 LoRA Primary + Gemini/FLUX Pro Fallback
+ * Beauty Pipeline v6.0 - FLUX.2 LoRA Primary + InstantID + 검은화면 재시도
  *
  * ⚠️  beauty-analyzer-standalone.ts 사용 — shared-analyzer.ts와 완전 분리
  *
- * v5 업그레이드:
+ * v6 업그레이드:
  * 1. FLUX.2 LoRA (fal-ai/flux-2/lora) — Primary 이미지 생성
- * 2. Gemini Nano Banana Pro — Fallback #1
+ * 2. Gemini — Fallback #1
  * 3. FLUX Pro v1.1 (fal-ai/flux-pro/v1.1) — Fallback #2
- * 4. FAL IP-Adapter Face ID 얼굴 일관성 강화
+ * 4. InstantID (fal-ai/instant-id) 얼굴 일관성 강화 (IP-Adapter 교체)
+ * 5. 검은화면 자동 재시도 (최대 3회, 10KB 미만 → 재시도)
  */
 
 import { analyzeBeautyImage } from "./beauty-analyzer-standalone";
@@ -92,56 +93,48 @@ const CATEGORY_EXTRA: Record<string, string> = {
   ].join(", "),
 };
 
-// ─── IP-Adapter 얼굴 일관성 강화 ────────────────────────
+// ─── InstantID 얼굴 일관성 강화 (IP-Adapter 교체) ────────
 
-async function runIpAdapterFace(
-  generatedImageBase64: string,
+async function runInstantId(
   faceRefBase64: string,
   mimeType: string,
+  prompt: string,
+  negativePrompt: string,
 ): Promise<string | null> {
   try {
-    console.log("[beauty-v4] IP-Adapter 얼굴 일관성 강화...");
+    console.log("[beauty-v6] InstantID 얼굴 일관성 강화...");
 
-    // base64를 FAL에 업로드
     const falKey = process.env.FAL_KEY;
     if (!falKey) return null;
 
-    const uploadBase64 = async (b64: string, name: string): Promise<string> => {
-      const clean = b64.includes(",") ? b64.split(",")[1] : b64;
-      const buffer = Buffer.from(clean, "base64");
+    // 참조 이미지 FAL Storage 업로드
+    const clean = faceRefBase64.includes(",") ? faceRefBase64.split(",")[1] : faceRefBase64;
+    const buffer = Buffer.from(clean, "base64");
 
-      const initiateRes = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
-        method: "POST",
-        headers: { "Authorization": `Key ${falKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ content_type: mimeType, file_name: name }),
-      });
-      if (!initiateRes.ok) throw new Error("initiate failed");
-      const { upload_url, file_url } = await initiateRes.json();
+    const initiateRes = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
+      method: "POST",
+      headers: { "Authorization": `Key ${falKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ content_type: mimeType, file_name: "beauty-face-ref.jpg" }),
+    });
+    if (!initiateRes.ok) throw new Error("initiate failed");
+    const { upload_url, file_url } = await initiateRes.json();
 
-      const s3Res = await fetch(upload_url, {
-        method: "PUT",
-        headers: { "Content-Type": mimeType },
-        body: buffer,
-      });
-      if (!s3Res.ok) throw new Error("S3 upload failed");
-      return file_url;
-    };
+    const s3Res = await fetch(upload_url, {
+      method: "PUT",
+      headers: { "Content-Type": mimeType },
+      body: buffer,
+    });
+    if (!s3Res.ok) throw new Error("S3 upload failed");
 
-    const [genUrl, faceUrl] = await Promise.all([
-      uploadBase64(generatedImageBase64, "beauty-gen.jpg"),
-      uploadBase64(faceRefBase64, "beauty-face-ref.jpg"),
-    ]);
-
-    const result = await falRun("fal-ai/ip-adapter-face-id", {
-      image_url: genUrl,
-      face_image_url: faceUrl,
-      prompt: "beauty portrait, same person, preserve facial identity",
-      strength: 0.5,
-      scale: 0.85,
-      s_scale: 1.0,
-      face_id_weight: 0.85,
-      num_inference_steps: 25,
+    const result = await falRun("fal-ai/instant-id", {
+      face_image_url: file_url,
+      prompt,
+      negative_prompt: negativePrompt,
+      identitynet_strength_ratio: 0.80,
+      adapter_strength_ratio: 0.80,
+      num_inference_steps: 30,
       guidance_scale: 5.0,
+      image_size: { width: 1024, height: 1024 },
     });
 
     const url = (result?.images as Array<{ url: string }>)?.[0]?.url
@@ -149,15 +142,43 @@ async function runIpAdapterFace(
 
     if (url) {
       const res = await fetch(url);
-      const buffer = Buffer.from(await res.arrayBuffer());
-      console.log("[beauty-v4] IP-Adapter 완료");
-      return buffer.toString("base64");
+      const buf = Buffer.from(await res.arrayBuffer());
+      console.log("[beauty-v6] InstantID 완료");
+      return buf.toString("base64");
     }
     return null;
   } catch (err: any) {
-    console.warn(`[beauty-v4] IP-Adapter 실패 (스킵): ${err.message?.slice(0, 100)}`);
+    console.warn(`[beauty-v6] InstantID 실패 (스킵): ${err.message?.slice(0, 100)}`);
     return null;
   }
+}
+
+// ─── 검은화면 자동 재시도 로직 ──────────────────────────
+
+async function generateWithRetry(
+  label: string,
+  generateFn: () => Promise<string | null>,
+  maxRetries = 3,
+): Promise<string | null> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const base64 = await generateFn();
+      if (base64) {
+        // 검은화면 감지: base64 크기가 너무 작으면 검은/빈 이미지
+        const sizeBytes = Buffer.byteLength(base64, "base64");
+        if (sizeBytes > 10000) {
+          return base64;
+        }
+        console.log(`[beauty-v6] ${label} 검은화면 감지 (${sizeBytes}bytes), 재시도 ${attempt + 1}/${maxRetries}`);
+      }
+    } catch (err: any) {
+      console.log(`[beauty-v6] ${label} 생성 오류 재시도 ${attempt + 1}/${maxRetries}: ${err.message?.slice(0, 80)}`);
+    }
+    if (attempt < maxRetries - 1) {
+      await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+    }
+  }
+  return null;
 }
 
 // ─── [Primary] FLUX.2 LoRA 이미지 생성 ──────────────────
@@ -167,8 +188,8 @@ async function generateWithFluxPrimary(
   prompt: string,
   negativePrompt: string,
 ): Promise<string | null> {
-  try {
-    console.log("[beauty-v5] FLUX.2 LoRA (Primary) 생성 중...");
+  return generateWithRetry("FLUX.2 LoRA", async () => {
+    console.log("[beauty-v6] FLUX.2 LoRA (Primary) 생성 중...");
     const result = await falRun("fal-ai/flux-2/lora", {
       prompt,
       negative_prompt: negativePrompt,
@@ -185,14 +206,11 @@ async function generateWithFluxPrimary(
     if (imageUrl) {
       const res = await fetch(imageUrl);
       const buffer = Buffer.from(await res.arrayBuffer());
-      console.log("[beauty-v5] FLUX.2 LoRA 성공");
+      console.log("[beauty-v6] FLUX.2 LoRA 성공");
       return buffer.toString("base64");
     }
     return null;
-  } catch (err: any) {
-    console.warn(`[beauty-v5] FLUX.2 LoRA 실패: ${err.message?.slice(0, 100)}`);
-    return null;
-  }
+  });
 }
 
 // ─── [Fallback #1] Gemini Nano Banana Pro ────────────────
@@ -203,8 +221,8 @@ async function generateWithGeminiFallback(
   prompt: string,
   negativePrompt: string,
 ): Promise<string | null> {
-  try {
-    console.log("[beauty-v5] Gemini (Fallback #1) 시도...");
+  return generateWithRetry("Gemini", async () => {
+    console.log("[beauty-v6] Gemini (Fallback #1) 시도...");
     const clean = imageBase64.includes(",") ? imageBase64.split(",")[1] : imageBase64;
 
     const parts: GeminiPart[] = [
@@ -216,19 +234,16 @@ async function generateWithGeminiFallback(
 
     const response = await callGemini(parts);
     const { data } = extractImageBase64(response);
-    console.log("[beauty-v5] Gemini 성공");
+    console.log("[beauty-v6] Gemini 성공");
     return data;
-  } catch (err: any) {
-    console.warn(`[beauty-v5] Gemini 실패: ${err.message?.slice(0, 100)}`);
-    return null;
-  }
+  });
 }
 
 // ─── Film Grain 후처리 ──────────────────────────────────
 
 async function applyFilmGrain(imageBase64: string): Promise<string> {
   try {
-    console.log("[beauty-v5] Film Grain 후처리...");
+    console.log("[beauty-v6] Film Grain 후처리...");
     const falKey = process.env.FAL_KEY;
     if (!falKey) return imageBase64;
 
@@ -261,12 +276,12 @@ async function applyFilmGrain(imageBase64: string): Promise<string> {
     if (url) {
       const res = await fetch(url);
       const buf = Buffer.from(await res.arrayBuffer());
-      console.log("[beauty-v5] Film Grain 완료");
+      console.log("[beauty-v6] Film Grain 완료");
       return buf.toString("base64");
     }
     return imageBase64;
   } catch (err: any) {
-    console.warn(`[beauty-v5] Film Grain 실패 (원본 유지): ${err.message?.slice(0, 80)}`);
+    console.warn(`[beauty-v6] Film Grain 실패 (원본 유지): ${err.message?.slice(0, 80)}`);
     return imageBase64;
   }
 }
@@ -278,8 +293,8 @@ async function generateWithFluxProFallback(
   prompt: string,
   negativePrompt: string,
 ): Promise<string | null> {
-  try {
-    console.log("[beauty-v5] FLUX Pro v1.1 (Fallback #2) 시도...");
+  return generateWithRetry("FLUX Pro v1.1", async () => {
+    console.log("[beauty-v6] FLUX Pro v1.1 (Fallback #2) 시도...");
     const result = await falRun("fal-ai/flux-pro/v1.1", {
       prompt,
       negative_prompt: negativePrompt,
@@ -296,14 +311,11 @@ async function generateWithFluxProFallback(
     if (imageUrl) {
       const res = await fetch(imageUrl);
       const buffer = Buffer.from(await res.arrayBuffer());
-      console.log("[beauty-v5] FLUX Pro v1.1 성공");
+      console.log("[beauty-v6] FLUX Pro v1.1 성공");
       return buffer.toString("base64");
     }
     return null;
-  } catch (err: any) {
-    console.warn(`[beauty-v5] FLUX Pro v1.1 실패: ${err.message?.slice(0, 80)}`);
-    return null;
-  }
+  });
 }
 
 // ─── 메인 함수 ──────────────────────────────────────────
@@ -311,7 +323,7 @@ async function generateWithFluxProFallback(
 export async function generateBeautyImages(
   input: BeautyGenerateInput
 ): Promise<BeautyGenerateOutput> {
-  console.log("[beauty-v5] 시작 (FLUX.2 LoRA Primary + Gemini/FLUX Pro Fallback)...");
+  console.log("[beauty-v6] 시작 (FLUX.2 LoRA Primary + Gemini/FLUX Pro Fallback)...");
 
   // 1. Claude Vision으로 실제 분석
   const analysis = await analyzeBeautyImage(
@@ -319,7 +331,7 @@ export async function generateBeautyImages(
     input.mimeType || "image/jpeg"
   );
 
-  console.log("[beauty-v5] 분석 완료:", {
+  console.log("[beauty-v6] 분석 완료:", {
     skinTone: analysis.skinTone,
     estimatedAge: analysis.estimatedAge,
     hasGlasses: analysis.hasGlasses,
@@ -340,7 +352,7 @@ export async function generateBeautyImages(
   const outputCount = input.outputCount || 2;
   const images: string[] = [];
 
-  console.log("[beauty-v5]", outputCount, "장 생성 시작...");
+  console.log("[beauty-v6]", outputCount, "장 생성 시작...");
 
   // 각 이미지 생성 태스크를 함수로 정의
   const generateOne = async (i: number): Promise<string | null> => {
@@ -359,7 +371,7 @@ export async function generateBeautyImages(
     }
 
     try {
-      console.log(`[beauty-v5] ${i + 1}/${outputCount} 생성 중...`);
+      console.log(`[beauty-v6] ${i + 1}/${outputCount} 생성 중...`);
 
       // [Primary] FLUX.2 LoRA
       let generatedBase64 = await generateWithFluxPrimary(
@@ -388,28 +400,29 @@ export async function generateBeautyImages(
       }
 
       if (generatedBase64) {
-        // IP-Adapter 얼굴 일관성 (faceLock 활성화 시에만)
+        // InstantID 얼굴 일관성 (faceLock 활성화 시에만)
         let finalBase64 = generatedBase64;
         if (input.faceLock) {
-          const ipResult = await runIpAdapterFace(
-            generatedBase64,
+          const instantIdResult = await runInstantId(
             input.imageBase64,
             mimeType,
+            currentPrompt,
+            finalNegative,
           );
-          finalBase64 = ipResult || generatedBase64;
+          finalBase64 = instantIdResult || generatedBase64;
         }
 
         // Film Grain 후처리
         finalBase64 = await applyFilmGrain(finalBase64);
 
-        console.log(`[beauty-v5] ${i + 1}번 완료`);
+        console.log(`[beauty-v6] ${i + 1}번 완료`);
         return `data:image/jpeg;base64,${finalBase64}`;
       } else {
-        console.warn(`[beauty-v5] ${i + 1}번 이미지 없음 (모든 모델 실패)`);
+        console.warn(`[beauty-v6] ${i + 1}번 이미지 없음 (모든 모델 실패)`);
         return null;
       }
     } catch (err) {
-      console.error(`[beauty-v5] ${i + 1}번 에러:`, err);
+      console.error(`[beauty-v6] ${i + 1}번 에러:`, err);
       return null;
     }
   };
@@ -423,7 +436,7 @@ export async function generateBeautyImages(
 
   if (images.length === 0) throw new Error("모든 이미지 생성 실패");
 
-  console.log(`[beauty-v5] 완료: ${images.length}/${outputCount}`);
+  console.log(`[beauty-v6] 완료: ${images.length}/${outputCount}`);
 
   return {
     images,

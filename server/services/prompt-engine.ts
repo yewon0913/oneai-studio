@@ -961,6 +961,18 @@ function buildLayer3_Concept(block: MasterPromptInput["conceptBlock"]): string {
   if (block.camera) parts.push(`Camera: ${block.camera}`);
   if (block.mood) parts.push(`Mood: ${block.mood}`);
   parts.push(`Moderate depth of field — background slightly soft but venue/environment still recognizable. NOT extreme bokeh. Background adds context, not distraction.`);
+
+  // 스튜디오 배경: 단순 배경 ≠ 얼굴 이상화
+  const bgLower = block.background.toLowerCase();
+  if (bgLower.includes("studio") || bgLower.includes("white") || bgLower.includes("seamless") || bgLower.includes("gray")) {
+    parts.push(`Simple background does NOT mean idealize the face. Plain background = MORE face accuracy required, not less. Glasses must ALWAYS be present regardless of background.`);
+  }
+
+  // 복잡한 야외 배경: 얼굴 > 배경
+  if (bgLower.includes("outdoor") || bgLower.includes("garden") || bgLower.includes("street") || bgLower.includes("park") || bgLower.includes("nature")) {
+    parts.push(`The background changes — the PERSON never changes. Face fidelity > background integration.`);
+  }
+
   return parts.join("\n");
 }
 
@@ -1078,14 +1090,22 @@ export function buildPrompt(input: PromptEngineInput): PromptEngineOutput {
   if (conceptPreset) {
     // 프리셋 모드
     const preset = getConceptPreset(conceptPreset);
-    stage2 = [
+    const presetParts = [
       `Lighting: ${preset.lighting}`,
       `Background: ${preset.scene}`,
       `Outfit: ${preset.attireOverride}`,
       `Camera: ${preset.camera}`,
       `Mood: ${preset.mood}`,
       `Expression: ${getExpression(concept, gender)}`,
-    ].join("\n");
+    ];
+    const sceneLower = preset.scene.toLowerCase();
+    if (sceneLower.includes("studio") || sceneLower.includes("white") || sceneLower.includes("seamless") || sceneLower.includes("gray")) {
+      presetParts.push("Simple background does NOT mean idealize the face. Plain background = MORE face accuracy required, not less. Glasses must ALWAYS be present regardless of background.");
+    }
+    if (sceneLower.includes("outdoor") || sceneLower.includes("garden") || sceneLower.includes("street") || sceneLower.includes("park") || sceneLower.includes("nature")) {
+      presetParts.push("The background changes — the PERSON never changes. Face fidelity > background integration.");
+    }
+    stage2 = presetParts.join("\n");
   } else {
     // 일반 모드
     const cam = getCamera(concept);
@@ -1109,6 +1129,14 @@ export function buildPrompt(input: PromptEngineInput): PromptEngineOutput {
 
     stage2Parts.push(`Shot on ${cam.extra}, ${cam.lens}, ${cam.aperture}`);
     stage2Parts.push("Moderate depth of field — background slightly soft but venue/environment still recognizable. NOT extreme bokeh. Background adds context, not distraction.");
+
+    // 스튜디오/야외 배경별 얼굴 보존 지시
+    if (environment === "studio") {
+      stage2Parts.push("Simple background does NOT mean idealize the face. Plain background = MORE face accuracy required, not less. Glasses must ALWAYS be present regardless of background.");
+    }
+    if (environment === "outdoor") {
+      stage2Parts.push("The background changes — the PERSON never changes. Face fidelity > background integration.");
+    }
 
     // 참조 이미지 모드
     if (hasReferenceImage) {
