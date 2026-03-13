@@ -10,7 +10,7 @@
  */
 
 import sharp from "sharp";
-import { storagePut } from "server/storage";
+import { storagePut } from "../storage";
 
 // ─── Types ────────────────────────────────────────────────
 
