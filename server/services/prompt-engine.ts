@@ -393,11 +393,26 @@ NOT perfectly round or perfectly placed.
 Iris texture: natural with subtle depth.
 "Real DSLR captured eyes" not "rendered eyes"`;
 
+const REALISM_CORE = `REALISM CORE — MANDATORY:
+skin pores visible under catchlight,
+natural skin texture with subsurface scattering,
+fine hair strands individually rendered,
+fabric texture and weight visible,
+micro-wrinkles in clothing fabric,
+natural shadow gradients,
+ambient occlusion in facial contours,
+slight chromatic aberration at image edges,
+subtle lens vignette,
+film grain structure ISO 200,
+NOT illustration, NOT digital painting,
+NOT CGI render, NOT AI generated aesthetic,
+photographed not generated`;
+
 function buildStage3_Enhancement(gender: Gender): string {
   const enhancement = gender === "male"
     ? `${ENHANCEMENT_COMMON}\n\n${ENHANCEMENT_MALE}`
     : `${ENHANCEMENT_COMMON}\n\n${ENHANCEMENT_FEMALE}`;
-  return `${enhancement}\n\n${PHOTOREALISTIC_SKIN_EYES}`;
+  return `${enhancement}\n\n${PHOTOREALISTIC_SKIN_EYES}\n\n${REALISM_CORE}`;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -689,47 +704,48 @@ function getConceptPreset(preset: ConceptPreset): ConceptPresetData {
 // 7. 네거티브 프롬프트 시스템
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+const UNIFIED_NEGATIVE =
+  "(plastic skin:1.9), (airbrushed skin:1.9), " +
+  "(smooth poreless skin:1.8), (wax mannequin skin:1.8), " +
+  "(beauty filter:1.8), (instagram filter:1.7), " +
+  "(oversaturated:1.6), (illustration:1.9), " +
+  "(digital art:1.9), (anime:1.9), (cartoon:1.8), " +
+  "(CGI:1.8), (3D render:1.8), (painting:1.8), " +
+  "(AI generated look:1.7), " +
+  "(stiff unnatural pose:1.8), (mannequin pose:1.8), " +
+  "(standing at attention:1.8), " +
+  "(expressionless face:1.7), (blank stare:1.7), " +
+  "(dead eyes:1.7), (flat lighting:1.6), " +
+  "(no shadows:1.6), " +
+  "(wrong number of fingers:1.9), " +
+  "(deformed hands:1.9), (bad anatomy:1.8), " +
+  "(distorted face:1.8), (asymmetrical eyes:1.7), " +
+  "(different person:2.0), " +
+  "(rosy cheeks:1.8), (pink flush:1.8), " +
+  "(artificial color on cheeks:1.8), " +
+  "(plastic or porcelain skin:1.9), " +
+  "(perfectly round catchlight:1.7), " +
+  "(watermark:1.9), (text overlay:1.9), " +
+  "(low resolution:1.8), (blurry:1.7)";
+
 function getNegativePrompt(concept: Concept, gender: Gender, customNegative?: string): string {
   if (customNegative) return customNegative;
 
-  // [4단계] NEGATIVE — Do NOT generate (고정 핵심 먼저)
-  const parts: string[] = [STAGE4_NEGATIVE_CORE];
+  const parts: string[] = [STAGE4_NEGATIVE_CORE, UNIFIED_NEGATIVE];
 
-  // 기술적 네거티브
-  parts.push(
-    "AI-generated look, uncanny valley, synthetic texture, mannequin-like",
-    "CGI render, 3D render, digital art, illustration, painting, anime, cartoon",
-    "(westernized Korean face:1.8), (V-line jaw:1.5), (sharpened jawline:1.5), (slimmed face:1.5)",
-    "(heightened nose bridge:1.5), (narrowed nose:1.5), (westernized nose:1.5)",
-    "(enlarged eyes:1.5), (bigger eyes than reference:1.5), (circle lens effect:1.3)",
-    "(different hair color:1.8), (changed hair length:1.5), (bangs removed:1.5), (bangs changed:1.5)",
-    "(plastic skin:1.5), (porcelain skin:1.5), (over-smoothed skin:1.5), (airbrushed:1.5)",
-    "(different person:1.8), (different face shape from reference:1.5)",
-    "extra fingers, deformed hands, bad anatomy",
-    "low quality, blurry, watermark, text, logo",
-  );
-
-  // 성별별
+  // 얼굴 보존 (성별별)
   if (gender === "male") {
     parts.push(
-      "(feminized male face:1.5), (softened jawline on male:1.5), (pretty-boy filter:1.3)",
-      "(over-smoothed male skin:1.5), (narrowed male jaw:1.5), (male nose bridge heightened:1.5)",
+      "(feminized male face:1.5), (softened jawline on male:1.5)",
+      "(over-smoothed male skin:1.5), (narrowed male jaw:1.5)",
     );
   } else {
     parts.push(
-      "(slimmed cheeks:1.5), (removed cheek volume:1.5), (V-line surgery look:1.5)",
-      "(nose bridge heightened:1.5), (button nose removed:1.5), (eyes enlarged beyond reference:1.5)",
+      "(slimmed cheeks:1.5), (V-line surgery look:1.5)",
+      "(eyes enlarged beyond reference:1.5), (button nose removed:1.5)",
       "(bangs removed or changed:1.5)",
     );
   }
-
-  // 홍조/인공 색상 방지
-  parts.push(
-    "rosy cheeks, pink flush, artificial color on cheeks",
-    "perfectly round catchlight (must be natural irregular)",
-    "different body type than reference",
-    "exaggerated muscles not in reference",
-  );
 
   // 컨셉별
   const conceptNeg: Record<string, string[]> = {
@@ -946,28 +962,21 @@ function buildLayer3_Concept(block: MasterPromptInput["conceptBlock"]): string {
 // ── NEGATIVE for Master Prompt ───────────────────────────
 
 function buildMasterNegative(gender: Gender): string {
-  const core = STAGE4_NEGATIVE_CORE;
-  const tech = [
-    "AI-generated look, CGI, 3D render, illustration, painting, anime, cartoon",
-    "(westernized Korean face:1.8), (V-line jaw:1.5), (slimmed face:1.5)",
-    "(heightened nose bridge:1.5), (enlarged eyes:1.5)",
-    "(plastic skin:1.5), (porcelain skin:1.5), (airbrushed:1.5)",
-    "(different person:1.8), (different hair color:1.8)",
-    "extra fingers, deformed hands, bad anatomy, blurry, low quality, watermark, text, logo",
-  ];
+  const parts: string[] = [STAGE4_NEGATIVE_CORE, UNIFIED_NEGATIVE];
 
-  const genderNeg = gender === "male"
-    ? ["(feminized male face:1.5)", "(softened jawline on male:1.5)", "(over-smoothed male skin:1.5)"]
-    : ["(slimmed cheeks:1.5)", "(V-line surgery look:1.5)", "(eyes enlarged beyond reference:1.5)", "(button nose removed:1.5)"];
+  if (gender === "male") {
+    parts.push(
+      "(feminized male face:1.5), (softened jawline on male:1.5)",
+      "(over-smoothed male skin:1.5), (narrowed male jaw:1.5)",
+    );
+  } else {
+    parts.push(
+      "(slimmed cheeks:1.5), (V-line surgery look:1.5)",
+      "(eyes enlarged beyond reference:1.5), (button nose removed:1.5)",
+    );
+  }
 
-  const antiRosy = [
-    "rosy cheeks, pink flush, artificial color on cheeks",
-    "perfectly round catchlight (must be natural irregular)",
-    "different body type than reference",
-    "exaggerated muscles not in reference",
-  ];
-
-  return [core, ...tech, ...genderNeg, ...antiRosy].join(", ");
+  return parts.join(", ");
 }
 
 /**
@@ -984,7 +993,7 @@ export function buildMasterPrompt(input: MasterPromptInput): MasterPromptOutput 
   const layer2 = buildLayer2_BestVersion(gender);
   const layer3 = buildLayer3_Concept(conceptBlock);
 
-  const prompt = [layer1, layer2, layer3].join("\n\n");
+  const prompt = [layer1, layer2, layer3, REALISM_CORE].join("\n\n");
   const negativePrompt = buildMasterNegative(gender);
 
   return {

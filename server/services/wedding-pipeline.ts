@@ -264,22 +264,52 @@ NOT perfectly round or perfectly placed.
 Iris texture: natural with subtle depth.
 "Real DSLR captured eyes" not "rendered eyes"`;
 
-  if (mode === "solo_bride") return [common, female, quality, skinEyes].join("\n\n");
-  if (mode === "solo_groom") return [common, male, quality, skinEyes].join("\n\n");
-  return [common, female, male, quality, skinEyes].join("\n\n");
+  const realismCore = `REALISM CORE — MANDATORY:
+skin pores visible under catchlight,
+natural skin texture with subsurface scattering,
+fine hair strands individually rendered,
+fabric texture and weight visible,
+micro-wrinkles in clothing fabric,
+natural shadow gradients,
+ambient occlusion in facial contours,
+slight chromatic aberration at image edges,
+subtle lens vignette,
+film grain structure ISO 200,
+NOT illustration, NOT digital painting,
+NOT CGI render, NOT AI generated aesthetic,
+photographed not generated`;
+
+  if (mode === "solo_bride") return [common, female, quality, skinEyes, realismCore].join("\n\n");
+  if (mode === "solo_groom") return [common, male, quality, skinEyes, realismCore].join("\n\n");
+  return [common, female, male, quality, skinEyes, realismCore].join("\n\n");
 }
 
 // ── [4단계] NEGATIVE ──────────────────────────────────────
 
 const STAGE4_NEGATIVE =
   "Do NOT generate: V-line or slim the face, westernized facial features, overly enlarged eyes, high nose bridge, plastic or porcelain skin, change hair color or length, different person than reference, style bangs back or up. " +
-  "(westernized Korean face:1.8), (V-line jaw:1.5), (slimmed face:1.5), (heightened nose bridge:1.5), (enlarged eyes:1.5), " +
-  "(plastic skin:1.5), (porcelain skin:1.5), (airbrushed:1.5), (different person:1.8), (different hair color:1.8), (bangs removed:1.5), " +
-  "AI-generated look, CGI, 3D render, illustration, painting, anime, cartoon, " +
-  "extra fingers, deformed hands, bad anatomy, blurry, low quality, watermark, text, logo, " +
-  "rosy cheeks, pink flush, artificial color on cheeks, " +
-  "perfectly round catchlight (must be natural irregular), " +
-  "different body type than reference, exaggerated muscles not in reference";
+  "(plastic skin:1.9), (airbrushed skin:1.9), " +
+  "(smooth poreless skin:1.8), (wax mannequin skin:1.8), " +
+  "(beauty filter:1.8), (instagram filter:1.7), " +
+  "(oversaturated:1.6), (illustration:1.9), " +
+  "(digital art:1.9), (anime:1.9), (cartoon:1.8), " +
+  "(CGI:1.8), (3D render:1.8), (painting:1.8), " +
+  "(AI generated look:1.7), " +
+  "(stiff unnatural pose:1.8), (mannequin pose:1.8), " +
+  "(standing at attention:1.8), " +
+  "(expressionless face:1.7), (blank stare:1.7), " +
+  "(dead eyes:1.7), (flat lighting:1.6), " +
+  "(no shadows:1.6), " +
+  "(wrong number of fingers:1.9), " +
+  "(deformed hands:1.9), (bad anatomy:1.8), " +
+  "(distorted face:1.8), (asymmetrical eyes:1.7), " +
+  "(different person:2.0), " +
+  "(rosy cheeks:1.8), (pink flush:1.8), " +
+  "(artificial color on cheeks:1.8), " +
+  "(plastic or porcelain skin:1.9), " +
+  "(perfectly round catchlight:1.7), " +
+  "(watermark:1.9), (text overlay:1.9), " +
+  "(low resolution:1.8), (blurry:1.7)";
 
 // ── Gemini 이미지 생성 ───────────────────────────────────
 
