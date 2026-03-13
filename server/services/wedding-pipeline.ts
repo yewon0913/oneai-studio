@@ -308,7 +308,7 @@ async function runCodeFormer(imageBase64: string): Promise<string> {
 
     const result = await falRun("fal-ai/codeformer", {
       image_url: file_url,
-      fidelity: 0.85,
+      fidelity: 0.82,
       upscale: 2,
       face_upsample: true,
       background_enhance: false,

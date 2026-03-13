@@ -737,7 +737,190 @@ function getOmniSettings(referenceImageCount: number, concept: Concept, gender: 
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 메인 프롬프트 빌더 — 4단계 구조
+// 8b. buildMasterPrompt — 3중 구조 (LAYER 1 + 2 + 3)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export interface MasterPromptInput {
+  gender: Gender;
+  ageGroup?: AgeGroup;
+  /** 고객 분석 결과 (beauty-analyzer-standalone 등에서 제공) */
+  analysisFields?: {
+    faceShapeCategory?: string;   // oval / round / square / heart
+    eyeCornerAngle?: string;      // upward / downward / straight
+    hasDoubleEyelid?: boolean;
+    noseHeight?: string;          // low / medium / high
+    isButtonNose?: boolean;
+    jawlineCategory?: string;     // sharp / natural / soft
+    cheekFullness?: string;       // full / natural / slim
+    hairColorExact?: string;      // jet black / dark brown / etc.
+    hairWaveType?: string;        // straight / wavy / curly
+    hasBabyHair?: boolean;
+    skinTextureCategory?: string; // smooth / natural / textured
+  };
+  /** LAYER 3: 컨셉 블록 (매번 교체) */
+  conceptBlock: {
+    outfit: string;
+    background: string;
+    lighting: string;
+    camera?: string;
+    mood?: string;
+  };
+  glassesFixMode?: boolean;
+}
+
+export interface MasterPromptOutput {
+  prompt: string;
+  negativePrompt: string;
+}
+
+// ── LAYER 1: FACE IDENTITY LOCK (절대 고정) ──────────────
+
+function buildLayer1_FaceIdentityLock(
+  gender: Gender,
+  ageGroup: AgeGroup,
+  analysis?: MasterPromptInput["analysisFields"],
+  glassesFixMode?: boolean,
+): string {
+  const genderWord = gender === "male" ? "man" : "woman";
+  const pronoun = gender === "male" ? "his" : "her";
+
+  let layer = `[LAYER 1 — FACE IDENTITY LOCK — DO NOT ALTER]\nKorean ${genderWord} in ${pronoun} ${ageGroup}.\n\n`;
+
+  if (gender === "female") {
+    const faceShape = analysis?.faceShapeCategory || "natural";
+    const cheek = analysis?.cheekFullness || "natural";
+    const eyeAngle = analysis?.eyeCornerAngle || "straight";
+    const hasDouble = analysis?.hasDoubleEyelid !== false;
+    const noseH = analysis?.noseHeight || "medium";
+    const isButton = analysis?.isButtonNose || false;
+    const jawline = analysis?.jawlineCategory || "natural";
+    const hairColor = analysis?.hairColorExact || "dark brown";
+    const hairWave = analysis?.hairWaveType || "straight";
+    const babyHair = analysis?.hasBabyHair || false;
+    const skinTex = analysis?.skinTextureCategory || "natural";
+
+    layer += `FACE SHAPE: ${faceShape} — preserve exactly, do NOT slim to V-line. Cheek fullness: ${cheek} — do NOT reduce.\n`;
+    layer += `JAWLINE: ${jawline} — preserve exact contour.\n`;
+    layer += `EYES: ${eyeAngle} eye corner angle, ${hasDouble ? "double eyelid" : "monolid"} — do NOT enlarge beyond reference. Keep natural Korean eye shape.\n`;
+    layer += `NOSE: ${noseH} bridge${isButton ? ", button nose" : ""} — NOT westernized, NOT heightened.\n`;
+    layer += `HAIR: ${hairColor}, ${hairWave}${babyHair ? ", baby hair visible at hairline" : ""} — NEVER change color, length, or bangs style.\n`;
+    layer += `SKIN: ${skinTex} texture — NOT plastic. Natural pores visible, subtle healthy glow.\n`;
+  } else {
+    const faceShape = analysis?.faceShapeCategory || "natural";
+    const eyeAngle = analysis?.eyeCornerAngle || "straight";
+    const hasDouble = analysis?.hasDoubleEyelid !== false;
+    const noseH = analysis?.noseHeight || "medium";
+    const jawline = analysis?.jawlineCategory || "natural";
+    const hairColor = analysis?.hairColorExact || "jet black";
+    const hairWave = analysis?.hairWaveType || "straight";
+    const babyHair = analysis?.hasBabyHair || false;
+    const skinTex = analysis?.skinTextureCategory || "natural";
+
+    layer += `FACE SHAPE: ${faceShape} — preserve exact jawline angle and width. Do NOT slim, sharpen, or V-line.\n`;
+    layer += `JAWLINE: ${jawline} — preserve exact contour and width.\n`;
+    layer += `EYES: ${eyeAngle} eye corner angle, ${hasDouble ? "double eyelid" : "monolid"} — do NOT round or enlarge beyond reference.\n`;
+    layer += `NOSE: ${noseH} bridge — NOT westernized, NOT heightened.\n`;
+    layer += `HAIR: ${hairColor}, ${hairWave}${babyHair ? ", baby hair around forehead and temples" : ""} — NEVER change color, volume, or style.\n`;
+    layer += `SKIN: ${skinTex} texture — NOT plastic. Visible pores, natural masculine texture.\n`;
+  }
+
+  layer += "Same person always. Environment changes, person NEVER changes.";
+
+  if (glassesFixMode) {
+    layer += "\nGLASSES: keep exact same frame style, lens shape, color, and position.";
+  }
+
+  return layer;
+}
+
+// ── LAYER 2: BEST VERSION ENHANCEMENT 20% (절대 고정) ────
+
+function buildLayer2_BestVersion(gender: Gender): string {
+  const common = `[LAYER 2 — BEST VERSION ENHANCEMENT — MAX 20% — DO NOT EXCEED]
+SKIN: Remove blemishes and dark circles only. Even skin tone with warm healthy glow. Keep natural pores — NOT plastic.
+EYES: One natural catchlight per eye. Slightly brighten iris. Subtle lash definition — NOT dramatic.
+HAIR: Smooth glossy version of exact same hairstyle. Same cut, same color — just freshly-styled.
+LIGHTING: Most flattering angle for their specific face structure. Subtle cheekbone highlight. Soft defining shadow.
+RULE: Enhance maximum 20% — no more. Same person, slightly better day. That's all.`;
+
+  if (gender === "female") {
+    return common + `\n
+BEST VERSION OF HERSELF:
+- Face shape unchanged — butterfly light creates natural slimming illusion only.
+- Skin: porcelain-free natural glow. Slight rosy cheek bloom preserved.
+- Eyes: natural sparkle, do NOT enlarge. Warm and alive.
+- Lips: naturally defined, slightly moisturized. Same color family.
+- Hair: glossy smooth version. Bangs fall naturally.
+- "I want to look like this every day" — NOT "I wish I looked like her."`;
+  }
+
+  return common + `\n
+BEST VERSION OF HIMSELF:
+- Jawline unchanged — subtle shadow definition only.
+- Skin: clean pores, even tone, slight healthy ruddiness. Subtle texture, NOT smooth.
+- Eyes: strong natural eye contact. Brow shape cleaner, same shape.
+- Hair: same style, maximum volume and shine.
+- Side Rembrandt lighting — brings out masculine bone structure without changing it.
+- "Damn, I look good" — NOT "who is this model?"`;
+}
+
+// ── LAYER 3: CONCEPT BLOCK (매번 교체) ───────────────────
+
+function buildLayer3_Concept(block: MasterPromptInput["conceptBlock"]): string {
+  const parts = [`[LAYER 3 — CONCEPT — SWAPPABLE]`];
+  parts.push(`Outfit: ${block.outfit}`);
+  parts.push(`Background: ${block.background}`);
+  parts.push(`Lighting: ${block.lighting}`);
+  if (block.camera) parts.push(`Camera: ${block.camera}`);
+  if (block.mood) parts.push(`Mood: ${block.mood}`);
+  return parts.join("\n");
+}
+
+// ── NEGATIVE for Master Prompt ───────────────────────────
+
+function buildMasterNegative(gender: Gender): string {
+  const core = STAGE4_NEGATIVE_CORE;
+  const tech = [
+    "AI-generated look, CGI, 3D render, illustration, painting, anime, cartoon",
+    "(westernized Korean face:1.8), (V-line jaw:1.5), (slimmed face:1.5)",
+    "(heightened nose bridge:1.5), (enlarged eyes:1.5)",
+    "(plastic skin:1.5), (porcelain skin:1.5), (airbrushed:1.5)",
+    "(different person:1.8), (different hair color:1.8)",
+    "extra fingers, deformed hands, bad anatomy, blurry, low quality, watermark, text, logo",
+  ];
+
+  const genderNeg = gender === "male"
+    ? ["(feminized male face:1.5)", "(softened jawline on male:1.5)", "(over-smoothed male skin:1.5)"]
+    : ["(slimmed cheeks:1.5)", "(V-line surgery look:1.5)", "(eyes enlarged beyond reference:1.5)", "(button nose removed:1.5)"];
+
+  return [core, ...tech, ...genderNeg].join(", ");
+}
+
+/**
+ * buildMasterPrompt — 3중 구조 프롬프트 빌더
+ *
+ * LAYER 1: FACE IDENTITY LOCK (고객 분석 결과 자동 삽입, 절대 고정)
+ * LAYER 2: BEST VERSION ENHANCEMENT 20% only (하드코딩, 절대 고정)
+ * LAYER 3: 컨셉 블록 (의상/배경/조명, 매번 교체)
+ */
+export function buildMasterPrompt(input: MasterPromptInput): MasterPromptOutput {
+  const { gender, ageGroup = "30s", analysisFields, conceptBlock, glassesFixMode } = input;
+
+  const layer1 = buildLayer1_FaceIdentityLock(gender, ageGroup, analysisFields, glassesFixMode);
+  const layer2 = buildLayer2_BestVersion(gender);
+  const layer3 = buildLayer3_Concept(conceptBlock);
+
+  const prompt = [layer1, layer2, layer3].join("\n\n");
+  const negativePrompt = buildMasterNegative(gender);
+
+  return {
+    prompt: truncate(prompt, 2500),
+    negativePrompt,
+  };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 메인 프롬프트 빌더 — 4단계 구조 (기존 호환)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export function buildPrompt(input: PromptEngineInput): PromptEngineOutput {

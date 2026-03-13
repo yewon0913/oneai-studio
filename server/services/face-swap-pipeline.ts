@@ -49,7 +49,7 @@ export interface FaceSwapInput {
   useCodeFormer?: boolean;
   /** 얼굴 교체 강도 0.0~1.0 (기본 0.9) */
   faceStrength?: number;
-  /** 얼굴 복원 fidelity 0.0~1.0 (기본 0.8) */
+  /** 얼굴 복원 fidelity 0.0~1.0 (기본 0.82) */
   restoreStrength?: number;
   /** 최종 출력 너비 (기본: 원본 유지) */
   outputWidth?: number;
@@ -120,7 +120,7 @@ async function runReactor(
 
 async function runCodeFormer(
   imageBuffer: Buffer,
-  fidelity: number = 0.85
+  fidelity: number = 0.82
 ): Promise<Buffer> {
   const jpeg = await sharp(imageBuffer).jpeg({ quality: 95 }).toBuffer();
 
@@ -226,7 +226,7 @@ export async function runFaceSwapPipeline(
     mode,
     useCodeFormer = true,
     faceStrength = 0.9,
-    restoreStrength = 0.8,
+    restoreStrength = 0.82,
     outputWidth,
     outputHeight,
   } = input;
@@ -320,7 +320,7 @@ export async function swapCouplefaces(
     mode: 'couple',
     useCodeFormer: true,
     faceStrength: 0.9,
-    restoreStrength: 0.8,
+    restoreStrength: 0.82,
     ...options,
   });
 }

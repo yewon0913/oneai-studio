@@ -240,7 +240,7 @@ async function enhanceFaces(imageUrl: string): Promise<string> {
     console.log("[couple] Step 4: Enhancing faces (CodeFormer)...");
     const result = await falRun("fal-ai/codeformer", {
       image_url: imageUrl,
-      fidelity: 0.85,
+      fidelity: 0.82,
       upscaling: 2,
       face_upscale: true,
     });

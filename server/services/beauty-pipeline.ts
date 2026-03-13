@@ -136,6 +136,9 @@ async function runIpAdapterFace(
       face_image_url: faceUrl,
       prompt: "beauty portrait, same person, preserve facial identity",
       strength: 0.5,
+      scale: 0.85,
+      s_scale: 1.0,
+      face_id_weight: 0.85,
       num_inference_steps: 25,
       guidance_scale: 5.0,
     });
