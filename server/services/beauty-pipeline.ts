@@ -93,62 +93,34 @@ const CATEGORY_EXTRA: Record<string, string> = {
   ].join(", "),
 };
 
-// ─── InstantID 얼굴 일관성 강화 (IP-Adapter 교체) ────────
+// ─── FAL Storage 업로드 ─────────────────────────────────
 
-async function runInstantId(
-  faceRefBase64: string,
-  mimeType: string,
-  prompt: string,
-  negativePrompt: string,
-): Promise<string | null> {
+async function uploadToFalStorage(base64Data: string): Promise<string | null> {
   try {
-    console.log("[beauty-v6] InstantID 얼굴 일관성 강화...");
-
     const falKey = process.env.FAL_KEY;
     if (!falKey) return null;
 
-    // 참조 이미지 FAL Storage 업로드
-    const clean = faceRefBase64.includes(",") ? faceRefBase64.split(",")[1] : faceRefBase64;
+    const clean = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
     const buffer = Buffer.from(clean, "base64");
 
     const initiateRes = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
       method: "POST",
       headers: { "Authorization": `Key ${falKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ content_type: mimeType, file_name: "beauty-face-ref.jpg" }),
+      body: JSON.stringify({ content_type: "image/jpeg", file_name: "beauty-face-ref.jpg" }),
     });
-    if (!initiateRes.ok) throw new Error("initiate failed");
+    if (!initiateRes.ok) throw new Error(`initiate failed ${initiateRes.status}`);
     const { upload_url, file_url } = await initiateRes.json();
 
     const s3Res = await fetch(upload_url, {
       method: "PUT",
-      headers: { "Content-Type": mimeType },
+      headers: { "Content-Type": "image/jpeg" },
       body: buffer,
     });
-    if (!s3Res.ok) throw new Error("S3 upload failed");
+    if (!s3Res.ok) throw new Error(`S3 upload failed ${s3Res.status}`);
 
-    const result = await falRun("fal-ai/instant-id", {
-      face_image_url: file_url,
-      prompt,
-      negative_prompt: negativePrompt,
-      identitynet_strength_ratio: 0.80,
-      adapter_strength_ratio: 0.80,
-      num_inference_steps: 30,
-      guidance_scale: 5.0,
-      image_size: { width: 1024, height: 1024 },
-    });
-
-    const url = (result?.images as Array<{ url: string }>)?.[0]?.url
-      || (result?.image as Record<string, unknown>)?.url as string;
-
-    if (url) {
-      const res = await fetch(url);
-      const buf = Buffer.from(await res.arrayBuffer());
-      console.log("[beauty-v6] InstantID 완료");
-      return buf.toString("base64");
-    }
-    return null;
+    return file_url;
   } catch (err: any) {
-    console.warn(`[beauty-v6] InstantID 실패 (스킵): ${err.message?.slice(0, 100)}`);
+    console.warn(`[FAL Storage] 업로드 실패: ${err.message?.slice(0, 100)}`);
     return null;
   }
 }
@@ -400,16 +372,40 @@ export async function generateBeautyImages(
       }
 
       if (generatedBase64) {
-        // InstantID 얼굴 일관성 (faceLock 활성화 시에만)
+        // InstantID 얼굴 일관성 강화 (항상 실행)
         let finalBase64 = generatedBase64;
-        if (input.faceLock) {
-          const instantIdResult = await runInstantId(
-            input.imageBase64,
-            mimeType,
-            currentPrompt,
-            finalNegative,
-          );
-          finalBase64 = instantIdResult || generatedBase64;
+
+        // [1] 참조 이미지 FAL Storage 업로드
+        const faceRefUrl = await uploadToFalStorage(input.imageBase64);
+        console.log('[FAL Storage] 결과:', faceRefUrl || '❌ 실패');
+
+        // [2] faceRefUrl 있으면 InstantID 실행
+        if (faceRefUrl) {
+          try {
+            console.log('[InstantID] 시작:', faceRefUrl.slice(0, 60));
+            const instantResult = await falRun('fal-ai/instant-id', {
+              face_image_url: faceRefUrl,
+              prompt: currentPrompt,
+              negative_prompt: finalNegative,
+              identitynet_strength_ratio: 0.65,
+              adapter_strength_ratio: 0.65,
+              num_inference_steps: 30,
+              guidance_scale: 5.0,
+              image_size: { width: 1024, height: 1024 },
+            });
+            console.log('[InstantID] 응답 키:', Object.keys(instantResult || {}));
+            const instantUrl = (instantResult?.images as Array<{ url: string }>)?.[0]?.url;
+            if (instantUrl) {
+              const res = await fetch(instantUrl);
+              const buf = Buffer.from(await res.arrayBuffer());
+              finalBase64 = buf.toString("base64");
+              console.log('[InstantID] 성공 ✅');
+            } else {
+              console.log('[InstantID] 실패 - 원본 유지');
+            }
+          } catch (err: any) {
+            console.warn(`[InstantID] 에러 (원본 유지): ${err.message?.slice(0, 100)}`);
+          }
         }
 
         // Film Grain 후처리
