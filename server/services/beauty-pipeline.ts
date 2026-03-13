@@ -374,11 +374,19 @@ export async function generateBeautyImages(
       console.log(`[beauty-v6] ${i + 1}/${outputCount} 생성 중...`);
 
       // [Primary] FLUX.2 LoRA
-      let generatedBase64 = await generateWithFluxPrimary(
-        imageDataUrl,
-        currentPrompt,
-        finalNegative,
-      );
+      let generatedBase64: string | null = null;
+      try {
+        generatedBase64 = await generateWithFluxPrimary(
+          imageDataUrl,
+          currentPrompt,
+          finalNegative,
+        );
+      } catch (fluxError: any) {
+        console.log('[FLUX.2 실패 원인]:', fluxError?.message || fluxError);
+      }
+      if (!generatedBase64) {
+        console.log('[FLUX.2 실패 원인]: 3회 재시도 후에도 유효한 이미지 없음 (null 반환)');
+      }
 
       // [Fallback #1] Gemini
       if (!generatedBase64) {
