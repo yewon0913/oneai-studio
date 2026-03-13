@@ -199,9 +199,23 @@ The goal: "Damn, I look good" — not "who is this model?"`;
 
   const quality = "Photorealistic. Skin pores visible, subsurface scattering, film grain ISO 200. NOT illustration, NOT digital art, NOT AI generated look. Magazine cover quality.";
 
-  if (mode === "solo_bride") return [common, female, quality].join("\n\n");
-  if (mode === "solo_groom") return [common, male, quality].join("\n\n");
-  return [common, female, male, quality].join("\n\n");
+  const skinEyes = `PHOTOREALISTIC SKIN — CRITICAL:
+Natural skin texture with subtle pores visible.
+Micro skin texture preserved — NOT smoothed out.
+Natural sebum and light interaction on skin.
+Skin must look like DSLR photo, NOT 3D render.
+Shot on Sony A7III, 85mm f/1.8, RAW file, natural skin reproduction.
+AVOID: plastic skin, porcelain finish, over-smoothed AI texture, perfectly uniform skin tone.
+
+NATURAL EYES — CRITICAL:
+Catchlight must be irregular and natural — reflection of actual light source shape.
+NOT perfectly round or perfectly placed.
+Iris texture: natural with subtle depth.
+"Real DSLR captured eyes" not "rendered eyes"`;
+
+  if (mode === "solo_bride") return [common, female, quality, skinEyes].join("\n\n");
+  if (mode === "solo_groom") return [common, male, quality, skinEyes].join("\n\n");
+  return [common, female, male, quality, skinEyes].join("\n\n");
 }
 
 // ── [4단계] NEGATIVE ──────────────────────────────────────
@@ -279,7 +293,7 @@ async function generateWithFluxFallback(
   return null;
 }
 
-// ── CodeFormer 선명화 (fidelity 0.85) ────────────────────
+// ── CodeFormer 선명화 (fidelity 0.78) ────────────────────
 
 async function runCodeFormer(imageBase64: string): Promise<string> {
   try {
@@ -308,7 +322,7 @@ async function runCodeFormer(imageBase64: string): Promise<string> {
 
     const result = await falRun("fal-ai/codeformer", {
       image_url: file_url,
-      fidelity: 0.82,
+      fidelity: 0.78,
       upscale: 2,
       face_upsample: true,
       background_enhance: false,
@@ -325,6 +339,53 @@ async function runCodeFormer(imageBase64: string): Promise<string> {
     return imageBase64;
   } catch (err: any) {
     console.warn(`[wedding] CodeFormer 실패 (원본 유지): ${err.message?.slice(0, 80)}`);
+    return imageBase64;
+  }
+}
+
+// ── Film Grain 후처리 ───────────────────────────────────
+
+async function applyFilmGrain(imageBase64: string): Promise<string> {
+  try {
+    console.log("[wedding] Film Grain 후처리...");
+    const falKey = process.env.FAL_KEY;
+    if (!falKey) return imageBase64;
+
+    const clean = imageBase64.includes(",") ? imageBase64.split(",")[1] : imageBase64;
+    const buffer = Buffer.from(clean, "base64");
+
+    const initiateRes = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
+      method: "POST",
+      headers: { "Authorization": `Key ${falKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ content_type: "image/jpeg", file_name: "wedding-grain.jpg" }),
+    });
+    if (!initiateRes.ok) throw new Error("initiate failed");
+    const { upload_url, file_url } = await initiateRes.json();
+
+    const s3Res = await fetch(upload_url, {
+      method: "PUT",
+      headers: { "Content-Type": "image/jpeg" },
+      body: buffer,
+    });
+    if (!s3Res.ok) throw new Error("S3 upload failed");
+
+    const result = await falRun("fal-ai/image-editing", {
+      image_url: file_url,
+      prompt: "add subtle film grain, natural photo texture",
+      strength: 0.08,
+    });
+
+    const url = (result?.image as Record<string, unknown>)?.url as string
+      || (result?.images as Array<{ url: string }>)?.[0]?.url;
+    if (url) {
+      const res = await fetch(url);
+      const buf = Buffer.from(await res.arrayBuffer());
+      console.log("[wedding] Film Grain 완료");
+      return buf.toString("base64");
+    }
+    return imageBase64;
+  } catch (err: any) {
+    console.warn(`[wedding] Film Grain 실패 (원본 유지): ${err.message?.slice(0, 80)}`);
     return imageBase64;
   }
 }
@@ -394,6 +455,9 @@ export async function generateWeddingImages(
 
       // CodeFormer 선명화
       base64 = await runCodeFormer(base64);
+
+      // Film Grain 후처리
+      base64 = await applyFilmGrain(base64);
 
       console.log(`[wedding] ${i + 1}번 완료`);
       return `data:image/jpeg;base64,${base64}`;

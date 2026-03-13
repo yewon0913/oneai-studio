@@ -365,10 +365,25 @@ HAIR: Same style, maximum volume and shine. Natural movement preserved.
 LIGHTING: Side Rembrandt — brings out masculine bone structure without changing it.
 The goal: "Damn, I look good" — not "who is this model?"`;
 
+const PHOTOREALISTIC_SKIN_EYES = `PHOTOREALISTIC SKIN — CRITICAL:
+Natural skin texture with subtle pores visible.
+Micro skin texture preserved — NOT smoothed out.
+Natural sebum and light interaction on skin.
+Skin must look like DSLR photo, NOT 3D render.
+Shot on Sony A7III, 85mm f/1.8, RAW file, natural skin reproduction.
+AVOID: plastic skin, porcelain finish, over-smoothed AI texture, perfectly uniform skin tone.
+
+NATURAL EYES — CRITICAL:
+Catchlight must be irregular and natural — reflection of actual light source shape.
+NOT perfectly round or perfectly placed.
+Iris texture: natural with subtle depth.
+"Real DSLR captured eyes" not "rendered eyes"`;
+
 function buildStage3_Enhancement(gender: Gender): string {
-  return gender === "male"
+  const enhancement = gender === "male"
     ? `${ENHANCEMENT_COMMON}\n\n${ENHANCEMENT_MALE}`
     : `${ENHANCEMENT_COMMON}\n\n${ENHANCEMENT_FEMALE}`;
+  return `${enhancement}\n\n${PHOTOREALISTIC_SKIN_EYES}`;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -841,7 +856,21 @@ SKIN: Remove blemishes and dark circles only. Even skin tone with warm healthy g
 EYES: One natural catchlight per eye. Slightly brighten iris. Subtle lash definition — NOT dramatic.
 HAIR: Smooth glossy version of exact same hairstyle. Same cut, same color — just freshly-styled.
 LIGHTING: Most flattering angle for their specific face structure. Subtle cheekbone highlight. Soft defining shadow.
-RULE: Enhance maximum 20% — no more. Same person, slightly better day. That's all.`;
+RULE: Enhance maximum 20% — no more. Same person, slightly better day. That's all.
+
+PHOTOREALISTIC SKIN — CRITICAL:
+Natural skin texture with subtle pores visible.
+Micro skin texture preserved — NOT smoothed out.
+Natural sebum and light interaction on skin.
+Skin must look like DSLR photo, NOT 3D render.
+Shot on Sony A7III, 85mm f/1.8, RAW file, natural skin reproduction.
+AVOID: plastic skin, porcelain finish, over-smoothed AI texture, perfectly uniform skin tone.
+
+NATURAL EYES — CRITICAL:
+Catchlight must be irregular and natural — reflection of actual light source shape.
+NOT perfectly round or perfectly placed.
+Iris texture: natural with subtle depth.
+"Real DSLR captured eyes" not "rendered eyes"`;
 
   if (gender === "female") {
     return common + `\n

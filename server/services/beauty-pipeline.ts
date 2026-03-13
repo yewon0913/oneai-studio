@@ -224,6 +224,53 @@ async function generateWithGeminiFallback(
   }
 }
 
+// ─── Film Grain 후처리 ──────────────────────────────────
+
+async function applyFilmGrain(imageBase64: string): Promise<string> {
+  try {
+    console.log("[beauty-v5] Film Grain 후처리...");
+    const falKey = process.env.FAL_KEY;
+    if (!falKey) return imageBase64;
+
+    const clean = imageBase64.includes(",") ? imageBase64.split(",")[1] : imageBase64;
+    const buffer = Buffer.from(clean, "base64");
+
+    const initiateRes = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
+      method: "POST",
+      headers: { "Authorization": `Key ${falKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ content_type: "image/jpeg", file_name: "beauty-grain.jpg" }),
+    });
+    if (!initiateRes.ok) throw new Error("initiate failed");
+    const { upload_url, file_url } = await initiateRes.json();
+
+    const s3Res = await fetch(upload_url, {
+      method: "PUT",
+      headers: { "Content-Type": "image/jpeg" },
+      body: buffer,
+    });
+    if (!s3Res.ok) throw new Error("S3 upload failed");
+
+    const result = await falRun("fal-ai/image-editing", {
+      image_url: file_url,
+      prompt: "add subtle film grain, natural photo texture",
+      strength: 0.08,
+    });
+
+    const url = (result?.image as Record<string, unknown>)?.url as string
+      || (result?.images as Array<{ url: string }>)?.[0]?.url;
+    if (url) {
+      const res = await fetch(url);
+      const buf = Buffer.from(await res.arrayBuffer());
+      console.log("[beauty-v5] Film Grain 완료");
+      return buf.toString("base64");
+    }
+    return imageBase64;
+  } catch (err: any) {
+    console.warn(`[beauty-v5] Film Grain 실패 (원본 유지): ${err.message?.slice(0, 80)}`);
+    return imageBase64;
+  }
+}
+
 // ─── [Fallback #2] FLUX Pro v1.1 ────────────────────────
 
 async function generateWithFluxProFallback(
@@ -351,6 +398,10 @@ export async function generateBeautyImages(
           );
           finalBase64 = ipResult || generatedBase64;
         }
+
+        // Film Grain 후처리
+        finalBase64 = await applyFilmGrain(finalBase64);
+
         console.log(`[beauty-v5] ${i + 1}번 완료`);
         return `data:image/jpeg;base64,${finalBase64}`;
       } else {
