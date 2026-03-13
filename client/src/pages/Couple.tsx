@@ -7,11 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Upload, Download, X, ArrowLeft, Heart, CheckCircle2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
-const ENGINES = [
-  { key: "flux-dev", label: "FLUX Dev", sub: "고품질 기본" },
-  { key: "flux-pro", label: "FLUX Pro 1.1", sub: "프리미엄 품질" },
-] as const;
-type EngineKey = typeof ENGINES[number]["key"];
+// 엔진 선택 제거 — 파이프라인 자동 실행
 
 const RATIOS = [
   { key: "4:3", label: "4:3", sub: "기본" },
@@ -73,7 +69,7 @@ export default function Couple() {
   const [prompt, setPrompt] = useState("romantic wedding photo, soft natural lighting, elegant atmosphere, photorealistic");
   const [negativePrompt, setNegativePrompt] = useState("blurry, low quality, distorted face, extra limbs, watermark, cartoon");
   const [faceLock, setFaceLock] = useState(true);
-  const [engine, setEngine] = useState<EngineKey>("flux-dev");
+  // 엔진 자동 선택 (파이프라인)
   const [ratio, setRatio] = useState<RatioKey>("4:3");
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentStep, setCurrentStep] = useState(-1);
@@ -168,7 +164,7 @@ export default function Couple() {
         aspectRatio: ratio,
         promptText: prompt,
         negativePrompt,
-        coupleEngine: engine,
+        coupleEngine: "flux-dev" as const,
         faceFixMode: faceLock,
         coupleComparisonMode: false,
       });
@@ -301,25 +297,28 @@ export default function Couple() {
             <CardTitle className="text-white">⚙️ 이미지 생성 설정</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
-            {/* AI 엔진 */}
+            {/* 자동 최적화 파이프라인 */}
             <div>
-              <label className="text-sm font-medium text-slate-300 mb-2 block">🚀 AI 엔진</label>
-              <div className="grid grid-cols-2 gap-2">
-                {ENGINES.map((e) => (
-                  <button
-                    key={e.key}
-                    onClick={() => setEngine(e.key)}
-                    className={`p-3 rounded-lg border transition-colors ${
-                      engine === e.key
-                        ? "bg-rose-500/20 border-rose-500 text-white"
-                        : "bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600"
-                    }`}
-                  >
-                    <p className="font-medium text-sm">{e.label}</p>
-                    <p className="text-xs text-slate-500">{e.sub}</p>
-                  </button>
+              <label className="text-sm font-medium text-slate-300 mb-2 block">🚀 자동 최적화 파이프라인</label>
+              <div className="space-y-1.5">
+                {[
+                  { icon: "🥇", name: "Gemini 3 Pro Image", desc: "기본 생성 엔진", badge: "Primary", color: "text-emerald-400 bg-emerald-500/15 border-emerald-500/30" },
+                  { icon: "⚡", name: "FLUX.2 LoRA", desc: "Gemini 실패 시 자동 전환", badge: "Fallback", color: "text-amber-400 bg-amber-500/15 border-amber-500/30" },
+                  { icon: "✨", name: "CodeFormer (0.78)", desc: "얼굴 자연스러움 복원", badge: "후처리", color: "text-blue-400 bg-blue-500/15 border-blue-500/30" },
+                ].map((s) => (
+                  <div key={s.name} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-slate-800/30 border border-slate-700/50">
+                    <span className="text-base">{s.icon}</span>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-slate-200">{s.name}</span>
+                        <span className={`text-[9px] px-1.5 py-0 rounded border ${s.color}`}>{s.badge}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">{s.desc}</p>
+                    </div>
+                  </div>
                 ))}
               </div>
+              <p className="text-[10px] text-slate-600 mt-1.5">엔진이 자동으로 선택됩니다.</p>
             </div>
 
             {/* 사진 비율 */}

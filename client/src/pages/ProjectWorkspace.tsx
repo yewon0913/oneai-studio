@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import AIEngineSelector from "@/components/AIEngineSelector";
-import type { AIEngineId } from "../../../shared/aiEngines";
 
 
 const statusLabels: Record<string, string> = {
@@ -69,7 +68,7 @@ export default function ProjectWorkspace() {
   const [regenMotion, setRegenMotion] = useState("cinematic");
 
   // 멀티 AI 엔진 선택
-  const [selectedEngines, setSelectedEngines] = useState<AIEngineId[]>(["flux_lora", "midjourney_omniref"]);
+  // 파이프라인 자동 실행 (사용자 선택 불필요)
   const [coupleAttempts, setCoupleAttempts] = useState(3);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
@@ -93,13 +92,7 @@ export default function ProjectWorkspace() {
   const [coupleEngine, setCoupleEngine] = useState<"flux-dev" | "flux-pro">("flux-dev");
   const [coupleComparisonMode, setCoupleComparisonMode] = useState(false);
   const [coupleComparisonResults, setCoupleComparisonResults] = useState<{dev?: {url:string;log:string}; pro?: {url:string;log:string}}>({});
-  const handleToggleEngine = (engineId: AIEngineId) => {
-    setSelectedEngines(prev =>
-      prev.includes(engineId)
-        ? prev.filter(id => id !== engineId)
-        : [...prev, engineId]
-    );
-  };
+  // 엔진 선택 제거 — 파이프라인 자동 실행
 
   const utils = trpc.useUtils();
   const { data: project, isLoading } = trpc.projects.getById.useQuery({ id: projectId });
@@ -961,14 +954,10 @@ export default function ProjectWorkspace() {
                   </button>
                 </div>
 
-                {/* 멀티 AI 엔진 일관성 전략 */}
+                {/* 자동 최적화 파이프라인 정보 */}
                 {faceFixMode && (
                   <div className="p-3 rounded-lg bg-gradient-to-br from-indigo-500/5 to-purple-500/5 border border-indigo-500/20">
-                    <AIEngineSelector
-                      selectedEngines={selectedEngines}
-                      onToggleEngine={handleToggleEngine}
-                      compact
-                    />
+                    <AIEngineSelector />
                   </div>
                 )}
 
@@ -1719,38 +1708,10 @@ export default function ProjectWorkspace() {
                   </button>
                 </div>
 
-                {/* 엔진 선택 */}
-                {!coupleComparisonMode && (
-                  <div className="grid grid-cols-2 gap-2">
-                    {([
-                      { value: "flux-dev" as const, label: "FLUX Dev", desc: "고품질 기본" },
-                      { value: "flux-pro" as const, label: "FLUX Pro 1.1", desc: "프리미엄 품질" },
-                    ]).map(engine => (
-                      <button
-                        key={engine.value}
-                        onClick={() => setCoupleEngine(engine.value)}
-                        className={`p-3 rounded-lg border transition-all ${
-                          coupleEngine === engine.value
-                            ? "bg-rose-500/20 border-rose-500 text-rose-400"
-                            : "bg-slate-800/40 border-slate-700 text-muted-foreground hover:border-slate-600"
-                        }`}
-                      >
-                        <p className="font-semibold text-sm text-foreground">{engine.label}</p>
-                        <p className="text-xs text-muted-foreground">{engine.desc}</p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* 비교 모드 설명 */}
-                {coupleComparisonMode && (
-                  <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
-                    <p className="text-sm text-purple-300 font-medium mb-2">🔬 엔진 비교 모드</p>
-                    <p className="text-xs text-muted-foreground">
-                      FLUX Dev와 FLUX Pro 1.1을 동시에 생성하여 얼굴 일관성 품질을 비교합니다. 생성 시간이 2배 소요됩니다.
-                    </p>
-                  </div>
-                )}
+                {/* 자동 최적화 파이프라인 정보 */}
+                <div className="p-3 rounded-lg bg-gradient-to-br from-rose-500/5 to-purple-500/5 border border-rose-500/20">
+                  <AIEngineSelector />
+                </div>
               </div>
             </CardContent>
           </Card>
