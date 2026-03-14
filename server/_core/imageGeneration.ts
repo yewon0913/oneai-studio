@@ -1,10 +1,9 @@
 /**
- * Image generation helper v4.0 — FLUX.2 Primary + InstantID + Gemini Fallback
+ * Image generation helper — Gemini Primary + FLUX Pro Fallback
  *
  * 모델 우선순위:
- *   1. FLUX.2 LoRA (fal-ai/flux-2/lora) — Primary
- *   2. InstantID (fal-ai/instantid) — 얼굴 일관성 후처리 (참조 이미지 있을 때)
- *   3. Gemini (gemini-3-pro → flash → exp) — Fallback
+ *   1. Gemini (gemini-3-pro → flash → exp) — Primary
+ *   2. FLUX Pro v1.1 (fal-ai/flux-pro/v1.1) — Fallback
  *
  * 생성된 이미지는 FAL Storage에 업로드하여 공개 URL 반환
  */
@@ -204,70 +203,6 @@ export function extractImageBase64(response: GeminiResponse): { data: string; mi
   return { data: imagePart.inlineData.data, mimeType: imagePart.inlineData.mimeType };
 }
 
-// ─── FAL Storage 업로드 ─────────────────────────────────
-
-async function uploadToFalStorage(base64Data: string): Promise<string | null> {
-  try {
-    const falKey = process.env.FAL_KEY;
-    if (!falKey) return null;
-
-    const clean = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
-    const buffer = Buffer.from(clean, "base64");
-
-    const initiateRes = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
-      method: "POST",
-      headers: { "Authorization": `Key ${falKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ content_type: "image/jpeg", file_name: "face-ref.jpg" }),
-    });
-    if (!initiateRes.ok) throw new Error(`initiate failed ${initiateRes.status}`);
-    const { upload_url, file_url } = await initiateRes.json();
-
-    const s3Res = await fetch(upload_url, {
-      method: "PUT",
-      headers: { "Content-Type": "image/jpeg" },
-      body: buffer,
-    });
-    if (!s3Res.ok) throw new Error(`S3 upload failed ${s3Res.status}`);
-
-    return file_url;
-  } catch (err: any) {
-    console.warn(`[FAL Storage] 업로드 실패: ${err.message?.slice(0, 100)}`);
-    return null;
-  }
-}
-
-// ─── [Primary] FLUX.2 LoRA ────────────────────────────────
-
-async function generateWithFlux2(
-  prompt: string,
-  negativePrompt: string | undefined,
-  refImageDataUrl: string | undefined,
-  strength: number,
-): Promise<string> {
-  console.log("[FLUX.2] Primary 생성 시도...");
-
-  const input: Record<string, unknown> = {
-    prompt,
-    image_size: { width: 1024, height: 1024 },
-    num_inference_steps: 28,
-    guidance_scale: 7.5,
-    enable_safety_checker: false,
-    seed: Math.floor(Math.random() * 999999),
-  };
-  if (negativePrompt) input.negative_prompt = negativePrompt;
-  if (refImageDataUrl) {
-    input.image_url = refImageDataUrl;
-    input.strength = strength;
-  }
-
-  const result = await falRun("fal-ai/flux-2/lora", input);
-  const imageUrl = (result?.images as Array<{ url: string }>)?.[0]?.url;
-  if (!imageUrl) throw new Error("FLUX.2 응답에 이미지 URL 없음");
-
-  console.log("[FLUX.2] Primary 성공");
-  return imageUrl;
-}
-
 // ─── [Fallback] FLUX Pro v1.1 ─────────────────────────────
 
 async function generateWithFluxPro(
@@ -356,63 +291,9 @@ export async function generateImage(
     }
   }
 
-  // 참조 이미지 base64 (InstantID용)
-  let refImageBase64: string | undefined;
-  if (refImages.length > 0) {
-    const firstImg = refImages[0];
-    if (firstImg.b64Json) {
-      refImageBase64 = firstImg.b64Json;
-    } else if (firstImg.url) {
-      const resolved = await resolveImageToBase64(firstImg);
-      if (resolved) refImageBase64 = resolved.data;
-    }
-  }
-
-  // ── [1] FLUX.2 LoRA Primary + InstantID ──
+  // ── [1] Gemini Primary ──
   try {
-    let finalUrl = await generateWithFlux2(prompt, negativePrompt, refImageDataUrl, strength);
-
-    // FLUX.2 성공 후 InstantID 얼굴 일관성 강화
-    if (refImageBase64) {
-      try {
-        const faceRefUrl = await uploadToFalStorage(refImageBase64);
-        console.log('[FAL Storage] 결과:', faceRefUrl || '❌ 실패');
-
-        if (faceRefUrl) {
-          console.log('[InstantID] 시작...');
-          const instantResult = await falRun('fal-ai/instantid', {
-            face_image_url: faceRefUrl,
-            prompt: 'Korean person, professional portrait photo, natural lighting, photorealistic, DSLR camera, high quality',
-            negative_prompt: 'cartoon, anime, CGI, armor, costume, Iron Man, fantasy, painting',
-            identitynet_strength_ratio: 0.80,
-            ip_adapter_scale: 0.80,
-            num_inference_steps: 30,
-            guidance_scale: 5.0,
-            image_size: { width: 1024, height: 1024 },
-          });
-          console.log('[InstantID] 응답 키:', Object.keys(instantResult || {}));
-          const instantUrl = (instantResult?.image as Record<string, unknown>)?.url as string
-            || (instantResult?.images as Array<{ url: string }>)?.[0]?.url;
-          if (instantUrl) {
-            finalUrl = instantUrl;
-            console.log('[InstantID] 성공 ✅');
-          } else {
-            console.log('[InstantID] 실패 - 원본 유지');
-          }
-        }
-      } catch (instantErr: any) {
-        console.warn(`[InstantID] 에러 (원본 유지): ${instantErr.message?.slice(0, 100)}`);
-      }
-    }
-
-    return { url: finalUrl };
-  } catch (fluxError: any) {
-    console.log("[FLUX.2 실패 원인]:", fluxError?.message || fluxError);
-  }
-
-  // ── [2] Gemini Fallback ──
-  try {
-    console.log("[Gemini] Fallback 시도...");
+    console.log("[Gemini] Primary 생성 시도...");
     let geminiPrompt = prompt;
     if (negativePrompt) {
       geminiPrompt = `${prompt}\n\nAvoid: ${negativePrompt}`;
@@ -429,11 +310,19 @@ export async function generateImage(
     }
 
     const url = await extractImageUrl(response);
-    console.log("[Gemini] Fallback 성공 ✅");
+    console.log("[Gemini] Primary 성공 ✅");
     return { url };
   } catch (geminiError: any) {
     console.log("[Gemini 실패 원인]:", geminiError?.message || geminiError);
   }
 
-  throw new Error("모든 이미지 생성 모델 실패 (FLUX.2+InstantID → Gemini)");
+  // ── [2] FLUX Pro v1.1 Fallback ──
+  try {
+    const url = await generateWithFluxPro(prompt, negativePrompt, refImageDataUrl, strength);
+    return { url };
+  } catch (fluxProError: any) {
+    console.log("[FLUX Pro 실패 원인]:", fluxProError?.message || fluxProError);
+  }
+
+  throw new Error("모든 이미지 생성 모델 실패 (Gemini → FLUX Pro)");
 }
