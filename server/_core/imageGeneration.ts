@@ -440,22 +440,23 @@ export async function generateImage(
   // ── Standard 모드 (기본): IP-Adapter FaceID ──
   if (faceRefUrl) {
     try {
-      console.log('[Standard] IP-Adapter FaceID 생성 시도...');
+      console.log('[Standard] flux-pulid 생성 시도...');
 
-      const result = await falRun('fal-ai/ip-adapter-face-id', {
-        model_type: '1_5-v1',
+      const result = await falRun('fal-ai/flux-pulid', {
+        reference_image_url: faceRefUrl,
         prompt: prompt,
-        negative_prompt: negativePrompt || 'blurry, low resolution, bad, ugly, cartoon, anime, painting, CGI, plastic skin',
-        face_image_url: faceRefUrl,
-        guidance_scale: 7.5,
-        num_inference_steps: 50,
-        num_samples: 4,
-        width: 768,
-        height: 1024,
-        seed: Math.floor(Math.random() * 999999),
+        negative_prompt: negativePrompt || 'cartoon, anime, illustration, CGI, blurry',
+        id_weight: 1.0,
+        start_step: 4,
+        num_inference_steps: 20,
+        guidance_scale: 4,
+        true_cfg: 1,
+        image_size: { width: 1024, height: 1024 },
+        enable_safety_checker: false,
+        max_sequence_length: "128",
       });
-      const imageUrl = result?.image?.url;
-      console.log('[Standard] IP-Adapter 결과:', imageUrl?.slice(0, 60));
+      const imageUrl = result?.images?.[0]?.url;
+      console.log('[Standard] flux-pulid 결과:', imageUrl?.slice(0, 60));
 
       if (imageUrl) {
         const restored = await falRun('fal-ai/codeformer', {
