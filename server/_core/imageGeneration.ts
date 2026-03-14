@@ -446,14 +446,14 @@ export async function generateImage(
         reference_image_url: faceRefUrl,
         prompt: prompt,
         negative_prompt: negativePrompt || 'cartoon, anime, illustration, CGI, blurry',
-        id_weight: 1.0,
-        start_step: 4,
+        id_weight: 1.5,
+        start_step: 2,
         num_inference_steps: 20,
         guidance_scale: 4,
-        true_cfg: 1,
+        true_cfg: 1.5,
         image_size: { width: 1024, height: 1024 },
         enable_safety_checker: false,
-        max_sequence_length: "128",
+        max_sequence_length: "512",
       });
       const imageUrl = result?.images?.[0]?.url;
       console.log('[Standard] flux-pulid 결과:', imageUrl?.slice(0, 60));
