@@ -305,10 +305,13 @@ export async function generateImage(
       console.log('[FAL Storage] 결과:', faceRefUrl || '❌ 실패');
 
       if (faceRefUrl) {
+        const instantPrompt = `Korean person, professional studio portrait, natural skin texture, soft studio lighting, photorealistic, DSLR photo, 85mm lens`;
+        const instantNegative = 'cartoon, anime, illustration, painting, drawing, art, CGI, rendered, Iron Man, superhero, costume, armor';
+        console.log('[InstantID] 프롬프트:', instantPrompt.slice(0, 200));
         const instantResult = await falRun('fal-ai/instantid', {
           face_image_url: faceRefUrl,
-          prompt,
-          negative_prompt: negativePrompt || '',
+          prompt: instantPrompt,
+          negative_prompt: instantNegative,
           identitynet_strength_ratio: 0.80,
           adapter_strength_ratio: 0.80,
           num_inference_steps: 30,
