@@ -380,23 +380,37 @@ export async function generateImage(
         console.log('[FAL Storage] 결과:', faceRefUrl || '❌ 실패');
 
         if (faceRefUrl) {
-          const instantResult = await falRun('fal-ai/instant-id', {
-            face_image_url: faceRefUrl,
-            prompt,
-            negative_prompt: negativePrompt || '',
-            identitynet_strength_ratio: 0.65,
-            adapter_strength_ratio: 0.65,
-            num_inference_steps: 30,
-            guidance_scale: 5.0,
-            image_size: { width: 1024, height: 1024 },
-          });
-          console.log('[InstantID] 응답 키:', Object.keys(instantResult || {}));
-          const instantUrl = (instantResult?.images as Array<{ url: string }>)?.[0]?.url;
-          if (instantUrl) {
-            finalUrl = instantUrl;
-            console.log('[InstantID] 성공 ✅');
-          } else {
-            console.log('[InstantID] 실패 - 원본 유지');
+          const instantIdModels = ['fal-ai/instantid', 'fal-ai/instant-id-ipadapter'];
+          let instantSuccess = false;
+
+          for (const modelName of instantIdModels) {
+            try {
+              console.log('[InstantID] 모델 시도:', modelName);
+              const instantResult = await falRun(modelName, {
+                face_image_url: faceRefUrl,
+                prompt,
+                negative_prompt: negativePrompt || '',
+                identitynet_strength_ratio: 0.65,
+                adapter_strength_ratio: 0.65,
+                num_inference_steps: 30,
+                guidance_scale: 5.0,
+                image_size: { width: 1024, height: 1024 },
+              });
+              console.log('[InstantID] 응답 키:', Object.keys(instantResult || {}));
+              const instantUrl = (instantResult?.images as Array<{ url: string }>)?.[0]?.url;
+              if (instantUrl) {
+                finalUrl = instantUrl;
+                console.log('[InstantID] 성공 ✅ 모델:', modelName);
+                instantSuccess = true;
+                break;
+              }
+            } catch (modelErr: any) {
+              console.log(`[InstantID] ${modelName} 실패: ${modelErr.message?.slice(0, 100)}`);
+            }
+          }
+
+          if (!instantSuccess) {
+            console.log('[InstantID] 모든 모델 실패 - 원본 유지');
           }
         }
       } catch (instantErr: any) {
