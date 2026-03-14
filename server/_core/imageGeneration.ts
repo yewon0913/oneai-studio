@@ -204,6 +204,38 @@ export function extractImageBase64(response: GeminiResponse): { data: string; mi
   return { data: imagePart.inlineData.data, mimeType: imagePart.inlineData.mimeType };
 }
 
+// ─── FAL Storage 업로드 ─────────────────────────────────
+
+async function uploadToFalStorage(base64Data: string): Promise<string | null> {
+  try {
+    const falKey = process.env.FAL_KEY;
+    if (!falKey) return null;
+
+    const clean = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
+    const buffer = Buffer.from(clean, "base64");
+
+    const initiateRes = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
+      method: "POST",
+      headers: { "Authorization": `Key ${falKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ content_type: "image/jpeg", file_name: "face-ref.jpg" }),
+    });
+    if (!initiateRes.ok) throw new Error(`initiate failed ${initiateRes.status}`);
+    const { upload_url, file_url } = await initiateRes.json();
+
+    const s3Res = await fetch(upload_url, {
+      method: "PUT",
+      headers: { "Content-Type": "image/jpeg" },
+      body: buffer,
+    });
+    if (!s3Res.ok) throw new Error(`S3 upload failed ${s3Res.status}`);
+
+    return file_url;
+  } catch (err: any) {
+    console.warn(`[FAL Storage] 업로드 실패: ${err.message?.slice(0, 100)}`);
+    return null;
+  }
+}
+
 // ─── [Primary] FLUX.2 LoRA ────────────────────────────────
 
 async function generateWithFlux2(
@@ -324,10 +356,55 @@ export async function generateImage(
     }
   }
 
+  // 참조 이미지 base64 (InstantID용)
+  let refImageBase64: string | undefined;
+  if (refImages.length > 0) {
+    const firstImg = refImages[0];
+    if (firstImg.b64Json) {
+      refImageBase64 = firstImg.b64Json;
+    } else if (firstImg.url) {
+      const resolved = await resolveImageToBase64(firstImg);
+      if (resolved) refImageBase64 = resolved.data;
+    }
+  }
+
   // ── [1] FLUX.2 LoRA Primary ──
   try {
-    const url = await generateWithFlux2(prompt, negativePrompt, refImageDataUrl, strength);
-    return { url };
+    let finalUrl = await generateWithFlux2(prompt, negativePrompt, refImageDataUrl, strength);
+
+    // FLUX.2 성공 후 InstantID 얼굴 일관성 강화
+    if (refImageBase64) {
+      try {
+        console.log('[InstantID] 시작...');
+        const faceRefUrl = await uploadToFalStorage(refImageBase64);
+        console.log('[FAL Storage] 결과:', faceRefUrl || '❌ 실패');
+
+        if (faceRefUrl) {
+          const instantResult = await falRun('fal-ai/instant-id', {
+            face_image_url: faceRefUrl,
+            prompt,
+            negative_prompt: negativePrompt || '',
+            identitynet_strength_ratio: 0.65,
+            adapter_strength_ratio: 0.65,
+            num_inference_steps: 30,
+            guidance_scale: 5.0,
+            image_size: { width: 1024, height: 1024 },
+          });
+          console.log('[InstantID] 응답 키:', Object.keys(instantResult || {}));
+          const instantUrl = (instantResult?.images as Array<{ url: string }>)?.[0]?.url;
+          if (instantUrl) {
+            finalUrl = instantUrl;
+            console.log('[InstantID] 성공 ✅');
+          } else {
+            console.log('[InstantID] 실패 - 원본 유지');
+          }
+        }
+      } catch (instantErr: any) {
+        console.warn(`[InstantID] 에러 (원본 유지): ${instantErr.message?.slice(0, 100)}`);
+      }
+    }
+
+    return { url: finalUrl };
   } catch (fluxError: any) {
     console.log("[FLUX.2 실패 원인]:", fluxError?.message || fluxError);
   }
