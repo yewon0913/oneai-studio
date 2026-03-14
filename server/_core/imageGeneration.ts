@@ -442,7 +442,7 @@ export async function generateImage(
     try {
       console.log('[Standard] LoRA + IP-Adapter 생성 시도...');
 
-      const result = await falRun('fal-ai/lora', {
+      const result = await falQueueRun('fal-ai/lora', {
         model_name: 'SG161222/Realistic_Vision_V4.0_noVAE',
         prompt: prompt,
         negative_prompt: negativePrompt || 'V-line jaw, slim face, westernized features, plastic skin, airbrushed, cartoon, anime, rosy cheeks, pink flush, different person, enlarged eyes, high nose bridge',
@@ -458,7 +458,7 @@ export async function generateImage(
         scheduler: 'DPM++ 2M Karras',
         seed: Math.floor(Math.random() * 999999),
         enable_safety_checker: false,
-      });
+      }, 300000);
       const imageUrl = result?.images?.[0]?.url;
       console.log('[Standard] LoRA + IP-Adapter 결과:', imageUrl?.slice(0, 60));
 
