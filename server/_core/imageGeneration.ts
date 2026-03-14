@@ -37,7 +37,7 @@ export type GenerateImageResponse = {
   url?: string;
 };
 
-// ─── FAL REST API ─────────────────────────────────────────
+// ─── FAL REST API (동기) ──────────────────────────────────
 
 async function falRun(
   modelId: string,
@@ -70,6 +70,73 @@ async function falRun(
   } finally {
     clearTimeout(timer);
   }
+}
+
+// ─── FAL Queue API (비동기 폴링) ─────────────────────────
+
+async function falRunQueue(
+  modelId: string,
+  input: Record<string, unknown>,
+  timeoutMs = 180000,
+  pollIntervalMs = 3000,
+): Promise<Record<string, unknown>> {
+  const falKey = process.env.FAL_KEY;
+  if (!falKey) throw new Error("FAL_KEY not set");
+
+  const headers = {
+    "Authorization": `Key ${falKey}`,
+    "Content-Type": "application/json",
+  };
+
+  // 1. Submit to queue
+  const submitRes = await fetch(`https://queue.fal.run/${modelId}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(input),
+  });
+  const submitText = await submitRes.text();
+  if (!submitRes.ok) throw new Error(`${modelId} queue submit failed ${submitRes.status}: ${submitText.slice(0, 300)}`);
+  const { request_id } = JSON.parse(submitText);
+  if (!request_id) throw new Error(`${modelId} queue: no request_id`);
+  console.log(`[Queue] ${modelId} submitted: ${request_id}`);
+
+  // 2. Poll for status
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, pollIntervalMs));
+
+    const statusRes = await fetch(
+      `https://queue.fal.run/${modelId}/requests/${request_id}/status`,
+      { headers },
+    );
+    if (!statusRes.ok) {
+      console.warn(`[Queue] status check failed: ${statusRes.status}`);
+      continue;
+    }
+    const status = await statusRes.json();
+
+    if (status.status === 'COMPLETED') {
+      // 3. Fetch result
+      const resultRes = await fetch(
+        `https://queue.fal.run/${modelId}/requests/${request_id}`,
+        { headers },
+      );
+      const resultText = await resultRes.text();
+      if (!resultRes.ok) throw new Error(`${modelId} result failed ${resultRes.status}: ${resultText.slice(0, 300)}`);
+      console.log(`[Queue] ${modelId} completed`);
+      return JSON.parse(resultText);
+    }
+
+    if (status.status === 'FAILED') {
+      throw new Error(`${modelId} queue failed: ${JSON.stringify(status).slice(0, 200)}`);
+    }
+
+    if (status.status === 'IN_PROGRESS') {
+      console.log('[FaceSwap] 처리 중...');
+    }
+  }
+
+  throw new Error(`${modelId} queue timeout (${timeoutMs}ms)`);
 }
 
 // ─── Gemini API 호출 ─────────────────────────────────────
@@ -347,14 +414,14 @@ export async function generateImage(
 
         if (faceRefUrl) {
           try {
-            console.log('[FaceSwap] 요청 전송...');
-            const swapResult = await falRun('easel-ai/advanced-face-swap', {
+            console.log('[FaceSwap] 요청 전송 (queue)...');
+            const swapResult = await falRunQueue('easel-ai/advanced-face-swap', {
               face_image_0: faceRefUrl,
-              gender_0: options.gender || 'female',
+              gender_0: options.gender || 'male',
               target_image: templateUrl,
               workflow_type: 'user_hair',
               upscale: false,
-            }, 60000);
+            }, 180000, 3000);
             console.log('[FaceSwap] 응답 수신...');
             console.log('[FaceSwap] 응답 키:', Object.keys(swapResult || {}));
             const swappedUrl = (swapResult?.image as Record<string, unknown>)?.url as string
