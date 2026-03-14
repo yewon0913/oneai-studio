@@ -1,3 +1,4 @@
+console.log('=== ONE AI STUDIO v2.0 - InstantID 포함 ===');
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
