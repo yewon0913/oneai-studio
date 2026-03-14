@@ -44,7 +44,7 @@ async function falRun(
   modelId: string,
   input: Record<string, unknown>,
   timeoutMs = 120000,
-): Promise<Record<string, unknown>> {
+): Promise<any> {
   const falKey = process.env.FAL_KEY;
   if (!falKey) throw new Error("FAL_KEY not set");
 
@@ -75,12 +75,12 @@ async function falRun(
 
 // ─── FAL Queue API (비동기 폴링) ─────────────────────────
 
-async function falRunQueue(
+async function falQueueRun(
   modelId: string,
   input: Record<string, unknown>,
   timeoutMs = 180000,
   pollIntervalMs = 3000,
-): Promise<Record<string, unknown>> {
+): Promise<any> {
   const falKey = process.env.FAL_KEY;
   if (!falKey) throw new Error("FAL_KEY not set");
 
@@ -375,8 +375,9 @@ export async function generateImage(
     }
   }
 
-  // 참조 이미지 base64 (Face Swap용)
+  // 참조 이미지 base64 → FAL Storage URL
   let refImageBase64: string | undefined;
+  let faceRefUrl: string | null = null;
   if (refImages.length > 0) {
     const firstImg = refImages[0];
     if (firstImg.b64Json) {
@@ -385,134 +386,93 @@ export async function generateImage(
       const resolved = await resolveImageToBase64(firstImg);
       if (resolved) refImageBase64 = resolved.data;
     }
+    if (refImageBase64) {
+      faceRefUrl = await uploadToFalStorage(refImageBase64);
+      console.log('[FAL Storage] 결과:', faceRefUrl || '❌ 실패');
+    }
   }
 
-  // ── [1] Premium: FLUX Pro Template + Easel Face Swap + CodeFormer ──
-  if (options.mode === 'premium' && refImageBase64) {
+  // ── Premium 모드: Easel AI Face Swap ──
+  if (options.mode === 'premium' && faceRefUrl) {
     try {
-      const faceRefUrl = await uploadToFalStorage(refImageBase64);
-      console.log('[FAL Storage] 결과:', faceRefUrl || '❌ 실패');
+      console.log('[Premium] Easel AI Face Swap 파이프라인');
 
-      if (faceRefUrl) {
-        console.log("[FLUX Pro] Premium 모드 - 템플릿 생성 시도...");
-        const templateResult = await falRun("fal-ai/flux-pro/v1.1", {
-          prompt,
-          negative_prompt: negativePrompt || '',
-          image_size: { width: 1024, height: 1024 },
-          num_inference_steps: 28,
-          guidance_scale: 3.5,
-        });
-        const templateUrl = (templateResult?.images as Array<{ url: string }>)?.[0]?.url;
-        if (!templateUrl) throw new Error("FLUX Pro 템플릿 이미지 URL 없음");
-        console.log("[FLUX Pro] 템플릿 생성 완료:", templateUrl.slice(0, 60));
+      // Step 1: FLUX Pro 템플릿
+      const template = await falRun('fal-ai/flux-pro/v1.1', {
+        prompt: prompt,
+        image_size: { width: 1024, height: 1024 },
+        num_inference_steps: 28,
+        guidance_scale: 3.5,
+      });
+      const templateUrl = template?.images?.[0]?.url;
+      console.log('[Premium] 템플릿:', templateUrl?.slice(0, 60));
 
-        let finalUrl = templateUrl;
-        let codeFormerInput = templateUrl;
+      // Step 2: Easel Face Swap (큐 방식, 600초)
+      if (templateUrl) {
+        const swapResult = await falQueueRun('easel-ai/advanced-face-swap', {
+          face_image_0: faceRefUrl,
+          gender_0: options.gender || 'male',
+          target_image: templateUrl,
+          workflow_type: 'user_hair',
+          upscale: false,
+        }, 600000);
+        const swappedUrl = swapResult?.image?.url;
+        console.log('[Premium] FaceSwap:', swappedUrl?.slice(0, 60));
 
-        try {
-          console.log('[FaceSwap] 요청 전송 (queue)...');
-          const swapResult = await falRunQueue('easel-ai/advanced-face-swap', {
-            face_image_0: faceRefUrl,
-            gender_0: options.gender || 'male',
-            target_image: templateUrl,
-            workflow_type: 'user_hair',
-            upscale: false,
-          }, 600000, 3000);
-          console.log('[FaceSwap] 응답 수신...');
-          const swappedUrl = (swapResult?.image as Record<string, unknown>)?.url as string
-            || (swapResult?.images as Array<{ url: string }>)?.[0]?.url;
-          if (swappedUrl) {
-            codeFormerInput = swappedUrl;
-            console.log('[FaceSwap] 완료:', swappedUrl.slice(0, 60));
-          } else {
-            console.log('[FaceSwap] URL 없음 - 템플릿으로 CodeFormer 진행');
-          }
-        } catch (swapErr: any) {
-          console.warn(`[FaceSwap] 에러 (템플릿으로 CodeFormer 진행): ${swapErr.message?.slice(0, 100)}`);
-        }
-
-        try {
-          console.log('[CodeFormer] 시작...');
-          const restoredResult = await falRun('fal-ai/codeformer', {
-            image_url: codeFormerInput,
+        // Step 3: CodeFormer
+        if (swappedUrl) {
+          const restored = await falRun('fal-ai/codeformer', {
+            image_url: swappedUrl,
             fidelity: 0.78,
             upscale: 2,
-            background_enhance: true,
             face_upsample: true,
           });
-          const restoredUrl = (restoredResult?.image as Record<string, unknown>)?.url as string
-            || (restoredResult?.images as Array<{ url: string }>)?.[0]?.url;
-          if (restoredUrl) {
-            finalUrl = restoredUrl;
-            console.log('[CodeFormer] 완료 ✅');
-          } else {
-            finalUrl = codeFormerInput;
-          }
-        } catch (cfErr: any) {
-          finalUrl = codeFormerInput;
-          console.warn(`[CodeFormer] 에러: ${cfErr.message?.slice(0, 100)}`);
+          console.log('[Premium] 완료 ✅');
+          return { url: restored?.image?.url || swappedUrl };
         }
-
-        return { url: finalUrl };
       }
+      console.log('[Premium] 실패 → Standard로 fallback');
     } catch (premiumErr: any) {
-      console.log("[Premium 실패 원인]:", premiumErr?.message || premiumErr);
+      console.log('[Premium] 에러 → Standard로 fallback:', premiumErr?.message?.slice(0, 100));
     }
   }
 
-  // ── [2] Standard (기본): IP-Adapter FaceID + CodeFormer ──
-  if (refImageBase64) {
+  // ── Standard 모드 (기본): IP-Adapter FaceID ──
+  if (faceRefUrl) {
     try {
-      const faceRefUrl = await uploadToFalStorage(refImageBase64);
-      console.log('[FAL Storage] 결과:', faceRefUrl || '❌ 실패');
+      console.log('[Standard] IP-Adapter FaceID 생성 시도...');
 
-      if (faceRefUrl) {
-        console.log('[IP-Adapter] Standard 모드 생성 시도...');
-        const ipResult = await falRun('fal-ai/ip-adapter-face-id', {
-          model_type: '1_5-v1',
-          prompt,
-          negative_prompt: negativePrompt || 'blurry, low resolution, bad, ugly, cartoon, anime, painting, CGI, plastic skin',
-          face_image_url: faceRefUrl,
-          guidance_scale: 7.5,
-          num_inference_steps: 50,
-          num_samples: 4,
-          width: 768,
-          height: 1024,
-          seed: Math.floor(Math.random() * 999999),
+      const result = await falRun('fal-ai/ip-adapter-face-id', {
+        model_type: '1_5-v1',
+        prompt: prompt,
+        negative_prompt: negativePrompt || 'blurry, low resolution, bad, ugly, cartoon, anime, painting, CGI, plastic skin',
+        face_image_url: faceRefUrl,
+        guidance_scale: 7.5,
+        num_inference_steps: 50,
+        num_samples: 4,
+        width: 768,
+        height: 1024,
+        seed: Math.floor(Math.random() * 999999),
+      });
+      const imageUrl = result?.image?.url;
+      console.log('[Standard] IP-Adapter 결과:', imageUrl?.slice(0, 60));
+
+      if (imageUrl) {
+        const restored = await falRun('fal-ai/codeformer', {
+          image_url: imageUrl,
+          fidelity: 0.78,
+          upscale: 2,
+          face_upsample: true,
         });
-        console.log('[IP-Adapter] 응답 키:', Object.keys(ipResult || {}));
-        const ipUrl = (ipResult?.image as Record<string, unknown>)?.url as string
-          || (ipResult?.images as Array<{ url: string }>)?.[0]?.url;
-        console.log('[IP-Adapter] 결과:', ipUrl?.slice(0, 60));
-
-        if (ipUrl) {
-          // CodeFormer 업스케일
-          try {
-            console.log('[CodeFormer] 시작...');
-            const restoredResult = await falRun('fal-ai/codeformer', {
-              image_url: ipUrl,
-              fidelity: 0.78,
-              upscale: 2,
-              face_upsample: true,
-            });
-            const restoredUrl = (restoredResult?.image as Record<string, unknown>)?.url as string
-              || (restoredResult?.images as Array<{ url: string }>)?.[0]?.url;
-            if (restoredUrl) {
-              console.log('[CodeFormer] 완료 ✅');
-              return { url: restoredUrl };
-            }
-          } catch (cfErr: any) {
-            console.warn(`[CodeFormer] 에러 (IP-Adapter 결과 사용): ${cfErr.message?.slice(0, 100)}`);
-          }
-          return { url: ipUrl };
-        }
+        console.log('[Standard] 완료 ✅');
+        return { url: restored?.image?.url || imageUrl };
       }
-    } catch (ipErr: any) {
-      console.log("[IP-Adapter 실패 원인]:", ipErr?.message || ipErr);
+    } catch (stdErr: any) {
+      console.log('[Standard] 실패:', stdErr?.message?.slice(0, 100));
     }
   }
 
-  // ── [3] Gemini Fallback ──
+  // ── Fallback: Gemini ──
   try {
     console.log("[Gemini] Fallback 시도...");
     let geminiPrompt = prompt;
@@ -537,5 +497,5 @@ export async function generateImage(
     console.log("[Gemini 실패 원인]:", geminiError?.message || geminiError);
   }
 
-  throw new Error("모든 이미지 생성 모델 실패 (Premium FaceSwap → IP-Adapter → Gemini)");
+  throw new Error("모든 이미지 생성 모델 실패 (Premium → Standard → Gemini)");
 }
