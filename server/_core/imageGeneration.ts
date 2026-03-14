@@ -1,9 +1,9 @@
 /**
- * Image generation helper v3.0 — InstantID Primary
+ * Image generation helper — Gemini Primary + FLUX Pro Fallback
  *
  * 모델 우선순위:
- *   1. InstantID (fal-ai/instantid) — Primary (얼굴 참조 이미지 필요)
- *   2. Gemini (gemini-3-pro → flash → exp) — Fallback
+ *   1. Gemini (gemini-3-pro → flash → exp) — Primary
+ *   2. FLUX Pro v1.1 (fal-ai/flux-pro/v1.1) — Fallback
  *
  * 생성된 이미지는 FAL Storage에 업로드하여 공개 URL 반환
  */
@@ -145,7 +145,7 @@ export async function resolveImageToBase64(img: {
       const contentType = res.headers.get("content-type") || img.mimeType || "image/png";
       return { data: buffer.toString("base64"), mimeType: contentType };
     } catch (err: any) {
-      console.warn(`[FLUX.2] 참조 이미지 다운로드 실패: ${err.message?.slice(0, 100)}`);
+      console.warn(`[ImageGen] 참조 이미지 다운로드 실패: ${err.message?.slice(0, 100)}`);
       return null;
     }
   }
@@ -203,38 +203,37 @@ export function extractImageBase64(response: GeminiResponse): { data: string; mi
   return { data: imagePart.inlineData.data, mimeType: imagePart.inlineData.mimeType };
 }
 
-// ─── FAL Storage 업로드 ─────────────────────────────────
+// ─── [Fallback] FLUX Pro v1.1 ─────────────────────────────
 
-async function uploadToFalStorage(base64Data: string): Promise<string | null> {
-  try {
-    const falKey = process.env.FAL_KEY;
-    if (!falKey) return null;
+async function generateWithFluxPro(
+  prompt: string,
+  negativePrompt: string | undefined,
+  refImageDataUrl: string | undefined,
+  strength: number,
+): Promise<string> {
+  console.log("[FLUX Pro] Fallback 시도...");
 
-    const clean = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
-    const buffer = Buffer.from(clean, "base64");
-
-    const initiateRes = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
-      method: "POST",
-      headers: { "Authorization": `Key ${falKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ content_type: "image/jpeg", file_name: "face-ref.jpg" }),
-    });
-    if (!initiateRes.ok) throw new Error(`initiate failed ${initiateRes.status}`);
-    const { upload_url, file_url } = await initiateRes.json();
-
-    const s3Res = await fetch(upload_url, {
-      method: "PUT",
-      headers: { "Content-Type": "image/jpeg" },
-      body: buffer,
-    });
-    if (!s3Res.ok) throw new Error(`S3 upload failed ${s3Res.status}`);
-
-    return file_url;
-  } catch (err: any) {
-    console.warn(`[FAL Storage] 업로드 실패: ${err.message?.slice(0, 100)}`);
-    return null;
+  const input: Record<string, unknown> = {
+    prompt,
+    image_size: { width: 1024, height: 1024 },
+    num_inference_steps: 28,
+    guidance_scale: 7.0,
+    enable_safety_checker: false,
+    seed: Math.floor(Math.random() * 999999),
+  };
+  if (negativePrompt) input.negative_prompt = negativePrompt;
+  if (refImageDataUrl) {
+    input.image_url = refImageDataUrl;
+    input.strength = strength;
   }
-}
 
+  const result = await falRun("fal-ai/flux-pro/v1.1", input);
+  const imageUrl = (result?.images as Array<{ url: string }>)?.[0]?.url;
+  if (!imageUrl) throw new Error("FLUX Pro 응답에 이미지 URL 없음");
+
+  console.log("[FLUX Pro] Fallback 성공");
+  return imageUrl;
+}
 
 // ─── 메인 함수 ──────────────────────────────────────────
 
@@ -247,6 +246,7 @@ export async function generateImage(
   }
 
   const negativePrompt = options.negativePrompt;
+  const strength = options.strength ?? 0.75;
 
   if (options.faceFixMode) {
     prompt = `${prompt}\n\nIMPORTANT: Preserve facial features exactly. Maintain face identity, expression, and proportions precisely.`;
@@ -254,6 +254,7 @@ export async function generateImage(
 
   // 참조 이미지 준비
   const refImages = options.originalImages || [];
+  let refImageDataUrl: string | undefined;
   const geminiParts: GeminiPart[] = [];
 
   if (refImages.length > 0) {
@@ -261,6 +262,11 @@ export async function generateImage(
     for (const img of refImages) {
       const resolved = await resolveImageToBase64(img);
       if (resolved) {
+        // FLUX Pro용: 첫 번째 참조 이미지를 data URL로
+        if (!refImageDataUrl) {
+          refImageDataUrl = `data:${resolved.mimeType};base64,${resolved.data}`;
+        }
+
         // Gemini용: 512px 리사이즈
         let resizedData = resolved.data;
         try {
@@ -285,57 +291,9 @@ export async function generateImage(
     }
   }
 
-  // 참조 이미지 base64 (InstantID용)
-  let refImageBase64: string | undefined;
-  if (refImages.length > 0) {
-    const firstImg = refImages[0];
-    if (firstImg.b64Json) {
-      refImageBase64 = firstImg.b64Json;
-    } else if (firstImg.url) {
-      const resolved = await resolveImageToBase64(firstImg);
-      if (resolved) refImageBase64 = resolved.data;
-    }
-  }
-
-  // ── [1] InstantID Primary ──
-  if (refImageBase64) {
-    try {
-      console.log('[InstantID] Primary 생성 시도...');
-      const faceRefUrl = await uploadToFalStorage(refImageBase64);
-      console.log('[FAL Storage] 결과:', faceRefUrl || '❌ 실패');
-
-      if (faceRefUrl) {
-        const instantPrompt = `Korean person, professional studio portrait, natural skin texture, soft studio lighting, photorealistic, DSLR photo, 85mm lens`;
-        const instantNegative = 'cartoon, anime, illustration, painting, drawing, art, CGI, rendered, Iron Man, superhero, costume, armor';
-        console.log('[InstantID] 프롬프트:', instantPrompt.slice(0, 200));
-        const instantResult = await falRun('fal-ai/instantid', {
-          face_image_url: faceRefUrl,
-          prompt: instantPrompt,
-          negative_prompt: instantNegative,
-          identitynet_strength_ratio: 0.80,
-          adapter_strength_ratio: 0.80,
-          num_inference_steps: 30,
-          guidance_scale: 5.0,
-          image_size: { width: 1024, height: 1024 },
-        });
-        console.log('[InstantID] 응답 키:', Object.keys(instantResult || {}));
-        const instantUrl = (instantResult?.image as Record<string, unknown>)?.url as string
-          || (instantResult?.images as Array<{ url: string }>)?.[0]?.url;
-        if (instantUrl) {
-          console.log('[InstantID] Primary 성공 ✅:', instantUrl.slice(0, 60));
-          return { url: instantUrl };
-        } else {
-          console.log('[InstantID] 이미지 URL 없음:', JSON.stringify(instantResult).slice(0, 200));
-        }
-      }
-    } catch (instantErr: any) {
-      console.log('[InstantID 실패 원인]:', instantErr?.message || instantErr);
-    }
-  }
-
-  // ── [2] Gemini Fallback ──
+  // ── [1] Gemini Primary ──
   try {
-    console.log("[Gemini] Fallback 시도...");
+    console.log("[Gemini] Primary 생성 시도...");
     let geminiPrompt = prompt;
     if (negativePrompt) {
       geminiPrompt = `${prompt}\n\nAvoid: ${negativePrompt}`;
@@ -352,10 +310,19 @@ export async function generateImage(
     }
 
     const url = await extractImageUrl(response);
+    console.log("[Gemini] Primary 성공 ✅");
     return { url };
   } catch (geminiError: any) {
     console.log("[Gemini 실패 원인]:", geminiError?.message || geminiError);
   }
 
-  throw new Error("모든 이미지 생성 모델 실패 (InstantID → Gemini)");
+  // ── [2] FLUX Pro v1.1 Fallback ──
+  try {
+    const url = await generateWithFluxPro(prompt, negativePrompt, refImageDataUrl, strength);
+    return { url };
+  } catch (fluxProError: any) {
+    console.log("[FLUX Pro 실패 원인]:", fluxProError?.message || fluxProError);
+  }
+
+  throw new Error("모든 이미지 생성 모델 실패 (Gemini → FLUX Pro)");
 }
