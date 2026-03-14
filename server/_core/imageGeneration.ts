@@ -381,7 +381,10 @@ export async function generateImage(
 
         if (faceRefUrl) {
           console.log('[InstantID] 모델 시도: fal-ai/instantid');
+          console.log('[InstantID] image_url (FLUX.2 결과):', finalUrl.slice(0, 60));
+          console.log('[InstantID] face_image_url (원본 얼굴):', faceRefUrl.slice(0, 60));
           const instantResult = await falRun('fal-ai/instantid', {
+            image_url: finalUrl,
             face_image_url: faceRefUrl,
             prompt,
             negative_prompt: negativePrompt || '',
