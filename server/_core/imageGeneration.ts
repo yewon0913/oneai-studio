@@ -440,29 +440,23 @@ export async function generateImage(
   // ── Standard 모드 (기본): IP-Adapter FaceID ──
   if (faceRefUrl) {
     try {
-      console.log('[Standard] LoRA + IP-Adapter 생성 시도...');
+      console.log('[Standard] FLUX General + IP-Adapter 생성 시도...');
 
-      const result = await falQueueRun('fal-ai/lora', {
-        model_name: 'SG161222/Realistic_Vision_V4.0_noVAE',
+      const result = await falQueueRun('fal-ai/flux-general', {
         prompt: prompt,
-        negative_prompt: negativePrompt || 'cartoon, anime, painting, CGI, plastic skin',
         ip_adapter: [{
           ip_adapter_image_url: faceRefUrl,
-          path: 'h94/IP-Adapter',
-          weight_name: 'ip-adapter-faceid_sd15.bin',
-          insight_face_model_path: 'buffalo_l',
           scale: 0.85,
-          image_projection_shortcut: false,
         }],
         image_size: { width: 768, height: 1024 },
-        num_inference_steps: 30,
-        guidance_scale: 7.5,
-        scheduler: 'Euler A',
-        seed: Math.floor(Math.random() * 999999),
+        num_inference_steps: 28,
+        guidance_scale: 3.5,
         enable_safety_checker: false,
+        num_images: 1,
+        output_format: 'jpeg',
       }, 300000);
       const imageUrl = result?.images?.[0]?.url;
-      console.log('[Standard] LoRA + IP-Adapter 결과:', imageUrl?.slice(0, 60));
+      console.log('[Standard] FLUX General 결과:', imageUrl?.slice(0, 60));
 
       if (imageUrl) {
         const restored = await falRun('fal-ai/codeformer', {
