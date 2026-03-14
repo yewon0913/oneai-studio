@@ -357,13 +357,13 @@ export async function generateImage(
           const buf = Buffer.from(resolved.data, "base64");
           const meta = await sharp(buf).metadata();
           const longer = Math.max(meta.width || 0, meta.height || 0);
-          if (longer > 768) {
+          if (longer > 512) {
             const resized = await sharp(buf)
-              .resize({ width: 768, height: 768, fit: "inside", withoutEnlargement: true })
+              .resize({ width: 512, height: 512, fit: "inside", withoutEnlargement: true })
               .jpeg({ quality: 85 })
               .toBuffer();
             resizedData = resized.toString("base64");
-            console.log(`[ImageGen] 참조 이미지 리사이즈: ${meta.width}x${meta.height} → 768px`);
+            console.log(`[ImageGen] 참조 이미지 리사이즈: ${meta.width}x${meta.height} → 512px`);
           }
         } catch (resizeErr: any) {
           console.warn(`[ImageGen] 리사이즈 실패 (원본 사용): ${resizeErr.message?.slice(0, 80)}`);
@@ -446,14 +446,14 @@ export async function generateImage(
         reference_image_url: faceRefUrl,
         prompt: prompt,
         negative_prompt: negativePrompt || 'cartoon, anime, illustration, CGI, blurry',
-        id_weight: 2.0,
-        start_step: 2,
-        num_inference_steps: 30,
-        guidance_scale: 5,
-        true_cfg: 2.0,
+        id_weight: 1.5,
+        start_step: 4,
+        num_inference_steps: 20,
+        guidance_scale: 4,
+        true_cfg: 1.5,
         image_size: { width: 1024, height: 1024 },
         enable_safety_checker: false,
-        max_sequence_length: "512",
+        max_sequence_length: "128",
       });
       const imageUrl = result?.images?.[0]?.url;
       console.log('[Standard] flux-pulid 결과:', imageUrl?.slice(0, 60));
