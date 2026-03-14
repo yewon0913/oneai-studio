@@ -446,7 +446,7 @@ export async function generateImage(
         prompt: prompt,
         ip_adapter: [{
           ip_adapter_image_url: faceRefUrl,
-          scale: 0.85,
+          scale: 1.2,
         }],
         image_size: { width: 768, height: 1024 },
         num_inference_steps: 28,
