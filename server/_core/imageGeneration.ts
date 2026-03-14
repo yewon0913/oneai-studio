@@ -445,18 +445,12 @@ export async function generateImage(
       const result = await falQueueRun('fal-ai/lora', {
         model_name: 'SG161222/Realistic_Vision_V4.0_noVAE',
         prompt: prompt,
-        negative_prompt: negativePrompt || 'V-line jaw, slim face, westernized features, plastic skin, airbrushed, cartoon, anime, rosy cheeks, pink flush, different person, enlarged eyes, high nose bridge',
-        ip_adapter: [{
-          ip_adapter_image_url: faceRefUrl,
-          path: 'h94/IP-Adapter-FaceID',
-          scale: 0.85,
-          image_projection_shortcut: true,
-        }],
+        negative_prompt: negativePrompt || 'cartoon, anime, painting, CGI, plastic skin',
+        ip_adapter: [],
         image_size: { width: 768, height: 1024 },
         num_inference_steps: 30,
         guidance_scale: 7.5,
         scheduler: 'Euler A',
-        prediction_type: 'epsilon',
         seed: Math.floor(Math.random() * 999999),
         enable_safety_checker: false,
       }, 300000);
