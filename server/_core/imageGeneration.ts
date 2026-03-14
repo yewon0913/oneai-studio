@@ -41,23 +41,35 @@ export type GenerateImageResponse = {
 
 async function falRun(
   modelId: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  timeoutMs = 120000,
 ): Promise<Record<string, unknown>> {
   const falKey = process.env.FAL_KEY;
   if (!falKey) throw new Error("FAL_KEY not set");
 
-  const res = await fetch(`https://fal.run/${modelId}`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Key ${falKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(input),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  const text = await res.text();
-  if (!res.ok) throw new Error(`${modelId} failed ${res.status}: ${text.slice(0, 300)}`);
-  return JSON.parse(text);
+  try {
+    const res = await fetch(`https://fal.run/${modelId}`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Key ${falKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+      signal: controller.signal,
+    });
+
+    const text = await res.text();
+    if (!res.ok) throw new Error(`${modelId} failed ${res.status}: ${text.slice(0, 300)}`);
+    return JSON.parse(text);
+  } catch (err: any) {
+    if (err.name === 'AbortError') throw new Error(`${modelId} timeout (${timeoutMs}ms)`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ─── Gemini API 호출 ─────────────────────────────────────
@@ -330,50 +342,59 @@ export async function generateImage(
         const faceRefUrl = await uploadToFalStorage(refImageBase64);
         console.log('[FAL Storage] 결과:', faceRefUrl || '❌ 실패');
 
-        if (faceRefUrl) {
-          console.log('[FaceSwap] 시작...');
-          const swapResult = await falRun('easel-ai/advanced-face-swap', {
-            face_image_0: faceRefUrl,
-            gender_0: options.gender || 'female',
-            target_image: templateUrl,
-            workflow_type: 'user_hair',
-            upscale: true,
-          });
-          console.log('[FaceSwap] 응답 키:', Object.keys(swapResult || {}));
-          const swappedUrl = (swapResult?.image as Record<string, unknown>)?.url as string
-            || (swapResult?.images as Array<{ url: string }>)?.[0]?.url;
-          if (swappedUrl) {
-            console.log('[FaceSwap] 완료:', swappedUrl.slice(0, 60));
+        // FaceSwap 결과 또는 템플릿 URL을 CodeFormer에 넘길 변수
+        let codeFormerInput = templateUrl;
 
-            // Step 3: CodeFormer 후처리
-            try {
-              console.log('[CodeFormer] 시작...');
-              const restoredResult = await falRun('fal-ai/codeformer', {
-                image_url: swappedUrl,
-                fidelity: 0.78,
-                upscale: 2,
-                background_enhance: true,
-                face_upsample: true,
-              });
-              const restoredUrl = (restoredResult?.image as Record<string, unknown>)?.url as string
-                || (restoredResult?.images as Array<{ url: string }>)?.[0]?.url;
-              if (restoredUrl) {
-                finalUrl = restoredUrl;
-                console.log('[CodeFormer] 완료 ✅');
-              } else {
-                finalUrl = swappedUrl;
-                console.log('[CodeFormer] URL 없음 - FaceSwap 결과 사용');
-              }
-            } catch (cfErr: any) {
-              finalUrl = swappedUrl;
-              console.warn(`[CodeFormer] 에러 (FaceSwap 결과 사용): ${cfErr.message?.slice(0, 100)}`);
+        if (faceRefUrl) {
+          try {
+            console.log('[FaceSwap] 요청 전송...');
+            const swapResult = await falRun('easel-ai/advanced-face-swap', {
+              face_image_0: faceRefUrl,
+              gender_0: options.gender || 'female',
+              target_image: templateUrl,
+              workflow_type: 'user_hair',
+              upscale: false,
+            }, 60000);
+            console.log('[FaceSwap] 응답 수신...');
+            console.log('[FaceSwap] 응답 키:', Object.keys(swapResult || {}));
+            const swappedUrl = (swapResult?.image as Record<string, unknown>)?.url as string
+              || (swapResult?.images as Array<{ url: string }>)?.[0]?.url;
+            if (swappedUrl) {
+              codeFormerInput = swappedUrl;
+              console.log('[FaceSwap] 완료:', swappedUrl.slice(0, 60));
+            } else {
+              console.log('[FaceSwap] URL 없음 - 템플릿으로 CodeFormer 진행');
             }
-          } else {
-            console.log('[FaceSwap] 실패 - 템플릿 원본 유지');
+          } catch (swapErr: any) {
+            console.warn(`[FaceSwap] 에러 (템플릿으로 CodeFormer 진행): ${swapErr.message?.slice(0, 100)}`);
           }
         }
-      } catch (swapErr: any) {
-        console.warn(`[FaceSwap] 에러 (템플릿 원본 유지): ${swapErr.message?.slice(0, 100)}`);
+
+        // Step 3: CodeFormer 후처리 (FaceSwap 성공/실패 관계없이 실행)
+        try {
+          console.log('[CodeFormer] 시작...');
+          const restoredResult = await falRun('fal-ai/codeformer', {
+            image_url: codeFormerInput,
+            fidelity: 0.78,
+            upscale: 2,
+            background_enhance: true,
+            face_upsample: true,
+          });
+          const restoredUrl = (restoredResult?.image as Record<string, unknown>)?.url as string
+            || (restoredResult?.images as Array<{ url: string }>)?.[0]?.url;
+          if (restoredUrl) {
+            finalUrl = restoredUrl;
+            console.log('[CodeFormer] 완료 ✅');
+          } else {
+            finalUrl = codeFormerInput;
+            console.log('[CodeFormer] URL 없음 - 이전 단계 결과 사용');
+          }
+        } catch (cfErr: any) {
+          finalUrl = codeFormerInput;
+          console.warn(`[CodeFormer] 에러 (이전 단계 결과 사용): ${cfErr.message?.slice(0, 100)}`);
+        }
+      } catch (uploadErr: any) {
+        console.warn(`[FAL Storage] 에러 (템플릿 원본 유지): ${uploadErr.message?.slice(0, 100)}`);
       }
     }
 
