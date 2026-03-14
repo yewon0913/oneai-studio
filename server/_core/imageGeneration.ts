@@ -1,11 +1,10 @@
 /**
- * Image generation helper v6.0 — FLUX Pro Template + Face Swap + CodeFormer
+ * Image generation helper v7.0 — IP-Adapter FaceID + Premium FaceSwap
  *
  * 파이프라인:
- *   1. FLUX Pro v1.1 — 템플릿 이미지 생성
- *   2. Easel AI Face Swap — 얼굴 교체 (참조 이미지 있을 때)
- *   3. CodeFormer — 얼굴 복원 후처리
- *   4. Gemini — Fallback
+ *   1. Standard: IP-Adapter FaceID → CodeFormer 업스케일
+ *   2. Premium: FLUX Pro 템플릿 → Easel AI Face Swap → CodeFormer
+ *   3. Gemini — Fallback
  *
  * 생성된 이미지는 FAL Storage에 업로드하여 공개 URL 반환
  */
@@ -386,58 +385,101 @@ export async function generateImage(
     }
   }
 
-  // ── [1] FLUX Pro Template + Face Swap + CodeFormer ──
-  try {
-    // Step 1: FLUX Pro로 템플릿 생성
-    console.log("[FLUX Pro] 템플릿 생성 시도...");
-    const templateResult = await falRun("fal-ai/flux-pro/v1.1", {
-      prompt,
-      negative_prompt: negativePrompt || '',
-      image_size: { width: 1024, height: 1024 },
-      num_inference_steps: 28,
-      guidance_scale: 3.5,
-    });
-    const templateUrl = (templateResult?.images as Array<{ url: string }>)?.[0]?.url;
-    if (!templateUrl) throw new Error("FLUX Pro 템플릿 이미지 URL 없음");
-    console.log("[FLUX Pro] 템플릿 생성 완료:", templateUrl.slice(0, 60));
+  // ── [1] Standard: IP-Adapter FaceID + CodeFormer ──
+  if (refImageBase64) {
+    try {
+      const faceRefUrl = await uploadToFalStorage(refImageBase64);
+      console.log('[FAL Storage] 결과:', faceRefUrl || '❌ 실패');
 
-    let finalUrl = templateUrl;
+      if (faceRefUrl) {
+        console.log('[IP-Adapter] Standard 모드 생성 시도...');
+        const ipResult = await falRun('fal-ai/ip-adapter-face-id', {
+          model_type: '1_5-v1',
+          prompt,
+          negative_prompt: negativePrompt || 'blurry, low resolution, bad, ugly, cartoon, anime, painting, CGI, plastic skin',
+          face_image_url: faceRefUrl,
+          guidance_scale: 7.5,
+          num_inference_steps: 50,
+          num_samples: 4,
+          width: 768,
+          height: 1024,
+          seed: Math.floor(Math.random() * 999999),
+        });
+        console.log('[IP-Adapter] 응답 키:', Object.keys(ipResult || {}));
+        const ipUrl = (ipResult?.image as Record<string, unknown>)?.url as string
+          || (ipResult?.images as Array<{ url: string }>)?.[0]?.url;
+        console.log('[IP-Adapter] 결과:', ipUrl?.slice(0, 60));
 
-    // Step 2: Face Swap (참조 이미지 있을 때만)
-    if (refImageBase64) {
-      try {
-        const faceRefUrl = await uploadToFalStorage(refImageBase64);
-        console.log('[FAL Storage] 결과:', faceRefUrl || '❌ 실패');
+        if (ipUrl) {
+          // CodeFormer 업스케일
+          try {
+            console.log('[CodeFormer] 시작...');
+            const restoredResult = await falRun('fal-ai/codeformer', {
+              image_url: ipUrl,
+              fidelity: 0.78,
+              upscale: 2,
+              face_upsample: true,
+            });
+            const restoredUrl = (restoredResult?.image as Record<string, unknown>)?.url as string
+              || (restoredResult?.images as Array<{ url: string }>)?.[0]?.url;
+            if (restoredUrl) {
+              console.log('[CodeFormer] 완료 ✅');
+              return { url: restoredUrl };
+            }
+          } catch (cfErr: any) {
+            console.warn(`[CodeFormer] 에러 (IP-Adapter 결과 사용): ${cfErr.message?.slice(0, 100)}`);
+          }
+          return { url: ipUrl };
+        }
+      }
+    } catch (ipErr: any) {
+      console.log("[IP-Adapter 실패 원인]:", ipErr?.message || ipErr);
+    }
+  }
 
-        // FaceSwap 결과 또는 템플릿 URL을 CodeFormer에 넘길 변수
+  // ── [2] Premium: FLUX Pro Template + Easel Face Swap + CodeFormer ──
+  if (refImageBase64) {
+    try {
+      console.log("[FLUX Pro] 템플릿 생성 시도...");
+      const templateResult = await falRun("fal-ai/flux-pro/v1.1", {
+        prompt,
+        negative_prompt: negativePrompt || '',
+        image_size: { width: 1024, height: 1024 },
+        num_inference_steps: 28,
+        guidance_scale: 3.5,
+      });
+      const templateUrl = (templateResult?.images as Array<{ url: string }>)?.[0]?.url;
+      if (!templateUrl) throw new Error("FLUX Pro 템플릿 이미지 URL 없음");
+      console.log("[FLUX Pro] 템플릿 생성 완료:", templateUrl.slice(0, 60));
+
+      let finalUrl = templateUrl;
+      const faceRefUrl = await uploadToFalStorage(refImageBase64);
+
+      if (faceRefUrl) {
         let codeFormerInput = templateUrl;
 
-        if (faceRefUrl) {
-          try {
-            console.log('[FaceSwap] 요청 전송 (queue)...');
-            const swapResult = await falRunQueue('easel-ai/advanced-face-swap', {
-              face_image_0: faceRefUrl,
-              gender_0: options.gender || 'male',
-              target_image: templateUrl,
-              workflow_type: 'user_hair',
-              upscale: false,
-            }, 180000, 3000);
-            console.log('[FaceSwap] 응답 수신...');
-            console.log('[FaceSwap] 응답 키:', Object.keys(swapResult || {}));
-            const swappedUrl = (swapResult?.image as Record<string, unknown>)?.url as string
-              || (swapResult?.images as Array<{ url: string }>)?.[0]?.url;
-            if (swappedUrl) {
-              codeFormerInput = swappedUrl;
-              console.log('[FaceSwap] 완료:', swappedUrl.slice(0, 60));
-            } else {
-              console.log('[FaceSwap] URL 없음 - 템플릿으로 CodeFormer 진행');
-            }
-          } catch (swapErr: any) {
-            console.warn(`[FaceSwap] 에러 (템플릿으로 CodeFormer 진행): ${swapErr.message?.slice(0, 100)}`);
+        try {
+          console.log('[FaceSwap] 요청 전송 (queue)...');
+          const swapResult = await falRunQueue('easel-ai/advanced-face-swap', {
+            face_image_0: faceRefUrl,
+            gender_0: options.gender || 'male',
+            target_image: templateUrl,
+            workflow_type: 'user_hair',
+            upscale: false,
+          }, 600000, 3000);
+          console.log('[FaceSwap] 응답 수신...');
+          const swappedUrl = (swapResult?.image as Record<string, unknown>)?.url as string
+            || (swapResult?.images as Array<{ url: string }>)?.[0]?.url;
+          if (swappedUrl) {
+            codeFormerInput = swappedUrl;
+            console.log('[FaceSwap] 완료:', swappedUrl.slice(0, 60));
+          } else {
+            console.log('[FaceSwap] URL 없음 - 템플릿으로 CodeFormer 진행');
           }
+        } catch (swapErr: any) {
+          console.warn(`[FaceSwap] 에러 (템플릿으로 CodeFormer 진행): ${swapErr.message?.slice(0, 100)}`);
         }
 
-        // Step 3: CodeFormer 후처리 (FaceSwap 성공/실패 관계없이 실행)
         try {
           console.log('[CodeFormer] 시작...');
           const restoredResult = await falRun('fal-ai/codeformer', {
@@ -454,23 +496,20 @@ export async function generateImage(
             console.log('[CodeFormer] 완료 ✅');
           } else {
             finalUrl = codeFormerInput;
-            console.log('[CodeFormer] URL 없음 - 이전 단계 결과 사용');
           }
         } catch (cfErr: any) {
           finalUrl = codeFormerInput;
-          console.warn(`[CodeFormer] 에러 (이전 단계 결과 사용): ${cfErr.message?.slice(0, 100)}`);
+          console.warn(`[CodeFormer] 에러: ${cfErr.message?.slice(0, 100)}`);
         }
-      } catch (uploadErr: any) {
-        console.warn(`[FAL Storage] 에러 (템플릿 원본 유지): ${uploadErr.message?.slice(0, 100)}`);
       }
-    }
 
-    return { url: finalUrl };
-  } catch (fluxError: any) {
-    console.log("[FLUX Pro 실패 원인]:", fluxError?.message || fluxError);
+      return { url: finalUrl };
+    } catch (premiumErr: any) {
+      console.log("[Premium 실패 원인]:", premiumErr?.message || premiumErr);
+    }
   }
 
-  // ── [2] Gemini Fallback ──
+  // ── [3] Gemini Fallback ──
   try {
     console.log("[Gemini] Fallback 시도...");
     let geminiPrompt = prompt;
@@ -495,5 +534,5 @@ export async function generateImage(
     console.log("[Gemini 실패 원인]:", geminiError?.message || geminiError);
   }
 
-  throw new Error("모든 이미지 생성 모델 실패 (FLUX Pro+FaceSwap+CodeFormer → Gemini)");
+  throw new Error("모든 이미지 생성 모델 실패 (IP-Adapter → Premium FaceSwap → Gemini)");
 }
