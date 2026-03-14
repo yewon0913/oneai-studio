@@ -29,6 +29,8 @@ export type GenerateImageOptions = {
   faceFixMode?: boolean;
   /** 출력 이미지 비율 */
   imageSize?: string;
+  /** Face Swap 성별 (기본 "female") */
+  gender?: string;
 };
 
 export type GenerateImageResponse = {
@@ -332,6 +334,7 @@ export async function generateImage(
           console.log('[FaceSwap] 시작...');
           const swapResult = await falRun('easel-ai/advanced-face-swap', {
             face_image_0: faceRefUrl,
+            gender_0: options.gender || 'female',
             target_image: templateUrl,
             workflow_type: 'user_hair',
             upscale: true,
