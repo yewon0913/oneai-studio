@@ -455,7 +455,8 @@ export async function generateImage(
         image_size: { width: 768, height: 1024 },
         num_inference_steps: 30,
         guidance_scale: 7.5,
-        scheduler: 'DPM++ 2M Karras',
+        scheduler: 'Euler A',
+        prediction_type: 'epsilon',
         seed: Math.floor(Math.random() * 999999),
         enable_safety_checker: false,
       }, 300000);
