@@ -1,10 +1,9 @@
 /**
- * Image generation helper v7.0 — IP-Adapter FaceID + Premium FaceSwap
+ * Image generation helper — Gemini Primary + FLUX Pro Fallback
  *
- * 파이프라인:
- *   1. Premium (mode='premium'): FLUX Pro 템플릿 → Easel AI Face Swap → CodeFormer
- *   2. Standard (기본): IP-Adapter FaceID → CodeFormer 업스케일
- *   3. Gemini — Fallback
+ * 모델 우선순위:
+ *   1. Gemini (gemini-3-pro → flash → exp) — Primary
+ *   2. FLUX Pro v1.1 (fal-ai/flux-pro/v1.1) — Fallback
  *
  * 생성된 이미지는 FAL Storage에 업로드하여 공개 URL 반환
  */
@@ -28,116 +27,33 @@ export type GenerateImageOptions = {
   faceFixMode?: boolean;
   /** 출력 이미지 비율 */
   imageSize?: string;
-  /** Face Swap 성별 (기본 "male") */
-  gender?: string;
-  /** 파이프라인 모드: standard (IP-Adapter) | premium (Easel FaceSwap) */
-  mode?: 'standard' | 'premium';
 };
 
 export type GenerateImageResponse = {
   url?: string;
 };
 
-// ─── FAL REST API (동기) ──────────────────────────────────
+// ─── FAL REST API ─────────────────────────────────────────
 
 async function falRun(
   modelId: string,
-  input: Record<string, unknown>,
-  timeoutMs = 120000,
-): Promise<any> {
+  input: Record<string, unknown>
+): Promise<Record<string, unknown>> {
   const falKey = process.env.FAL_KEY;
   if (!falKey) throw new Error("FAL_KEY not set");
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(`https://fal.run/${modelId}`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Key ${falKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(input),
-      signal: controller.signal,
-    });
-
-    const text = await res.text();
-    if (!res.ok) throw new Error(`${modelId} failed ${res.status}: ${text.slice(0, 300)}`);
-    return JSON.parse(text);
-  } catch (err: any) {
-    if (err.name === 'AbortError') throw new Error(`${modelId} timeout (${timeoutMs}ms)`);
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-// ─── FAL Queue API (비동기 폴링) ─────────────────────────
-
-async function falQueueRun(
-  modelId: string,
-  input: Record<string, unknown>,
-  timeoutMs = 180000,
-  pollIntervalMs = 3000,
-): Promise<any> {
-  const falKey = process.env.FAL_KEY;
-  if (!falKey) throw new Error("FAL_KEY not set");
-
-  const headers = {
-    "Authorization": `Key ${falKey}`,
-    "Content-Type": "application/json",
-  };
-
-  // 1. Submit to queue
-  const submitRes = await fetch(`https://queue.fal.run/${modelId}`, {
+  const res = await fetch(`https://fal.run/${modelId}`, {
     method: "POST",
-    headers,
+    headers: {
+      "Authorization": `Key ${falKey}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify(input),
   });
-  const submitText = await submitRes.text();
-  if (!submitRes.ok) throw new Error(`${modelId} queue submit failed ${submitRes.status}: ${submitText.slice(0, 300)}`);
-  const { request_id } = JSON.parse(submitText);
-  if (!request_id) throw new Error(`${modelId} queue: no request_id`);
-  console.log(`[Queue] ${modelId} submitted: ${request_id}`);
 
-  // 2. Poll for status
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, pollIntervalMs));
-
-    const statusRes = await fetch(
-      `https://queue.fal.run/${modelId}/requests/${request_id}/status`,
-      { headers },
-    );
-    if (!statusRes.ok) {
-      console.warn(`[Queue] status check failed: ${statusRes.status}`);
-      continue;
-    }
-    const status = await statusRes.json();
-
-    if (status.status === 'COMPLETED') {
-      // 3. Fetch result
-      const resultRes = await fetch(
-        `https://queue.fal.run/${modelId}/requests/${request_id}`,
-        { headers },
-      );
-      const resultText = await resultRes.text();
-      if (!resultRes.ok) throw new Error(`${modelId} result failed ${resultRes.status}: ${resultText.slice(0, 300)}`);
-      console.log(`[Queue] ${modelId} completed`);
-      return JSON.parse(resultText);
-    }
-
-    if (status.status === 'FAILED') {
-      throw new Error(`${modelId} queue failed: ${JSON.stringify(status).slice(0, 200)}`);
-    }
-
-    if (status.status === 'IN_PROGRESS') {
-      console.log('[FaceSwap] 처리 중...');
-    }
-  }
-
-  throw new Error(`${modelId} queue timeout (${timeoutMs}ms)`);
+  const text = await res.text();
+  if (!res.ok) throw new Error(`${modelId} failed ${res.status}: ${text.slice(0, 300)}`);
+  return JSON.parse(text);
 }
 
 // ─── Gemini API 호출 ─────────────────────────────────────
@@ -287,36 +203,36 @@ export function extractImageBase64(response: GeminiResponse): { data: string; mi
   return { data: imagePart.inlineData.data, mimeType: imagePart.inlineData.mimeType };
 }
 
-// ─── FAL Storage 업로드 ─────────────────────────────────
+// ─── [Fallback] FLUX Pro v1.1 ─────────────────────────────
 
-async function uploadToFalStorage(base64Data: string): Promise<string | null> {
-  try {
-    const falKey = process.env.FAL_KEY;
-    if (!falKey) return null;
+async function generateWithFluxPro(
+  prompt: string,
+  negativePrompt: string | undefined,
+  refImageDataUrl: string | undefined,
+  strength: number,
+): Promise<string> {
+  console.log("[FLUX Pro] Fallback 시도...");
 
-    const clean = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
-    const buffer = Buffer.from(clean, "base64");
-
-    const initiateRes = await fetch("https://rest.alpha.fal.ai/storage/upload/initiate", {
-      method: "POST",
-      headers: { "Authorization": `Key ${falKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ content_type: "image/jpeg", file_name: "face-ref.jpg" }),
-    });
-    if (!initiateRes.ok) throw new Error(`initiate failed ${initiateRes.status}`);
-    const { upload_url, file_url } = await initiateRes.json();
-
-    const s3Res = await fetch(upload_url, {
-      method: "PUT",
-      headers: { "Content-Type": "image/jpeg" },
-      body: buffer,
-    });
-    if (!s3Res.ok) throw new Error(`S3 upload failed ${s3Res.status}`);
-
-    return file_url;
-  } catch (err: any) {
-    console.warn(`[FAL Storage] 업로드 실패: ${err.message?.slice(0, 100)}`);
-    return null;
+  const input: Record<string, unknown> = {
+    prompt,
+    image_size: { width: 1024, height: 1024 },
+    num_inference_steps: 28,
+    guidance_scale: 7.0,
+    enable_safety_checker: false,
+    seed: Math.floor(Math.random() * 999999),
+  };
+  if (negativePrompt) input.negative_prompt = negativePrompt;
+  if (refImageDataUrl) {
+    input.image_url = refImageDataUrl;
+    input.strength = strength;
   }
+
+  const result = await falRun("fal-ai/flux-pro/v1.1", input);
+  const imageUrl = (result?.images as Array<{ url: string }>)?.[0]?.url;
+  if (!imageUrl) throw new Error("FLUX Pro 응답에 이미지 URL 없음");
+
+  console.log("[FLUX Pro] Fallback 성공");
+  return imageUrl;
 }
 
 // ─── 메인 함수 ──────────────────────────────────────────
@@ -375,107 +291,9 @@ export async function generateImage(
     }
   }
 
-  // 참조 이미지 base64 → FAL Storage URL
-  let refImageBase64: string | undefined;
-  let faceRefUrl: string | null = null;
-  if (refImages.length > 0) {
-    const firstImg = refImages[0];
-    if (firstImg.b64Json) {
-      refImageBase64 = firstImg.b64Json;
-    } else if (firstImg.url) {
-      const resolved = await resolveImageToBase64(firstImg);
-      if (resolved) refImageBase64 = resolved.data;
-    }
-    if (refImageBase64) {
-      faceRefUrl = await uploadToFalStorage(refImageBase64);
-      console.log('[FAL Storage] 결과:', faceRefUrl || '❌ 실패');
-    }
-  }
-
-  // ── Premium 모드: Easel AI Face Swap ──
-  if (options.mode === 'premium' && faceRefUrl) {
-    try {
-      console.log('[Premium] Easel AI Face Swap 파이프라인');
-
-      // Step 1: FLUX Pro 템플릿
-      const template = await falRun('fal-ai/flux-pro/v1.1', {
-        prompt: prompt,
-        image_size: { width: 1024, height: 1024 },
-        num_inference_steps: 28,
-        guidance_scale: 3.5,
-      });
-      const templateUrl = template?.images?.[0]?.url;
-      console.log('[Premium] 템플릿:', templateUrl?.slice(0, 60));
-
-      // Step 2: Easel Face Swap (큐 방식, 600초)
-      if (templateUrl) {
-        const swapResult = await falQueueRun('easel-ai/advanced-face-swap', {
-          face_image_0: faceRefUrl,
-          gender_0: options.gender || 'male',
-          target_image: templateUrl,
-          workflow_type: 'user_hair',
-          upscale: false,
-        }, 600000);
-        const swappedUrl = swapResult?.image?.url;
-        console.log('[Premium] FaceSwap:', swappedUrl?.slice(0, 60));
-
-        // Step 3: CodeFormer
-        if (swappedUrl) {
-          const restored = await falRun('fal-ai/codeformer', {
-            image_url: swappedUrl,
-            fidelity: 0.78,
-            upscale: 2,
-            face_upsample: true,
-          });
-          console.log('[Premium] 완료 ✅');
-          return { url: restored?.image?.url || swappedUrl };
-        }
-      }
-      console.log('[Premium] 실패 → Standard로 fallback');
-    } catch (premiumErr: any) {
-      console.log('[Premium] 에러 → Standard로 fallback:', premiumErr?.message?.slice(0, 100));
-    }
-  }
-
-  // ── Standard 모드 (기본): IP-Adapter FaceID ──
-  if (faceRefUrl) {
-    try {
-      console.log('[Standard] FLUX General + IP-Adapter 생성 시도...');
-
-      const result = await falQueueRun('fal-ai/flux-general', {
-        prompt: prompt,
-        ip_adapter: [{
-          ip_adapter_image_url: faceRefUrl,
-          scale: 1.2,
-        }],
-        image_size: { width: 768, height: 1024 },
-        num_inference_steps: 28,
-        guidance_scale: 3.5,
-        enable_safety_checker: false,
-        num_images: 1,
-        output_format: 'jpeg',
-      }, 300000);
-      const imageUrl = result?.images?.[0]?.url;
-      console.log('[Standard] FLUX General 결과:', imageUrl?.slice(0, 60));
-
-      if (imageUrl) {
-        const restored = await falRun('fal-ai/codeformer', {
-          image_url: imageUrl,
-          fidelity: 0.78,
-          upscale: 2,
-          face_upsample: true,
-        });
-        console.log('[Standard] 완료 ✅');
-        return { url: restored?.image?.url || imageUrl };
-      }
-    } catch (stdErr: any) {
-      console.log('[Standard] 실패:', stdErr?.message?.slice(0, 100));
-    }
-  }
-
-  // ── Fallback: Gemini ──
+  // ── [1] Gemini Primary ──
   try {
-    console.log("[Gemini] Fallback 시도...");
+    console.log("[Gemini] Primary 생성 시도...");
     let geminiPrompt = prompt;
     if (negativePrompt) {
       geminiPrompt = `${prompt}\n\nAvoid: ${negativePrompt}`;
@@ -492,11 +310,19 @@ export async function generateImage(
     }
 
     const url = await extractImageUrl(response);
-    console.log("[Gemini] Fallback 성공 ✅");
+    console.log("[Gemini] Primary 성공 ✅");
     return { url };
   } catch (geminiError: any) {
     console.log("[Gemini 실패 원인]:", geminiError?.message || geminiError);
   }
 
-  throw new Error("모든 이미지 생성 모델 실패 (Premium → Standard → Gemini)");
+  // ── [2] FLUX Pro v1.1 Fallback ──
+  try {
+    const url = await generateWithFluxPro(prompt, negativePrompt, refImageDataUrl, strength);
+    return { url };
+  } catch (fluxProError: any) {
+    console.log("[FLUX Pro 실패 원인]:", fluxProError?.message || fluxProError);
+  }
+
+  throw new Error("모든 이미지 생성 모델 실패 (Gemini → FLUX Pro)");
 }
