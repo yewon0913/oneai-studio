@@ -10,8 +10,7 @@
 
 import sharp from "sharp";
 import { storagePut } from "../storage";
-
-// ─── Types ────────────────────────────────────────────────
+import { generateWithComfyUI, checkRunPodHealth } from "../services/runpod-comfyui-pipeline";// ─── Types ────────────────────────────────────────────────
 
 export type GenerateImageOptions = {
   prompt: string;
@@ -290,8 +289,40 @@ export async function generateImage(
       }
     }
   }
+// ── [0] RunPod ComfyUI (InstantID 88점) ──
+  if (refImages.length > 0) {
+    try {
+      const health = await checkRunPodHealth();
+      if (health.ok) {
+        console.log("[ComfyUI] RunPod InstantID 시도...");
+        const firstImg = refImages[0];
+        const resolved = await resolveImageToBase64(firstImg);
+        if (resolved) {
+          const buffer = Buffer.from(resolved.data, "base64");
+          const gender = prompt.toLowerCase().includes("woman") || prompt.toLowerCase().includes("female") || prompt.toLowerCase().includes("여성") ? "female" : "male";
+          const concept = gender === "male" ? "male_suit" : "female_elegant";
+          
+          const result = await generateWithComfyUI({
+            faceImageBuffer: buffer,
+            concept,
+            seed: Math.floor(Math.random() * 999999),
+          });
 
-  // ── [1] Gemini Primary ──
+          const { url } = await storagePut(
+            `generated/comfyui-${Date.now()}.jpg`,
+            result.imageBuffer,
+            "image/jpeg"
+          );
+          console.log(`[ComfyUI] 성공! ${result.elapsed}s, seed:${result.seed}`);
+          return { url };
+        }
+      } else {
+        console.log(`[ComfyUI] RunPod 오프라인: ${health.message}`);
+      }
+    } catch (comfyErr: any) {
+      console.warn(`[ComfyUI] 실패: ${comfyErr.message?.slice(0, 150)}`);
+    }
+  }  // ── [1] Gemini Primary ──
   try {
     console.log("[Gemini] Primary 생성 시도...");
     let geminiPrompt = prompt;
