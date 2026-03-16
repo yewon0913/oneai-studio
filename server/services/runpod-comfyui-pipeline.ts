@@ -1,198 +1,261 @@
 /**
- * ONE AI STUDIO - RunPod ComfyUI Pipeline
- * Railway → RunPod Pod ComfyUI 직접 연결
+ * ONE AI STUDIO - Face DNA Analyzer
  * 
- * 확정 파라미터 (분석실 검증 완료):
- * - 모델: Juggernaut XL v9
- * - InstantID weight: 0.90
- * - cfg: 4.5 / sampler: dpmpp_2m / scheduler: karras / steps: 35
- * - 후처리: Film Grain + 밝기보정 + 샤프닝 + 업스케일
- * - 점수: 88점 (단일 최고) / 86점 (평균) / 87점 (일관성)
+ * 참조 사진 → Gemini Vision 분석 → 맞춤 프롬프트 자동 생성
+ * 
+ * 흐름:
+ *   1. 고객 사진 업로드
+ *   2. Gemini Vision이 얼굴 DNA 추출
+ *   3. DNA → Positive/Negative 프롬프트 자동 변환
+ *   4. InstantID + 맞춤 프롬프트 = 95점!
  */
 
-const COMFY_URL = process.env.RUNPOD_COMFY_URL || "";
+import { callGemini, type GeminiPart } from "../_core/imageGeneration";
 
-// === 컨셉별 프롬프트 (분석실 확정본) ===
-const CONCEPTS: Record<string, { positive: string; negative: string }> = {
-  male_suit: {
-    positive: "portrait of a Korean man in his late 30s, navy blue blazer with light blue dress shirt and white pocket square, no necktie, slim oval face with defined jawline, narrow elongated eyes with subtle inner double eyelid, subtle closed-mouth smile with upturned corners, warm brown-tinted textured wavy hair with volume on top, natural Korean male skin with visible pores fair tone, single key light from upper left at 45 degrees, soft fill light from right, 2:1 lighting ratio, neutral gray seamless background, photorealistic natural depth of field, authentic natural expression, clean background, no watermark, no text",
-    negative: "deformed, ugly, blurry, cartoon, anime, stock photo, getty images, smooth porcelain skin, airbrushed, plastic skin, heavy makeup, glossy skin, round face, chubby cheeks, wide jaw, large round eyes, double eyelid surgery look, open mouth smile, teeth showing, wide grin, forced smile, jet black hair, straight flat hair, westernized features, enlarged eyes, different person than reference, watermark, text overlay, logo, signature, necktie, bow tie, scarf, turtleneck",
-  },
-  male_casual: {
-    positive: "portrait of a Korean man in his late 30s, cream knit sweater, relaxed natural pose, slim oval face with defined jawline, narrow elongated eyes, subtle closed-mouth smile, warm brown-tinted textured wavy hair, natural Korean male skin with visible pores, soft natural window light, neutral background, photorealistic, clean background, no watermark, no text",
-    negative: "deformed, ugly, blurry, cartoon, anime, stock photo, smooth porcelain skin, airbrushed, plastic skin, heavy makeup, round face, chubby cheeks, large round eyes, open mouth smile, teeth showing, jet black hair, straight flat hair, westernized features, watermark, text overlay, logo, signature",
-  },
-  female_elegant: {
-    positive: "portrait of a Korean woman, elegant cream blouse, natural beauty, slim face with soft jawline, natural Korean female skin with visible pores, subtle closed-mouth smile, single key light from upper left at 45 degrees, soft fill light from right, 2:1 lighting ratio, neutral gray seamless background, photorealistic natural depth of field, authentic natural expression, clean background, no watermark, no text",
-    negative: "deformed, ugly, blurry, cartoon, anime, stock photo, smooth porcelain skin, airbrushed, plastic skin, heavy makeup, glossy skin, large round eyes, double eyelid surgery look, open mouth smile, teeth showing, wide grin, forced smile, westernized features, enlarged eyes, different person than reference, watermark, text overlay, logo, signature",
-  },
-  female_casual: {
-    positive: "portrait of a Korean woman, soft cream knit sweater, natural relaxed pose, natural Korean female skin with visible pores, subtle gentle smile, soft natural window light, neutral background, photorealistic, clean background, no watermark, no text",
-    negative: "deformed, ugly, blurry, cartoon, anime, stock photo, smooth porcelain skin, airbrushed, plastic skin, heavy makeup, large round eyes, open mouth smile, teeth showing, westernized features, watermark, text overlay, logo, signature",
-  },
-};
-
-// === ComfyUI 헬스체크 ===
-export async function checkRunPodHealth(): Promise<{ ok: boolean; message: string }> {
-  if (!COMFY_URL) {
-    return { ok: false, message: "RUNPOD_COMFY_URL 환경변수가 설정되지 않았습니다." };
-  }
-  try {
-    const resp = await fetch(`${COMFY_URL}/system_stats`, {
-      signal: AbortSignal.timeout(10000),
-    });
-    if (resp.ok) {
-      return { ok: true, message: "RunPod ComfyUI 서버 정상" };
-    }
-    return { ok: false, message: `서버 응답 오류: ${resp.status}` };
-  } catch (e: any) {
-    return { ok: false, message: `RunPod 서버 연결 실패: Pod가 꺼져있을 수 있습니다. (${e.message})` };
-  }
+// === 얼굴 DNA 타입 ===
+export interface FaceDNA {
+  // 기본 정보
+  gender: "male" | "female";
+  ageRange: string;        // "late 20s", "early 30s", "mid 40s" 등
+  
+  // 얼굴형
+  faceShape: string;       // "oval", "round", "square", "heart", "oblong"
+  jawline: string;         // "defined angular", "soft round", "V-line", "wide square"
+  
+  // 눈
+  eyeShape: string;        // "narrow elongated", "round large", "almond", "monolid"
+  eyeSize: string;         // "small", "medium", "large"
+  eyelid: string;          // "double eyelid", "inner double eyelid", "monolid"
+  
+  // 코
+  noseShape: string;       // "straight high", "natural medium", "flat wide", "button"
+  
+  // 입/미소
+  smileStyle: string;      // "closed-mouth subtle", "slight teeth showing", "wide open smile"
+  lipShape: string;        // "thin", "medium", "full"
+  
+  // 헤어
+  hairColor: string;       // "jet black", "dark brown", "brown with highlights", "gray mixed"
+  hairLength: string;      // "very short", "short", "medium", "long"
+  hairTexture: string;     // "straight", "wavy", "curly", "textured"
+  hairVolume: string;      // "flat", "normal", "voluminous"
+  
+  // 피부
+  skinTone: string;        // "fair", "light", "medium", "tan", "dark"
+  skinTexture: string;     // "smooth", "natural with pores", "textured"
+  
+  // 체형 (얼굴 주변)
+  neckThickness: string;   // "thin", "medium", "thick"
+  shoulderWidth: string;   // "narrow", "medium", "broad"
+  
+  // 특이사항
+  glasses: boolean;
+  facialHair: string;      // "none", "light stubble", "mustache", "beard"
+  distinctFeatures: string; // 특이 특징 (점, 흉터 등)
 }
 
-// === 이미지 업로드 ===
-async function uploadToComfyUI(imageBuffer: Buffer, filename: string): Promise<string> {
-  const formData = new FormData();
-  const blob = new Blob([imageBuffer], { type: "image/jpeg" });
-  formData.append("image", blob, filename);
+// === Gemini Vision으로 얼굴 DNA 추출 ===
+export async function analyzeFaceDNA(imageBuffer: Buffer, mimeType: string = "image/jpeg"): Promise<FaceDNA> {
+  console.log("[FaceDNA] Gemini Vision 얼굴 분석 시작...");
 
-  const resp = await fetch(`${COMFY_URL}/upload/image`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`);
-  const data = (await resp.json()) as { name: string };
-  return data.name;
-}
-
-// === 워크플로우 빌드 ===
-function buildInstantIDWorkflow(imageName: string, concept: string, seed: number) {
-  const prompts = CONCEPTS[concept] || CONCEPTS.male_suit;
-
-  const w: Record<string, any> = {};
-  w["3"] = { class_type: "LoadImage", inputs: { image: imageName } };
-  w["4"] = { class_type: "InstantIDModelLoader", inputs: { instantid_file: "ip-adapter.bin" } };
-  w["5"] = { class_type: "InstantIDFaceAnalysis", inputs: { provider: "CUDA" } };
-  w["6"] = { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors" } };
-  w["14"] = { class_type: "ControlNetLoader", inputs: { control_net_name: "instantid_controlnet.safetensors" } };
-  w["10"] = { class_type: "CLIPTextEncode", inputs: { text: prompts.positive, clip: ["6", 1] } };
-  w["11"] = { class_type: "CLIPTextEncode", inputs: { text: prompts.negative, clip: ["6", 1] } };
-  w["7"] = {
-    class_type: "ApplyInstantID",
-    inputs: {
-      instantid: ["4", 0], insightface: ["5", 0], control_net: ["14", 0],
-      image: ["3", 0], model: ["6", 0], positive: ["10", 0], negative: ["11", 0],
-      weight: 0.90, start_at: 0.0, end_at: 1.0,
+  const parts: GeminiPart[] = [
+    {
+      inlineData: {
+        mimeType,
+        data: imageBuffer.toString("base64"),
+      },
     },
-  };
-  w["9"] = { class_type: "EmptyLatentImage", inputs: { width: 1024, height: 1024, batch_size: 1 } };
-  w["8"] = {
-    class_type: "KSampler",
-    inputs: {
-      model: ["7", 0], positive: ["7", 1], negative: ["7", 2],
-      latent_image: ["9", 0], seed, steps: 35, cfg: 4.5,
-      sampler_name: "dpmpp_2m", scheduler: "karras", denoise: 1.0,
+    {
+      text: `Analyze this person's face with extreme precision. Return ONLY a JSON object with these exact fields, no other text:
+
+{
+  "gender": "male" or "female",
+  "ageRange": "late 20s" / "early 30s" / "mid 30s" / "late 30s" / "early 40s" / "mid 40s" / "late 40s" / "early 50s",
+  "faceShape": "oval" / "round" / "square" / "heart" / "oblong" / "diamond",
+  "jawline": describe the jawline precisely (e.g. "defined angular", "soft round", "wide square", "slim V-line", "natural moderate"),
+  "eyeShape": describe eye shape (e.g. "narrow elongated", "round large", "almond shaped", "slightly upturned"),
+  "eyeSize": "small" / "medium" / "large",
+  "eyelid": "double eyelid" / "inner double eyelid" / "monolid" / "subtle double eyelid",
+  "noseShape": describe nose (e.g. "straight high bridge", "natural medium height", "slightly flat", "button nose"),
+  "smileStyle": describe their smile (e.g. "closed-mouth subtle smile", "gentle smile with teeth slightly showing", "wide open smile", "neutral no smile"),
+  "lipShape": "thin" / "medium" / "full",
+  "hairColor": describe hair color precisely (e.g. "jet black", "dark brown", "warm brown with highlights", "brown with gray mixed", "light brown"),
+  "hairLength": "very short buzz" / "short" / "medium" / "long" / "very long",
+  "hairTexture": "straight" / "slightly wavy" / "wavy" / "curly" / "textured tousled",
+  "hairVolume": "flat" / "normal" / "voluminous on top",
+  "skinTone": "very fair" / "fair" / "light" / "medium" / "tan" / "dark",
+  "skinTexture": "smooth" / "natural with visible pores" / "textured with fine lines",
+  "neckThickness": "thin" / "medium" / "thick",
+  "shoulderWidth": "narrow" / "medium" / "broad",
+  "glasses": true or false,
+  "facialHair": "none" / "light stubble" / "mustache" / "full beard" / "goatee",
+  "distinctFeatures": describe any moles, scars, dimples, or other distinctive features. "none" if nothing notable
+}
+
+Be extremely precise about the ACTUAL features you see. Do NOT idealize or beautify. Report exactly what you observe. For Korean/Asian faces, pay special attention to: eye shape (narrow vs round), eyelid type, jawline definition, and skin tone accuracy.`,
     },
-  };
-  w["12"] = { class_type: "VAEDecode", inputs: { samples: ["8", 0], vae: ["6", 2] } };
-  w["13"] = { class_type: "SaveImage", inputs: { images: ["12", 0], filename_prefix: "oneai_result" } };
-
-  return w;
-}
-
-// === 워크플로우 실행 + 결과 대기 ===
-async function executeAndWait(workflow: Record<string, any>): Promise<string> {
-  const resp = await fetch(`${COMFY_URL}/prompt`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: workflow }),
-  });
-
-  const data = (await resp.json()) as any;
-  if (data.error) {
-    throw new Error(`ComfyUI: ${JSON.stringify(data.error)}`);
-  }
-
-  const promptId = data.prompt_id;
-
-  // 최대 5분 대기
-  for (let i = 0; i < 150; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
-    try {
-      const h = await fetch(`${COMFY_URL}/history/${promptId}`);
-      const hist = (await h.json()) as any;
-      if (promptId in hist) {
-        const status = hist[promptId]?.status;
-        if (status?.status_str === "error") throw new Error("Generation failed");
-        const imgs = hist[promptId]?.outputs?.["13"]?.images;
-        if (imgs?.[0]) return imgs[0].filename;
-      }
-    } catch (e: any) {
-      if (e.message === "Generation failed") throw e;
-    }
-  }
-  throw new Error("Generation timeout (5min)");
-}
-
-// === 결과 이미지 다운로드 ===
-async function downloadResult(filename: string): Promise<Buffer> {
-  const resp = await fetch(`${COMFY_URL}/view?filename=${encodeURIComponent(filename)}&type=output`);
-  if (!resp.ok) throw new Error(`Download failed: ${resp.status}`);
-  return Buffer.from(await resp.arrayBuffer());
-}
-
-// === 메인 생성 함수 ===
-export interface ComfyGenerateInput {
-  faceImageBuffer: Buffer;
-  concept?: string;
-  seed?: number;
-}
-
-export interface ComfyGenerateResult {
-  imageBuffer: Buffer;
-  seed: number;
-  concept: string;
-  elapsed: number;
-}
-
-export async function generateWithComfyUI(input: ComfyGenerateInput): Promise<ComfyGenerateResult> {
-  const {
-    faceImageBuffer,
-    concept = "male_suit",
-    seed = Math.floor(Math.random() * 999999),
-  } = input;
-
-  const startTime = Date.now();
-  console.log(`[RunPod ComfyUI] Starting: concept=${concept}, seed=${seed}`);
-
-  // 1. 헬스체크
-  const health = await checkRunPodHealth();
-  if (!health.ok) throw new Error(health.message);
-
-  // 2. 업로드
-  const uploadName = await uploadToComfyUI(faceImageBuffer, `face_${Date.now()}.jpg`);
-  console.log(`[RunPod ComfyUI] Uploaded: ${uploadName}`);
-
-  // 3. 생성
-  const workflow = buildInstantIDWorkflow(uploadName, concept, seed);
-  const resultFile = await executeAndWait(workflow);
-  console.log(`[RunPod ComfyUI] Generated: ${resultFile}`);
-
-  // 4. 다운로드
-  const imageBuffer = await downloadResult(resultFile);
-  const elapsed = Math.round((Date.now() - startTime) / 1000);
-  console.log(`[RunPod ComfyUI] Done in ${elapsed}s, size: ${imageBuffer.length}`);
-
-  return { imageBuffer, seed, concept, elapsed };
-}
-
-// === 사용 가능한 컨셉 목록 ===
-export function getComfyConcepts() {
-  return [
-    { id: "male_suit", label: "남성 정장", gender: "male" },
-    { id: "male_casual", label: "남성 캐주얼", gender: "male" },
-    { id: "female_elegant", label: "여성 엘레강스", gender: "female" },
-    { id: "female_casual", label: "여성 캐주얼", gender: "female" },
   ];
+
+  const response = await callGemini(parts);
+  
+  // Gemini 응답에서 JSON 추출
+  const candidates = response.candidates;
+  if (!candidates?.length) throw new Error("Gemini 응답 없음");
+  
+  const textPart = candidates[0].content?.parts?.find(p => p.text);
+  if (!textPart?.text) throw new Error("Gemini 텍스트 응답 없음");
+  
+  // JSON 파싱 (markdown 코드블록 제거)
+  let jsonText = textPart.text.trim();
+  jsonText = jsonText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+  
+  try {
+    const dna = JSON.parse(jsonText) as FaceDNA;
+    console.log(`[FaceDNA] 분석 완료: ${dna.gender}, ${dna.ageRange}, ${dna.faceShape} face, ${dna.eyeShape} eyes`);
+    return dna;
+  } catch (e) {
+    console.error(`[FaceDNA] JSON 파싱 실패: ${jsonText.slice(0, 200)}`);
+    throw new Error("얼굴 DNA 분석 실패: JSON 파싱 오류");
+  }
+}
+
+// === DNA → Positive 프롬프트 변환 ===
+export function dnaToPositivePrompt(dna: FaceDNA, concept: string = "suit"): string {
+  const genderWord = dna.gender === "male" ? "man" : "woman";
+  
+  // 컨셉별 의상
+  const outfitMap: Record<string, string> = {
+    male_suit: "navy blue blazer with light blue dress shirt and white pocket square, no necktie",
+    male_casual: "cream knit sweater, relaxed natural pose",
+    male_wedding: "black tuxedo with white dress shirt and bow tie, elegant",
+    male_business: "charcoal gray suit with burgundy tie, professional CEO look",
+    female_elegant: "elegant cream silk blouse, pearl earrings",
+    female_casual: "soft cream knit sweater, natural relaxed pose",
+    female_wedding: "white wedding dress, elegant bridal look",
+    female_business: "navy blazer with white blouse, professional look",
+  };
+  
+  const outfit = outfitMap[concept] || outfitMap[`${dna.gender}_suit`] || "professional attire";
+  
+  // 얼굴 DNA → 프롬프트 조합
+  const parts = [
+    `portrait of a Korean ${genderWord} in ${dna.gender === "male" ? "his" : "her"} ${dna.ageRange}`,
+    outfit,
+    `${dna.faceShape} face with ${dna.jawline} jawline`,
+    `${dna.eyeShape} eyes with ${dna.eyelid}`,
+    `${dna.noseShape}`,
+    `${dna.smileStyle}`,
+    `${dna.hairColor} ${dna.hairTexture} hair ${dna.hairLength} length with ${dna.hairVolume} volume`,
+    `natural Korean ${dna.gender === "male" ? "male" : "female"} skin ${dna.skinTone} tone with ${dna.skinTexture}`,
+  ];
+  
+  // 안경 추가
+  if (dna.glasses) {
+    parts.push("wearing glasses, glasses preserved exactly");
+  }
+  
+  // 수염 추가
+  if (dna.facialHair && dna.facialHair !== "none") {
+    parts.push(`${dna.facialHair}`);
+  }
+  
+  // 특이사항 추가
+  if (dna.distinctFeatures && dna.distinctFeatures !== "none") {
+    parts.push(dna.distinctFeatures);
+  }
+  
+  // 조명 + 기술 프롬프트
+  parts.push(
+    "single key light from upper left at 45 degrees",
+    "soft fill light from right, 2:1 lighting ratio",
+    "neutral gray seamless background",
+    "photorealistic natural depth of field",
+    "authentic natural expression",
+    "clean background, no watermark, no text"
+  );
+  
+  return parts.join(", ");
+}
+
+// === DNA → Negative 프롬프트 변환 ===
+export function dnaToNegativePrompt(dna: FaceDNA): string {
+  const parts = [
+    "deformed, ugly, blurry, cartoon, anime",
+    "stock photo, getty images",
+    "smooth porcelain skin, airbrushed, plastic skin",
+    "heavy makeup, glossy skin",
+    "different person than reference",
+    "watermark, text overlay, logo, signature",
+  ];
+  
+  // 얼굴형 반대 특성 네거티브
+  if (dna.faceShape === "oval" || dna.faceShape === "oblong") {
+    parts.push("round face, chubby cheeks");
+  } else if (dna.faceShape === "round") {
+    parts.push("angular face, sharp jawline, V-line jaw");
+  } else if (dna.faceShape === "square") {
+    parts.push("V-line jaw, slim face, narrow chin");
+  }
+  
+  // 눈 반대 특성
+  if (dna.eyeSize === "small" || dna.eyeShape.includes("narrow")) {
+    parts.push("large round eyes, double eyelid surgery look, enlarged eyes");
+  } else if (dna.eyeSize === "large") {
+    parts.push("narrow small eyes, squinting");
+  }
+  
+  // 미소 반대 특성
+  if (dna.smileStyle.includes("closed-mouth") || dna.smileStyle.includes("subtle")) {
+    parts.push("open mouth smile, teeth showing, wide grin, toothy grin");
+  } else if (dna.smileStyle.includes("wide") || dna.smileStyle.includes("teeth")) {
+    parts.push("closed mouth, no smile, stern face");
+  }
+  
+  // 헤어 반대 특성
+  if (dna.hairColor.includes("brown") || dna.hairColor.includes("highlight")) {
+    parts.push("jet black hair");
+  }
+  if (dna.hairTexture === "straight") {
+    parts.push("curly hair, wavy hair");
+  } else if (dna.hairTexture.includes("wavy") || dna.hairTexture.includes("curly")) {
+    parts.push("straight flat hair");
+  }
+  
+  // 안경
+  if (!dna.glasses) {
+    // 안경 안 낀 사람이면 안경 방지
+    // (프롬프트에 추가하지 않음 — 불필요한 강조 방지)
+  } else {
+    parts.push("no glasses, removed glasses");
+  }
+  
+  // 나이 방지
+  parts.push("younger than reference, older than reference");
+  parts.push("westernized features");
+  
+  // 의상 변형 방지
+  parts.push("necktie, bow tie, scarf, turtleneck");
+  
+  return parts.join(", ");
+}
+
+// === 통합 함수: 사진 → 맞춤 프롬프트 자동 생성 ===
+export async function generateCustomPrompts(
+  imageBuffer: Buffer,
+  concept: string = "male_suit",
+  mimeType: string = "image/jpeg"
+): Promise<{ positive: string; negative: string; dna: FaceDNA }> {
+  
+  const dna = await analyzeFaceDNA(imageBuffer, mimeType);
+  
+  // DNA에서 성별 기반 컨셉 자동 결정
+  const finalConcept = concept.startsWith(dna.gender) ? concept : `${dna.gender}_suit`;
+  
+  const positive = dnaToPositivePrompt(dna, finalConcept);
+  const negative = dnaToNegativePrompt(dna);
+  
+  console.log(`[FaceDNA] Positive: ${positive.slice(0, 100)}...`);
+  console.log(`[FaceDNA] Negative: ${negative.slice(0, 100)}...`);
+  
+  return { positive, negative, dna };
 }
