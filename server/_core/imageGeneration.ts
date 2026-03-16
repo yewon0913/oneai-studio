@@ -305,6 +305,8 @@ export async function generateImage(
           const result = await generateWithComfyUI({
             faceImageBuffer: buffer,
             concept,
+            customPrompt: prompt,
+            customNegative: negativePrompt,
             seed: Math.floor(Math.random() * 999999),
           });
 
