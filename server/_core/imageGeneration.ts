@@ -3,8 +3,9 @@
  *
  * 모델 우선순위:
  *   1. Gemini (3.1-flash-image → 2.5-flash-image → 2.0-flash-exp)
- *      — 503/429 시 모델당 최대 3회 재시도 (3초→5초→8초 점진적 대기)
- *   2. FLUX Pro v1.1 (fal-ai/flux-pro/v1.1) — Fallback
+ *      — 503/429 시 모델당 최대 3회 재시도 (3초→5초→8초)
+ *      — 요청당 30초 타임아웃 (무한로딩 방지)
+ *   2. FLUX Pro v1.1 (fal-ai/flux-pro/v1.1) — Fallback (60초 타임아웃)
  *
  * ⚠️ 모델 업데이트 (2026.03.19):
  *   - gemini-3-pro-image-preview → 3/9 종료됨, 제거
@@ -49,18 +50,32 @@ async function falRun(
   const falKey = process.env.FAL_KEY;
   if (!falKey) throw new Error("FAL_KEY not set");
 
-  const res = await fetch(`https://fal.run/${modelId}`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Key ${falKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(input),
-  });
+  // 60초 타임아웃
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
 
-  const text = await res.text();
-  if (!res.ok) throw new Error(`${modelId} failed ${res.status}: ${text.slice(0, 300)}`);
-  return JSON.parse(text);
+  try {
+    const res = await fetch(`https://fal.run/${modelId}`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Key ${falKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+      signal: controller.signal,
+    });
+
+    const text = await res.text();
+    if (!res.ok) throw new Error(`${modelId} failed ${res.status}: ${text.slice(0, 300)}`);
+    return JSON.parse(text);
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error(`${modelId} 타임아웃 (60초 초과)`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // ─── 유틸: 대기 함수 ─────────────────────────────────────
@@ -69,7 +84,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// ─── Gemini API 호출 (최신 모델 + 503/429 재시도) ─────────
+// ─── Gemini API 호출 (최신 모델 + 재시도 + 타임아웃) ──────
 
 const GEMINI_MODELS = [
   "gemini-3.1-flash-image-preview",  // 최신 Nano Banana 2 (2026.02.26 출시)
@@ -77,9 +92,12 @@ const GEMINI_MODELS = [
   "gemini-2.0-flash-exp",             // 백업 (2026.06.01 종료 예정)
 ];
 
-/** 503/429 재시도 설정 */
+/** 재시도 설정 */
 const RETRY_MAX = 3;
-const RETRY_DELAYS = [3000, 5000, 8000]; // 3초, 5초, 8초 점진적 대기
+const RETRY_DELAYS = [3000, 5000, 8000]; // 3초, 5초, 8초
+
+/** Gemini 요청 타임아웃 (30초) */
+const GEMINI_TIMEOUT = 30000;
 
 function getGeminiApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
@@ -119,7 +137,7 @@ export async function callGemini(
   for (const model of GEMINI_MODELS) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    // ── 503/429 재시도 루프 ──
+    // ── 재시도 루프 ──
     for (let attempt = 0; attempt <= RETRY_MAX; attempt++) {
       if (attempt > 0) {
         const delay = RETRY_DELAYS[attempt - 1] || 8000;
@@ -129,44 +147,73 @@ export async function callGemini(
 
       console.log(`[Gemini] ${model} 호출 (parts: ${parts.length}${attempt > 0 ? `, retry #${attempt}` : ""})`);
 
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      // ── 30초 타임아웃 ──
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT);
 
-      const text = await res.text();
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
 
-      // ── 성공 ──
-      if (res.ok) {
-        try {
-          console.log(`[Gemini] ${model} 성공 ✅${attempt > 0 ? ` (재시도 #${attempt}에서 성공)` : ""}`);
-          return JSON.parse(text) as GeminiResponse;
-        } catch {
-          throw new Error(`Gemini invalid JSON: ${text.slice(0, 200)}`);
+        const text = await res.text();
+
+        // ── 성공 ──
+        if (res.ok) {
+          try {
+            console.log(`[Gemini] ${model} 성공 ✅${attempt > 0 ? ` (재시도 #${attempt})` : ""}`);
+            return JSON.parse(text) as GeminiResponse;
+          } catch {
+            throw new Error(`Gemini invalid JSON: ${text.slice(0, 200)}`);
+          }
         }
-      }
 
-      // ── 503/429 = 일시적 과부하 → 재시도 ──
-      if (res.status === 503 || res.status === 429) {
-        lastError = `${model} failed ${res.status}: ${text.slice(0, 200)}`;
-        console.warn(`[Gemini] ${lastError}`);
-        if (attempt < RETRY_MAX) {
-          continue; // 재시도
+        // ── 503/429 = 과부하 → 재시도 ──
+        if (res.status === 503 || res.status === 429) {
+          lastError = `${model} ${res.status}: 과부하`;
+          console.warn(`[Gemini] ${lastError}`);
+          if (attempt < RETRY_MAX) continue;
+          console.warn(`[Gemini] ${model} 재시도 ${RETRY_MAX}회 실패, 다음 모델...`);
+          break;
         }
-        console.warn(`[Gemini] ${model} 재시도 ${RETRY_MAX}회 모두 실패, 다음 모델...`);
-        break;
-      }
 
-      // ── 404 = 모델 없음 → 다음 모델 ──
-      if (res.status === 404) {
-        lastError = `${model} not found (404)`;
-        console.warn(`[Gemini] ${lastError}`);
-        break;
-      }
+        // ── 404 = 모델 없음 → 다음 모델 ──
+        if (res.status === 404) {
+          lastError = `${model} not found (404)`;
+          console.warn(`[Gemini] ${lastError}`);
+          break;
+        }
 
-      // ── 그 외 에러 → throw ──
-      throw new Error(`Gemini API failed ${res.status}: ${text.slice(0, 300)}`);
+        // ── 그 외 에러 ──
+        throw new Error(`Gemini API failed ${res.status}: ${text.slice(0, 300)}`);
+
+      } catch (err: any) {
+        clearTimeout(timeout);
+
+        // ── 타임아웃 → 재시도 ──
+        if (err.name === "AbortError") {
+          lastError = `${model} 타임아웃 (30초 초과)`;
+          console.warn(`[Gemini] ${lastError}`);
+          if (attempt < RETRY_MAX) continue;
+          console.warn(`[Gemini] ${model} 타임아웃 ${RETRY_MAX}회, 다음 모델...`);
+          break;
+        }
+
+        // ── fetch 실패 (네트워크 등) → 재시도 ──
+        if (err.message?.includes("fetch failed") || err.message?.includes("ECONNREFUSED")) {
+          lastError = `${model} 네트워크 오류: ${err.message?.slice(0, 100)}`;
+          console.warn(`[Gemini] ${lastError}`);
+          if (attempt < RETRY_MAX) continue;
+          console.warn(`[Gemini] ${model} 네트워크 오류 ${RETRY_MAX}회, 다음 모델...`);
+          break;
+        }
+
+        throw err;
+      }
     }
   }
 
@@ -337,7 +384,7 @@ export async function generateImage(
     }
   }
 
-  // ── [1] Gemini Primary (최신 모델 + 재시도) ──
+  // ── [1] Gemini Primary (최신 모델 + 재시도 + 타임아웃) ──
   try {
     console.log("[Gemini] Primary 생성 시도...");
     let geminiPrompt = prompt;
