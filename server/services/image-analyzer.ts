@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+iimport Anthropic from "@anthropic-ai/sdk";
 
 export interface AnalysisResult {
   prompt: string;
@@ -7,9 +7,15 @@ export interface AnalysisResult {
     camera: string;
     lighting: string;
     skin: string;
+    skinDetail: string;
     outfit: string;
     pose: string;
     expression: string;
+    eyeDetail: string;
+    faceAngle: string;
+    faceShape: string;
+    bodyType: string;
+    hairDetail: string;
     background: string;
     mood: string;
     movement: string;
@@ -19,52 +25,83 @@ export interface AnalysisResult {
     composition: string;
     colorGrade: string;
     innerState: string;
+    lensMatch: string;
+    depthControl: string;
+    retouchGuide: string;
+    realismAnchor: string;
   };
 }
 
-const ANALYSIS_PROMPT = `이 사진을 전문 사진작가와 AI 프롬프트 엔지니어의 시각으로 분석해줘.
+const ANALYSIS_PROMPT = `You are a world-class portrait photographer AND an expert AI prompt engineer.
 
-아래 15가지 카테고리를 전부 분석해서 AI 이미지 생성에 최적화된 영어 프롬프트 키워드로 변환해줘.
+Analyze this photo across 25 categories with EXTREME precision. Every detail matters for generating a photo-identical AI portrait.
 
-**CRITICAL: outfit과 background는 반드시 프롬프트의 최상단에 명시되어야 함!**
+**ABSOLUTE RULES:**
+- outfit and background MUST appear at the very top of the final prompt
+- All keywords in English
+- Be hyper-specific (not "smile" → "subtle closed-lip smile with slight left corner upturn")
+- Measure angles in degrees where possible
+- Reference real camera/lens behavior
 
-1. camera: 카메라 바디, 렌즈(mm), 조리개(f값), 촬영거리, 아웃포커싱 정도
-2. lighting: 조명 유형, 방향, 색온도(K), 그림자 방향, 대비
-3. skin: 피부톤, 색감, 혈색, 질감, 윤기, 모공, 핏줄
-4. outfit: 의상 종류, 소재, 색상, 액세서리, 디테일 [최우선]
-5. pose: 전체 자세, 몸 방향, 손 위치, 제스처
-6. expression: 표정, 눈빛, 시선 방향, 얼굴 방향
-7. background: 배경 종류, 색상, 거리감, 전경 요소 [최우선]
-8. mood: 전체 분위기, 감성, 스타일
-9. movement: 정지/동적, 바람, 드레스/머리 움직임
-10. space: 공간감, 깊이감, 전/중/후경 레이어
-11. time: 계절, 날씨, 시간대
-12. optical: 렌즈플레어, 색수차, 비네팅, 보케 모양
-13. composition: 피사체 위치, 황금비율, 헤드룸, 여백
-14. colorGrade: 색보정 스타일, 채도, 명도, LUT 느낌
-15. innerState: 인물 내면 감정, 심리적 분위기, 생동감
+**25 ANALYSIS CATEGORIES:**
 
-JSON만 응답 (다른 텍스트 없이):
+1. camera: camera body type, focal length (mm), aperture (f-stop), shutter speed estimate, shooting distance (cm), sensor crop factor, ISO estimate
+2. lighting: key light type/direction/intensity, fill light ratio, rim/hair light presence, color temperature (K), shadow hardness (soft/medium/hard), shadow direction (clock position), catchlight shape/position in eyes
+3. skin: overall skin tone (Fitzpatrick scale I-VI), undertone (warm/cool/neutral), surface finish (matte/dewy/oily), overall complexion clarity
+4. skinDetail: pore visibility level (invisible/subtle/visible), fine lines location, dark circles presence/severity, blemish areas, skin texture pattern, nasolabial fold depth, forehead texture, cheek surface quality, under-eye puffiness
+5. outfit: garment type, fabric material, color (exact shade), fit (tight/relaxed/oversized), neckline shape, sleeve type, accessories with exact description, jewelry details [TOP PRIORITY]
+6. pose: full body angle to camera (degrees), torso rotation (degrees), shoulder tilt (left/right, degrees), hand position (exact placement), finger spread/curl, weight distribution (left/right leg), spine curvature
+7. expression: micro-expression type, mouth state (open/closed/parted, teeth visibility), smile type (Duchenne/social/subtle), eyebrow position (raised/neutral/furrowed, asymmetry), forehead tension
+8. eyeDetail: iris color (exact shade), pupil dilation estimate, eye openness (percentage), upper/lower eyelid position, eyelash density/length/curl, double eyelid (yes/no/inner), catchlight position (clock direction), eye moisture/sparkle level, gaze vector (exact direction), eye spacing (close/average/wide)
+9. faceAngle: head tilt (left/right, degrees), head turn (left/right, degrees from center — 0°=frontal, 15°=slight, 30°=three-quarter, 45°=profile-quarter, 90°=full profile), chin tilt (up/down, degrees), jaw visibility (left/right percentage)
+10. faceShape: face shape (oval/round/square/heart/oblong/diamond), jawline definition (sharp/soft/rounded), chin shape (pointed/rounded/square), forehead height (high/medium/low), cheekbone prominence (high/flat), face width-to-height ratio estimate
+11. bodyType: shoulder width (narrow/medium/broad), neck length (short/medium/long), upper body build (slim/medium/athletic/full), visible body proportions, frame size
+12. hairDetail: hair color (exact shade with highlights), hair length, hair texture (straight/wavy/curly/coily), hair style name, parting side, bangs type (full/side/curtain/none), hair volume, flyaway presence, hair shine level, hair accessory
+13. background: background type, color (exact), blur level (bokeh circle size estimate in mm), distance from subject (near/mid/far), any foreground elements, environmental details [TOP PRIORITY]
+14. mood: overall atmosphere, emotional tone, style genre (editorial/casual/corporate/artistic), era/decade reference if any
+15. movement: static/dynamic, wind presence (direction/strength), fabric movement, hair movement, motion blur presence
+16. space: depth layers (foreground/midground/background detail), subject-to-background distance estimate, environmental depth cues
+17. time: season, weather, time of day, natural vs artificial light ratio
+18. optical: bokeh shape (circular/cat-eye/swirly), chromatic aberration presence, vignetting (none/subtle/strong), lens distortion (barrel/pincushion/none), lens flare
+19. composition: subject placement (rule of thirds grid position), headroom amount, look space direction, crop tightness (extreme close-up/close-up/medium close-up/medium/full), aspect ratio
+20. colorGrade: color grading style, overall color temperature shift, shadow color tint, highlight color tint, saturation level, contrast level, LUT style name if recognizable
+21. innerState: conveyed inner emotion, psychological mood, energy level (calm/medium/vibrant), approachability rating, confidence level
+22. lensMatch: RECOMMENDED optimal lens for this face shape (e.g., "round face → 85mm to elongate", "long face → 50mm to compress"), optimal shooting angle for this face (e.g., "strong jaw → shoot slightly above eye level"), optimal aperture for this depth of field
+23. depthControl: focus plane placement (on eyes/nose/ears), depth of field estimate (cm in focus), background separation quality, foreground blur presence
+24. retouchGuide: suggested enhancement areas (skin smoothing level 0-100, eye brightening level 0-100, teeth whitening needed yes/no, dark circle reduction level 0-100, jawline sharpening level 0-100), areas to preserve exactly as-is
+25. realismAnchor: 3-5 specific micro-details that make this photo look REAL and not AI (e.g., "asymmetric nostril size", "single strand of hair crossing forehead", "slight fabric wrinkle at left elbow", "tiny mole below right ear")
+
+**RESPOND WITH JSON ONLY (no other text):**
 {
   "analysis": {
-    "camera": "영어 키워드",
-    "lighting": "영어 키워드",
-    "skin": "영어 키워드",
-    "outfit": "영어 키워드",
-    "pose": "영어 키워드",
-    "expression": "영어 키워드",
-    "background": "영어 키워드",
-    "mood": "영어 키워드",
-    "movement": "영어 키워드",
-    "space": "영어 키워드",
-    "time": "영어 키워드",
-    "optical": "영어 키워드",
-    "composition": "영어 키워드",
-    "colorGrade": "영어 키워드",
-    "innerState": "영어 키워드"
+    "camera": "keywords",
+    "lighting": "keywords",
+    "skin": "keywords",
+    "skinDetail": "keywords",
+    "outfit": "keywords",
+    "pose": "keywords",
+    "expression": "keywords",
+    "eyeDetail": "keywords",
+    "faceAngle": "keywords",
+    "faceShape": "keywords",
+    "bodyType": "keywords",
+    "hairDetail": "keywords",
+    "background": "keywords",
+    "mood": "keywords",
+    "movement": "keywords",
+    "space": "keywords",
+    "time": "keywords",
+    "optical": "keywords",
+    "composition": "keywords",
+    "colorGrade": "keywords",
+    "innerState": "keywords",
+    "lensMatch": "keywords",
+    "depthControl": "keywords",
+    "retouchGuide": "keywords",
+    "realismAnchor": "keywords"
   },
-  "prompt": "15가지 통합 영어 프롬프트 300단어 이내. CRITICAL: outfit과 background는 반드시 처음에 명시되어야 함!",
-  "negativePrompt": "피해야 할 요소들 150단어 이내. 포함: 다른 의류, 다른 배경, 다른 조명, 다른 색상"
+  "prompt": "Complete integrated English prompt under 500 words. MUST START with outfit and background. Include ALL 25 categories. Structure: [outfit+background] → [face angle+face shape+body type] → [expression+eye detail+hair] → [skin+skin detail] → [camera+lens match+depth control] → [lighting+optical] → [pose+movement] → [composition+space] → [mood+color grade+inner state] → [realism anchor details]. End with: 'Real DSLR photograph, not AI generated, not 3D rendered.'",
+  "negativePrompt": "Under 200 words. Include: wrong outfit/background/lighting/color, AI artifacts (plastic skin, symmetrical face, perfect teeth, uniform skin texture, missing pores, identical catchlights, perfectly round iris, no flyaway hair, no skin imperfections, 3D rendered look, CGI, digital art, painting, illustration, anime)"
 }`;
 
 function parseResponse(text: string): AnalysisResult {
@@ -108,7 +145,7 @@ async function analyzeWithClaude(
 
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 4000,
+    max_tokens: 6000,
     messages: [
       {
         role: "user",
@@ -163,7 +200,7 @@ async function analyzeWithGemini(
           },
         ],
         generationConfig: {
-          maxOutputTokens: 4000,
+          maxOutputTokens: 6000,
         },
       }),
     }
