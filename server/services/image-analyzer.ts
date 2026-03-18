@@ -1,4 +1,4 @@
-iimport Anthropic from "@anthropic-ai/sdk";
+import Anthropic from "@anthropic-ai/sdk";
 
 export interface AnalysisResult {
   prompt: string;
