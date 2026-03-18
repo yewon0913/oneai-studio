@@ -2,8 +2,15 @@
  * Image generation helper — Gemini Primary + FLUX Pro Fallback
  *
  * 모델 우선순위:
- *   1. Gemini (gemini-3-pro → flash → exp) — Primary
+ *   1. Gemini (3.1-flash-image → 2.5-flash-image → 2.0-flash-exp)
+ *      — 503/429 시 모델당 최대 3회 재시도 (3초→5초→8초 점진적 대기)
  *   2. FLUX Pro v1.1 (fal-ai/flux-pro/v1.1) — Fallback
+ *
+ * ⚠️ 모델 업데이트 (2026.03.19):
+ *   - gemini-3-pro-image-preview → 3/9 종료됨, 제거
+ *   - gemini-3.1-flash-image-preview → 최신 Nano Banana 2 (2/26 출시)
+ *   - gemini-2.5-flash-image → Nano Banana (안정)
+ *   - gemini-2.0-flash-exp → 6/1 종료 예정 (최후 백업)
  *
  * 생성된 이미지는 FAL Storage에 업로드하여 공개 URL 반환
  */
@@ -56,13 +63,23 @@ async function falRun(
   return JSON.parse(text);
 }
 
-// ─── Gemini API 호출 ─────────────────────────────────────
+// ─── 유틸: 대기 함수 ─────────────────────────────────────
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ─── Gemini API 호출 (최신 모델 + 503/429 재시도) ─────────
 
 const GEMINI_MODELS = [
-  "gemini-3-pro-image-preview",
-  "gemini-2.5-flash-image",
-  "gemini-2.0-flash-exp",
+  "gemini-3.1-flash-image-preview",  // 최신 Nano Banana 2 (2026.02.26 출시)
+  "gemini-2.5-flash-image",           // Nano Banana (안정)
+  "gemini-2.0-flash-exp",             // 백업 (2026.06.01 종료 예정)
 ];
+
+/** 503/429 재시도 설정 */
+const RETRY_MAX = 3;
+const RETRY_DELAYS = [3000, 5000, 8000]; // 3초, 5초, 8초 점진적 대기
 
 function getGeminiApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
@@ -101,26 +118,55 @@ export async function callGemini(
   let lastError = "";
   for (const model of GEMINI_MODELS) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    console.log(`[Gemini] ${model} 호출 (parts: ${parts.length})`);
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    // ── 503/429 재시도 루프 ──
+    for (let attempt = 0; attempt <= RETRY_MAX; attempt++) {
+      if (attempt > 0) {
+        const delay = RETRY_DELAYS[attempt - 1] || 8000;
+        console.log(`[Gemini] ${model} 재시도 ${attempt}/${RETRY_MAX} (${delay / 1000}초 대기...)`);
+        await sleep(delay);
+      }
 
-    const text = await res.text();
-    if (!res.ok) {
-      lastError = `${model} failed ${res.status}: ${text.slice(0, 200)}`;
-      console.warn(`[Gemini] ${lastError}`);
-      if (res.status === 404) continue;
+      console.log(`[Gemini] ${model} 호출 (parts: ${parts.length}${attempt > 0 ? `, retry #${attempt}` : ""})`);
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const text = await res.text();
+
+      // ── 성공 ──
+      if (res.ok) {
+        try {
+          console.log(`[Gemini] ${model} 성공 ✅${attempt > 0 ? ` (재시도 #${attempt}에서 성공)` : ""}`);
+          return JSON.parse(text) as GeminiResponse;
+        } catch {
+          throw new Error(`Gemini invalid JSON: ${text.slice(0, 200)}`);
+        }
+      }
+
+      // ── 503/429 = 일시적 과부하 → 재시도 ──
+      if (res.status === 503 || res.status === 429) {
+        lastError = `${model} failed ${res.status}: ${text.slice(0, 200)}`;
+        console.warn(`[Gemini] ${lastError}`);
+        if (attempt < RETRY_MAX) {
+          continue; // 재시도
+        }
+        console.warn(`[Gemini] ${model} 재시도 ${RETRY_MAX}회 모두 실패, 다음 모델...`);
+        break;
+      }
+
+      // ── 404 = 모델 없음 → 다음 모델 ──
+      if (res.status === 404) {
+        lastError = `${model} not found (404)`;
+        console.warn(`[Gemini] ${lastError}`);
+        break;
+      }
+
+      // ── 그 외 에러 → throw ──
       throw new Error(`Gemini API failed ${res.status}: ${text.slice(0, 300)}`);
-    }
-
-    try {
-      return JSON.parse(text) as GeminiResponse;
-    } catch {
-      throw new Error(`Gemini invalid JSON: ${text.slice(0, 200)}`);
     }
   }
 
@@ -291,7 +337,7 @@ export async function generateImage(
     }
   }
 
-  // ── [1] Gemini Primary ──
+  // ── [1] Gemini Primary (최신 모델 + 재시도) ──
   try {
     console.log("[Gemini] Primary 생성 시도...");
     let geminiPrompt = prompt;
