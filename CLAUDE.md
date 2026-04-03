@@ -44,3 +44,10 @@ DATABASE_URL
 ## 🤝 고객성공팀 (스튜디오)
 - 결과물 만족도 조사
 - 불만족 시 무료 재제작 안내
+
+---
+
+## gstack 활용
+- 기어 변경 → /plan-eng-review + /checkpoint
+- 배포 → /ship
+- 보안 → /cso
