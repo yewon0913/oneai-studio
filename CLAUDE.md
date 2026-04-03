@@ -51,3 +51,7 @@ DATABASE_URL
 - 기어 변경 → /plan-eng-review + /checkpoint
 - 배포 → /ship
 - 보안 → /cso
+
+## 🔄 자동 업그레이드 (주 2회)
+- 새 AI 모델 → 테스트+적용
+- PuLID/ControlNet 파라미터 최적화
